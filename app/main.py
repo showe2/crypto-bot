@@ -17,46 +17,42 @@ from app.core.logging import setup_logging
 from app.routers import alex_core
 from app.utils.health import health_check_all_services
 
-# Глобальные настройки
+# Global settings
 settings = get_settings()
-
-# Настройка шаблонов
-templates = Jinja2Templates(directory="templates")
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Управление жизненным циклом приложения"""
+    """Application lifecycle management"""
     # Startup
-    logger.info("🚀 Запуск системы анализа токенов Solana...")
+    logger.info("🚀 Starting Solana Token Analysis System...")
     
-    # Проверка всех зависимостей
+    # Check all dependencies
     health_status = await health_check_all_services()
     if not health_status.get("overall_status"):
-        logger.error("❌ Критические сервисы недоступны!")
+        logger.error("❌ Critical services unavailable!")
         for service, status in health_status.get("services", {}).items():
             if not status.get("healthy"):
-                logger.error(f"   • {service}: {status.get('error', 'Неизвестная ошибка')}")
+                logger.error(f"   • {service}: {status.get('error', 'Unknown error')}")
     else:
-        logger.info("✅ Все сервисы готовы к работе")
+        logger.info("✅ All services ready")
     
     yield
     
     # Shutdown
-    logger.info("🛑 Остановка системы анализа токенов...")
+    logger.info("🛑 Stopping Token Analysis System...")
 
 
-# Создание FastAPI приложения
+# Create FastAPI application
 app = FastAPI(
     title="Solana Token Analysis AI System",
-    description="Интегрированная система анализа токенов Solana с использованием ИИ",
+    description="Integrated Solana token analysis system with AI capabilities",
     version="1.0.0",
     docs_url="/docs" if settings.ENV == "development" else None,
     redoc_url="/redoc" if settings.ENV == "development" else None,
     lifespan=lifespan
 )
 
-# Настройка CORS
+# CORS configuration
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if settings.ENV == "development" else ["https://yourdomain.com"],
@@ -65,18 +61,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Доверенные хосты
+# Trusted hosts
 if settings.ENV == "production":
     app.add_middleware(
         TrustedHostMiddleware, 
         allowed_hosts=["yourdomain.com", "*.yourdomain.com"]
     )
 
-# Статические файлы (для веб-интерфейса)
+# Static files (for web interface)
 if Path("static").exists():
     app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Подключение роутеров
+# Include routers
 app.include_router(
     alex_core.router,
     prefix="",
@@ -84,9 +80,9 @@ app.include_router(
 )
 
 
-@app.get("/", summary="Статус системы")
+@app.get("/", summary="System status")
 async def root():
-    """Главная страница - статус системы"""
+    """Homepage - system status"""
     return {
         "service": "Solana Token Analysis AI System",
         "status": "running",
@@ -96,9 +92,9 @@ async def root():
     }
 
 
-@app.get("/health", summary="Проверка здоровья системы")
+@app.get("/health", summary="System health check")
 async def health_check():
-    """Детальная проверка состояния всех компонентов системы"""
+    """Detailed system component health check"""
     health_status = await health_check_all_services()
     
     status_code = (
@@ -113,9 +109,9 @@ async def health_check():
     )
 
 
-@app.get("/dashboard", summary="Веб-интерфейс dashboard")
+@app.get("/dashboard", summary="Web dashboard interface")
 async def dashboard(request: Request):
-    """Веб-интерфейс для управления системой"""
+    """Web interface for system management"""
     context = {
         "request": request,
         "title": "Solana Token Analysis Dashboard",
@@ -124,34 +120,34 @@ async def dashboard(request: Request):
     return templates.TemplateResponse("dashboard.html", context)
 
 
-# Обработка ошибок валидации
+# Validation error handling
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Обработчик ошибок валидации входящих данных"""
-    logger.warning(f"Ошибка валидации для {request.url}: {exc.errors()}")
+    """Input data validation error handler"""
+    logger.warning(f"Validation error for {request.url}: {exc.errors()}")
     
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         content={
             "error": "Validation Error",
             "detail": exc.errors(),
-            "message": "Проверьте корректность входящих данных"
+            "message": "Please check input data validity"
         }
     )
 
 
 def create_app() -> FastAPI:
-    """Фабрика для создания приложения"""
+    """Application factory"""
     setup_logging()
     return app
 
 
 if __name__ == "__main__":
-    # Настройка логирования
+    # Configure logging
     setup_logging()
     
-    # Запуск в режиме разработки
-    logger.info(f"🔥 Запуск в режиме разработки на порту {settings.PORT}")
+    # Run in development mode
+    logger.info(f"🔥 Starting in development mode on port {settings.PORT}")
     
     uvicorn.run(
         "app.main:app",

@@ -9,7 +9,6 @@ from app.models.token import TokenAnalysisRequest, TokenAnalysisResponse
 
 # Settings and dependencies
 settings = get_settings()
-templates = Jinja2Templates(directory="templates")
 router = APIRouter()
 
 
@@ -38,7 +37,7 @@ async def start_command():
             "available_commands": [
                 "/start - check services",
                 "/tweet <token> - quick analysis",
-                "/name1 <token> - full AI analysis",
+                "/name <token> - full AI analysis",
                 "/search - search for promising tokens",
                 "/kity+dev - whale and developer analysis",
                 "/listing - listing parsing"
@@ -69,13 +68,13 @@ async def tweet_command(token_mint: str):
     }
 
 
-@router.post("/name1/{token_mint}", summary="Full token analysis with AI")
-async def name1_command(token_mint: str):
+@router.post("/name/{token_mint}", summary="Full token analysis with AI")
+async def name_command(token_mint: str):
     """
-    /name1 <token> command – full analysis (stub)
+    /name <token> command – full analysis (stub)
     """
     return {
-        "command": "name1",
+        "command": "name",
         "token": token_mint,
         "message": "Full analysis temporarily unavailable",
         "timestamp": datetime.utcnow()
@@ -175,10 +174,10 @@ async def available_commands():
                 "endpoint": "/tweet/{token_mint}"
             },
             {
-                "command": "/name1 <token>",
+                "command": "/name <token>",
                 "description": "Full AI analysis",
                 "method": "POST", 
-                "endpoint": "/name1/{token_mint}"
+                "endpoint": "/name/{token_mint}"
             }
         ],
         "discovery_commands": [

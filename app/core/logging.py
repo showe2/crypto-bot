@@ -10,7 +10,7 @@ settings = get_settings()
 
 
 def json_formatter(record: Dict[str, Any]) -> str:
-    """Форматтер для JSON логов"""
+    """JSON log formatter"""
     log_entry = {
         "timestamp": record["time"].isoformat(),
         "level": record["level"].name,
@@ -20,7 +20,7 @@ def json_formatter(record: Dict[str, Any]) -> str:
         "message": record["message"]
     }
     
-    # Добавляем дополнительные поля если есть
+    # Add extra fields if present
     if record.get("extra"):
         log_entry.update(record["extra"])
     
@@ -28,7 +28,7 @@ def json_formatter(record: Dict[str, Any]) -> str:
 
 
 def text_formatter(record: Dict[str, Any]) -> str:
-    """Форматтер для текстовых логов"""
+    """Text log formatter"""
     return (
         "{time:YYYY-MM-DD HH:mm:ss.SSS} | "
         "{level: <8} | "
@@ -37,16 +37,16 @@ def text_formatter(record: Dict[str, Any]) -> str:
 
 
 def setup_logging():
-    """Настройка системы логирования"""
+    """Configure logging system"""
     
-    # Удаляем стандартные обработчики loguru
+    # Remove default loguru handlers
     logger.remove()
     
-    # Создаем директорию для логов
+    # Create logs directory
     logs_dir = Path(settings.LOGS_DIR)
     logs_dir.mkdir(parents=True, exist_ok=True)
     
-    # Определяем формат в зависимости от настроек
+    # Determine format based on settings
     if settings.LOG_FORMAT.lower() == "json":
         formatter = json_formatter
         format_string = "{message}"
@@ -59,7 +59,7 @@ def setup_logging():
             "<level>{message}</level>"
         )
     
-    # Консольный вывод
+    # Console output
     if settings.ENV == "development":
         logger.add(
             sys.stdout,
@@ -70,7 +70,7 @@ def setup_logging():
             diagnose=True
         )
     else:
-        # В продакшене используем JSON формат для консоли
+        # In production use JSON format for console
         logger.add(
             sys.stdout,
             format="{message}",
@@ -78,7 +78,7 @@ def setup_logging():
             serialize=settings.LOG_FORMAT.lower() == "json"
         )
     
-    # Основной лог файл
+    # Main log file
     logger.add(
         logs_dir / "app.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -91,7 +91,7 @@ def setup_logging():
         diagnose=settings.ENV != "production"
     )
     
-    # Файл ошибок
+    # Error log file
     logger.add(
         logs_dir / "errors.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -104,7 +104,7 @@ def setup_logging():
         diagnose=True
     )
     
-    # Лог API запросов
+    # API requests log
     logger.add(
         logs_dir / "api_requests.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -116,7 +116,7 @@ def setup_logging():
         filter=lambda record: "api_request" in record.get("extra", {})
     )
     
-    # Лог анализа токенов
+    # Token analysis log
     logger.add(
         logs_dir / "token_analysis.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -128,7 +128,7 @@ def setup_logging():
         filter=lambda record: "token_analysis" in record.get("extra", {})
     )
     
-    # Лог AI операций
+    # AI operations log
     logger.add(
         logs_dir / "ai_operations.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -140,7 +140,7 @@ def setup_logging():
         filter=lambda record: "ai_operation" in record.get("extra", {})
     )
     
-    # Лог WebHooks
+    # WebHooks log
     logger.add(
         logs_dir / "webhooks.log",
         format=format_string if settings.LOG_FORMAT.lower() != "json" else "{message}",
@@ -152,7 +152,7 @@ def setup_logging():
         filter=lambda record: "webhook" in record.get("extra", {})
     )
     
-    # Настройка логирования для внешних библиотек
+    # Configure logging for external libraries
     import logging
     
     # Uvicorn
@@ -168,7 +168,7 @@ def setup_logging():
     # ChromaDB
     logging.getLogger("chromadb").setLevel(logging.WARNING)
     
-    logger.info("Система логирования настроена", extra={
+    logger.info("Logging system configured", extra={
         "log_level": settings.LOG_LEVEL,
         "log_format": settings.LOG_FORMAT,
         "logs_directory": str(logs_dir),
@@ -177,7 +177,7 @@ def setup_logging():
 
 
 def get_logger(name: str):
-    """Получить именованный логгер с контекстом"""
+    """Get named logger with context"""
     return logger.bind(logger_name=name)
 
 
@@ -190,7 +190,7 @@ def log_api_request(
     user_agent: str = None,
     additional_data: Dict[str, Any] = None
 ):
-    """Логирование API запроса"""
+    """Log API request"""
     log_data = {
         "api_request": True,
         "endpoint": endpoint,
@@ -218,7 +218,7 @@ def log_token_analysis(
     errors: list = None,
     data_sources: list = None
 ):
-    """Логирование анализа токена"""
+    """Log token analysis"""
     log_data = {
         "token_analysis": True,
         "token_mint": token_mint,
@@ -248,7 +248,7 @@ def log_ai_operation(
     success: bool = True,
     error_message: str = None
 ):
-    """Логирование AI операции"""
+    """Log AI operation"""
     log_data = {
         "ai_operation": True,
         "model": model_name,
@@ -277,7 +277,7 @@ def log_webhook_event(
     success: bool = True,
     error_message: str = None
 ):
-    """Логирование WebHook события"""
+    """Log WebHook event"""
     log_data = {
         "webhook": True,
         "webhook_type": webhook_type,
@@ -286,7 +286,7 @@ def log_webhook_event(
         "event_size": len(str(event_data))
     }
     
-    # Добавляем безопасную информацию о событии
+    # Add safe event information
     if isinstance(event_data, dict):
         safe_data = {}
         for key, value in event_data.items():
@@ -313,11 +313,11 @@ def log_external_api_call(
     error_message: str = None,
     rate_limit_remaining: int = None
 ):
-    """Логирование вызова внешнего API"""
+    """Log external API call"""
     log_data = {
         "external_api": True,
         "api_name": api_name,
-        "endpoint": endpoint.split('?')[0],  # Убираем параметры для безопасности
+        "endpoint": endpoint.split('?')[0],  # Remove parameters for security
         "method": method,
         "status_code": status_code,
         "response_time_ms": round(response_time * 1000, 2),
@@ -340,7 +340,7 @@ def log_system_event(
     severity: str = "INFO",
     additional_data: Dict[str, Any] = None
 ):
-    """Логирование системного события"""
+    """Log system event"""
     log_data = {
         "system_event": True,
         "event_type": event_type,
@@ -357,7 +357,7 @@ def log_performance_metrics(
     operation: str,
     metrics: Dict[str, Any]
 ):
-    """Логирование метрик производительности"""
+    """Log performance metrics"""
     log_data = {
         "performance_metrics": True,
         "operation": operation,
@@ -368,7 +368,7 @@ def log_performance_metrics(
 
 
 class LoggingMiddleware:
-    """Middleware для логирования HTTP запросов"""
+    """Middleware for HTTP request logging"""
     
     def __init__(self):
         self.logger = get_logger("http")

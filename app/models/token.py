@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field, validator
 
 
 class RiskLevel(str, Enum):
-    """Уровни риска токена"""
+    """Token risk levels"""
     LOW = "low"
     MEDIUM = "medium" 
     HIGH = "high"
@@ -15,7 +15,7 @@ class RiskLevel(str, Enum):
 
 
 class RecommendationType(str, Enum):
-    """Типы рекомендаций"""
+    """Recommendation types"""
     BUY = "BUY"
     HOLD = "HOLD"
     SELL = "SELL"
@@ -23,7 +23,7 @@ class RecommendationType(str, Enum):
 
 
 class SocialPlatform(str, Enum):
-    """Социальные платформы"""
+    """Social platforms"""
     TWITTER = "twitter"
     TELEGRAM = "telegram"
     DISCORD = "discord"
@@ -31,7 +31,7 @@ class SocialPlatform(str, Enum):
 
 
 class AnalysisPattern(str, Enum):
-    """Паттерны анализа"""
+    """Analysis patterns"""
     BREAKOUT = "breakout"
     VOLUME_SPIKE = "volume_spike"
     WHALE_MOVEMENT = "whale_movement"
@@ -41,230 +41,189 @@ class AnalysisPattern(str, Enum):
 
 
 # ==============================================
-# БАЗОВЫЕ МОДЕЛИ ДАННЫХ
+# BASE DATA MODELS
 # ==============================================
 
 class TokenMetadata(BaseModel):
-    """Метаданные токена"""
-    mint: str = Field(..., description="Mint адрес токена")
-    name: Optional[str] = Field(None, description="Название токена")
-    symbol: Optional[str] = Field(None, description="Символ токена")
-    decimals: int = Field(default=9, description="Количество десятичных знаков")
-    supply: Optional[Decimal] = Field(None, description="Общий объем токенов")
-    description: Optional[str] = Field(None, description="Описание токена")
-    image_uri: Optional[str] = Field(None, description="URL изображения")
-    website: Optional[str] = Field(None, description="Официальный сайт")
-    twitter: Optional[str] = Field(None, description="Twitter аккаунт")
-    telegram: Optional[str] = Field(None, description="Telegram канал")
+    """Token metadata"""
+    mint: str = Field(..., description="Token mint address")
+    name: Optional[str] = Field(None, description="Token name")
+    symbol: Optional[str] = Field(None, description="Token symbol")
+    decimals: int = Field(default=9, description="Number of decimals")
+    supply: Optional[Decimal] = Field(None, description="Total token supply")
+    description: Optional[str] = Field(None, description="Token description")
+    image_uri: Optional[str] = Field(None, description="Image URL")
+    website: Optional[str] = Field(None, description="Official website")
+    twitter: Optional[str] = Field(None, description="Twitter account")
+    telegram: Optional[str] = Field(None, description="Telegram channel")
     
     @validator('mint')
     def validate_mint(cls, v):
-        """Валидация mint адреса"""
+        """Mint address validation"""
         if not v or len(v) < 32:
-            raise ValueError('Некорректный mint адрес')
+            raise ValueError('Invalid mint address')
         return v
 
 
 class PriceData(BaseModel):
-    """Ценовые данные токена"""
-    current_price: Decimal = Field(..., description="Текущая цена в USD")
-    price_change_1h: Optional[Decimal] = Field(None, description="Изменение за 1 час (%)")
-    price_change_24h: Optional[Decimal] = Field(None, description="Изменение за 24 часа (%)")
-    price_change_7d: Optional[Decimal] = Field(None, description="Изменение за 7 дней (%)")
-    volume_24h: Optional[Decimal] = Field(None, description="Объем торгов за 24 часа")
-    market_cap: Optional[Decimal] = Field(None, description="Рыночная капитализация")
-    liquidity: Optional[Decimal] = Field(None, description="Ликвидность")
-    holders_count: Optional[int] = Field(None, description="Количество держателей")
+    """Token price data"""
+    current_price: Decimal = Field(..., description="Current price in USD")
+    price_change_1h: Optional[Decimal] = Field(None, description="1-hour price change (%)")
+    price_change_24h: Optional[Decimal] = Field(None, description="24-hour price change (%)")
+    price_change_7d: Optional[Decimal] = Field(None, description="7-day price change (%)")
+    volume_24h: Optional[Decimal] = Field(None, description="24-hour trading volume")
+    market_cap: Optional[Decimal] = Field(None, description="Market capitalization")
+    liquidity: Optional[Decimal] = Field(None, description="Liquidity")
+    holders_count: Optional[int] = Field(None, description="Number of holders")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class SocialData(BaseModel):
-    """Данные из социальных сетей"""
-    platform: SocialPlatform = Field(..., description="Платформа")
-    content: str = Field(..., description="Контент поста/сообщения")
-    author: Optional[str] = Field(None, description="Автор")
-    timestamp: datetime = Field(..., description="Время публикации")
-    metrics: Dict[str, Union[int, float]] = Field(default_factory=dict, description="Метрики (лайки, репосты и т.д.)")
-    sentiment_score: Optional[float] = Field(None, ge=-1, le=1, description="Оценка тональности от -1 до 1")
-    keywords: List[str] = Field(default_factory=list, description="Ключевые слова")
+    """Social media data"""
+    platform: SocialPlatform = Field(..., description="Platform")
+    content: str = Field(..., description="Post/message content")
+    author: Optional[str] = Field(None, description="Author")
+    timestamp: datetime = Field(..., description="Publication time")
+    metrics: Dict[str, Union[int, float]] = Field(default_factory=dict, description="Metrics (likes, reposts etc.)")
+    sentiment_score: Optional[float] = Field(None, ge=-1, le=1, description="Sentiment score from -1 to 1")
+    keywords: List[str] = Field(default_factory=list, description="Keywords")
 
 
 class OnChainMetrics(BaseModel):
-    """On-chain метрики токена"""
-    token_address: str = Field(..., description="Адрес токена")
+    """Token on-chain metrics"""
+    token_address: str = Field(..., description="Token address")
     
-    # Транзакции
-    tx_count_24h: Optional[int] = Field(None, description="Количество транзакций за 24ч")
-    unique_traders_24h: Optional[int] = Field(None, description="Уникальные трейдеры за 24ч")
+    # Transactions
+    tx_count_24h: Optional[int] = Field(None, description="24-hour transaction count")
+    unique_traders_24h: Optional[int] = Field(None, description="Unique traders in 24h")
     
-    # Ликвидность
-    liquidity_pools: List[Dict[str, Any]] = Field(default_factory=list, description="Пулы ликвидности")
-    total_liquidity: Optional[Decimal] = Field(None, description="Общая ликвидность")
+    # Liquidity
+    liquidity_pools: List[Dict[str, Any]] = Field(default_factory=list, description="Liquidity pools")
+    total_liquidity: Optional[Decimal] = Field(None, description="Total liquidity")
     
-    # Держатели
-    top_holders: List[Dict[str, Any]] = Field(default_factory=list, description="Крупнейшие держатели")
-    holder_distribution: Dict[str, int] = Field(default_factory=dict, description="Распределение держателей")
+    # Holders
+    top_holders: List[Dict[str, Any]] = Field(default_factory=list, description="Top holders")
+    holder_distribution: Dict[str, int] = Field(default_factory=dict, description="Holder distribution")
     
-    # Безопасность
-    is_verified: Optional[bool] = Field(None, description="Верифицирован ли токен")
-    security_score: Optional[float] = Field(None, ge=0, le=1, description="Оценка безопасности")
+    # Security
+    is_verified: Optional[bool] = Field(None, description="Whether token is verified")
+    security_score: Optional[float] = Field(None, ge=0, le=1, description="Security score")
     
     timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 # ==============================================
-# МОДЕЛИ АНАЛИЗА
+# ANALYSIS MODELS
 # ==============================================
 
 class MistralAnalysis(BaseModel):
-    """Результат быстрого анализа Mistral 7B"""
-    score: float = Field(..., ge=0, le=1, description="Общая оценка токена")
-    risk_level: RiskLevel = Field(..., description="Уровень риска")
-    is_scam_likely: bool = Field(default=False, description="Вероятность скама")
-    key_points: List[str] = Field(default_factory=list, description="Ключевые моменты")
-    notes: Optional[str] = Field(None, description="Дополнительные заметки")
-    processing_time: float = Field(..., description="Время обработки в секундах")
-    confidence: float = Field(..., ge=0, le=1, description="Уверенность в анализе")
+    """Mistral 7B quick analysis results"""
+    score: float = Field(..., ge=0, le=1, description="Overall token score")
+    risk_level: RiskLevel = Field(..., description="Risk level")
+    is_scam_likely: bool = Field(default=False, description="Scam likelihood")
+    key_points: List[str] = Field(default_factory=list, description="Key points")
+    notes: Optional[str] = Field(None, description="Additional notes")
+    processing_time: float = Field(..., description="Processing time in seconds")
+    confidence: float = Field(..., ge=0, le=1, description="Analysis confidence")
 
 
 class LlamaAnalysis(BaseModel):
-    """Результат глубокого анализа LLaMA 3 70B"""
-    pump_probability_1h: float = Field(..., ge=0, le=1, description="Вероятность роста за 1 час")
-    pump_probability_24h: float = Field(..., ge=0, le=1, description="Вероятность роста за 24 часа")
-    patterns: List[AnalysisPattern] = Field(default_factory=list, description="Обнаруженные паттерны")
-    price_targets: Dict[str, Decimal] = Field(default_factory=dict, description="Ценовые цели")
-    reasoning: str = Field(..., description="Подробное обоснование")
-    risk_factors: List[str] = Field(default_factory=list, description="Факторы риска")
-    opportunities: List[str] = Field(default_factory=list, description="Возможности")
-    processing_time: float = Field(..., description="Время обработки в секундах")
-    confidence: float = Field(..., ge=0, le=1, description="Уверенность в анализе")
+    """LLaMA 3 70B deep analysis results"""
+    pump_probability_1h: float = Field(..., ge=0, le=1, description="1-hour pump probability")
+    pump_probability_24h: float = Field(..., ge=0, le=1, description="24-hour pump probability")
+    patterns: List[AnalysisPattern] = Field(default_factory=list, description="Detected patterns")
+    price_targets: Dict[str, Decimal] = Field(default_factory=dict, description="Price targets")
+    reasoning: str = Field(..., description="Detailed reasoning")
+    risk_factors: List[str] = Field(default_factory=list, description="Risk factors")
+    opportunities: List[str] = Field(default_factory=list, description="Opportunities")
+    processing_time: float = Field(..., description="Processing time in seconds")
+    confidence: float = Field(..., ge=0, le=1, description="Analysis confidence")
 
 
 class AggregatedAnalysis(BaseModel):
-    """Агрегированный результат анализа"""
-    final_score: float = Field(..., ge=0, le=1, description="Итоговая оценка")
-    recommendation: RecommendationType = Field(..., description="Рекомендация")
-    confidence: float = Field(..., ge=0, le=1, description="Общая уверенность")
-    expected_return_1h: Optional[float] = Field(None, description="Ожидаемая доходность за 1ч (%)")
-    expected_return_24h: Optional[float] = Field(None, description="Ожидаемая доходность за 24ч (%)")
-    max_risk: float = Field(..., ge=0, le=1, description="Максимальный риск")
-    summary: str = Field(..., description="Краткое резюме")
-    action_plan: List[str] = Field(default_factory=list, description="План действий")
+    """Aggregated analysis result"""
+    final_score: float = Field(..., ge=0, le=1, description="Final score")
+    recommendation: RecommendationType = Field(..., description="Recommendation")
+    confidence: float = Field(..., ge=0, le=1, description="Overall confidence")
+    expected_return_1h: Optional[float] = Field(None, description="Expected 1-hour return (%)")
+    expected_return_24h: Optional[float] = Field(None, description="Expected 24-hour return (%)")
+    max_risk: float = Field(..., ge=0, le=1, description="Maximum risk")
+    summary: str = Field(..., description="Brief summary")
+    action_plan: List[str] = Field(default_factory=list, description="Action plan")
 
 
 # ==============================================
-# ОСНОВНАЯ МОДЕЛЬ АНАЛИЗА ТОКЕНА
+# MAIN TOKEN ANALYSIS MODEL
 # ==============================================
 
 class TokenAnalysisRequest(BaseModel):
-    """Запрос на анализ токена"""
-    mint: str = Field(..., description="Mint адрес токена для анализа")
-    include_social: bool = Field(default=True, description="Включить анализ социальных данных")
-    include_deep_analysis: bool = Field(default=True, description="Включить глубокий анализ LLaMA")
-    priority: str = Field(default="normal", description="Приоритет анализа (low/normal/high)")
+    """Token analysis request"""
+    mint: str = Field(..., description="Token mint address to analyze")
+    include_social: bool = Field(default=True, description="Include social data analysis")
+    include_deep_analysis: bool = Field(default=True, description="Include deep LLaMA analysis")
+    priority: str = Field(default="normal", description="Analysis priority (low/normal/high)")
     
     @validator('priority')
     def validate_priority(cls, v):
         allowed = ['low', 'normal', 'high']
         if v not in allowed:
-            raise ValueError(f'priority должен быть одним из: {allowed}')
+            raise ValueError(f'priority must be one of: {allowed}')
         return v
 
 
 class TokenAnalysisResponse(BaseModel):
-    """Полный результат анализа токена"""
-    token: str = Field(..., description="Mint адрес токена")
-    metadata: Optional[TokenMetadata] = Field(None, description="Метаданные токена")
-    price_data: Optional[PriceData] = Field(None, description="Ценовые данные")
-    onchain_metrics: Optional[OnChainMetrics] = Field(None, description="On-chain метрики")
-    social_data: List[SocialData] = Field(default_factory=list, description="Социальные данные")
+    """Complete token analysis result"""
+    token: str = Field(..., description="Token mint address")
+    metadata: Optional[TokenMetadata] = Field(None, description="Token metadata")
+    price_data: Optional[PriceData] = Field(None, description="Price data")
+    onchain_metrics: Optional[OnChainMetrics] = Field(None, description="On-chain metrics")
+    social_data: List[SocialData] = Field(default_factory=list, description="Social data")
     
-    # Результаты ИИ анализа
-    analysis: Dict[str, Any] = Field(default_factory=dict, description="Результаты анализа")
-    mistral_quick: Optional[MistralAnalysis] = Field(None, description="Быстрый анализ Mistral")
-    llama_deep: Optional[LlamaAnalysis] = Field(None, description="Глубокий анализ LLaMA")
-    aggregated: Optional[AggregatedAnalysis] = Field(None, description="Агрегированный результат")
+    # AI analysis results
+    analysis: Dict[str, Any] = Field(default_factory=dict, description="Analysis results")
+    mistral_quick: Optional[MistralAnalysis] = Field(None, description="Mistral quick analysis")
+    llama_deep: Optional[LlamaAnalysis] = Field(None, description="LLaMA deep analysis")
+    aggregated: Optional[AggregatedAnalysis] = Field(None, description="Aggregated result")
     
-    # Метаинформация
-    analysis_id: str = Field(..., description="ID анализа")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Время анализа")
-    processing_time_total: float = Field(..., description="Общее время обработки")
-    data_sources: List[str] = Field(default_factory=list, description="Использованные источники данных")
-    warnings: List[str] = Field(default_factory=list, description="Предупреждения")
-    errors: List[str] = Field(default_factory=list, description="Ошибки при анализе")
+    # Meta information
+    analysis_id: str = Field(..., description="Analysis ID")
+    timestamp: datetime = Field(default_factory=datetime.utcnow, description="Analysis time")
+    processing_time_total: float = Field(..., description="Total processing time")
+    data_sources: List[str] = Field(default_factory=list, description="Data sources used")
+    warnings: List[str] = Field(default_factory=list, description="Warnings")
+    errors: List[str] = Field(default_factory=list, description="Analysis errors")
 
 
 # ==============================================
-# МОДЕЛИ ДЛЯ СОЦИАЛЬНОГО АНАЛИЗА  
+# SOCIAL ANALYSIS MODELS  
 # ==============================================
 
 class SocialAnalysisRequest(BaseModel):
-    """Запрос на анализ социальных сигналов"""
-    token_symbol: Optional[str] = Field(None, description="Символ токена")
-    token_mint: Optional[str] = Field(None, description="Mint адрес токена")
-    keywords: List[str] = Field(default_factory=list, description="Дополнительные ключевые слова")
+    """Social signals analysis request"""
+    token_symbol: Optional[str] = Field(None, description="Token symbol")
+    token_mint: Optional[str] = Field(None, description="Token mint address")
+    keywords: List[str] = Field(default_factory=list, description="Additional keywords")
     platforms: List[SocialPlatform] = Field(default_factory=lambda: [SocialPlatform.TWITTER, SocialPlatform.TELEGRAM])
-    time_range_hours: int = Field(default=24, ge=1, le=168, description="Временной диапазон в часах")
+    time_range_hours: int = Field(default=24, ge=1, le=168, description="Time range in hours")
 
 
 class SocialAnalysisResponse(BaseModel):
-    """Результат анализа социальных сигналов"""
-    token_info: Dict[str, str] = Field(default_factory=dict, description="Информация о токене")
-    social_data: List[SocialData] = Field(default_factory=list, description="Собранные социальные данные")
+    """Social signals analysis result"""
+    token_info: Dict[str, str] = Field(default_factory=dict, description="Token information")
+    social_data: List[SocialData] = Field(default_factory=list, description="Collected social data")
     
-    # Аналитика
-    total_mentions: int = Field(default=0, description="Общее количество упоминаний")
-    sentiment_average: float = Field(default=0.0, ge=-1, le=1, description="Средняя тональность")
-    viral_score: float = Field(default=0.0, ge=0, le=1, description="Оценка вирусности")
-    top_keywords: List[str] = Field(default_factory=list, description="Топ ключевых слов")
-    platform_breakdown: Dict[str, int] = Field(default_factory=dict, description="Разбивка по платформам")
+    # Analytics
+    total_mentions: int = Field(default=0, description="Total mentions count")
+    sentiment_average: float = Field(default=0.0, ge=-1, le=1, description="Average sentiment")
+    viral_score: float = Field(default=0.0, ge=0, le=1, description="Virality score")
+    top_keywords: List[str] = Field(default_factory=list, description="Top keywords")
+    platform_breakdown: Dict[str, int] = Field(default_factory=dict, description="Platform breakdown")
     
-    # Временная динамика
-    hourly_activity: Dict[str, int] = Field(default_factory=dict, description="Активность по часам")
-    trend_direction: str = Field(default="neutral", description="Направление тренда")
+    # Temporal dynamics
+    hourly_activity: Dict[str, int] = Field(default_factory=dict, description="Hourly activity")
+    trend_direction: str = Field(default="neutral", description="Trend direction")
     
-    # Метаинформация
-    analysis_id: str = Field(..., description="ID анализа")
+    # Meta information
+    analysis_id: str = Field(..., description="Analysis ID")
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    processing_time: float = Field(..., description="Время обработки")
-
-
-# ==============================================
-# МОДЕЛИ ДЛЯ ИНТЕГРАЦИИ С ФРИЛАНСЕРОМ №2
-# ==============================================
-
-class ExternalAIInsights(BaseModel):
-    """Данные от внешней системы ИИ (фрилансер №2)"""
-    token: str = Field(..., description="Mint адрес токена")
-    
-    # Aegis AI - безопасность
-    aegis: Dict[str, Any] = Field(default_factory=dict, description="Результаты Aegis AI")
-    
-    # DeepSeek-V2 - технический анализ
-    deepseek: Dict[str, Any] = Field(default_factory=dict, description="Результаты DeepSeek-V2")
-    
-    # MythoMax-L2 - мемы и вирусность
-    mythomax: Dict[str, Any] = Field(default_factory=dict, description="Результаты MythoMax-L2")
-    
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-    processing_time: float = Field(..., description="Время обработки внешней системы")
-
-
-class MergedInsightsResponse(BaseModel):
-    """Объединенный результат от обеих систем"""
-    token: str = Field(..., description="Mint адрес токена")
-    
-    # Наши результаты
-    internal_analysis: TokenAnalysisResponse = Field(..., description="Результаты внутренней системы")
-    
-    # Внешние результаты
-    external_insights: Optional[ExternalAIInsights] = Field(None, description="Результаты внешней системы")
-    
-    # Финальная агрегация
-    final_recommendation: RecommendationType = Field(..., description="Финальная рекомендация")
-    consensus_score: float = Field(..., ge=0, le=1, description="Консенсус между системами")
-    conflict_areas: List[str] = Field(default_factory=list, description="Области конфликта мнений")
-    
-    # Метаинформация
-    merge_timestamp: datetime = Field(default_factory=datetime.utcnow)
-    total_processing_time: float = Field(..., description="Общее время обработки обеими системами")
+    processing_time: float = Field(..., description="Processing time")

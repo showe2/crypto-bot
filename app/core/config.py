@@ -8,18 +8,18 @@ from pydantic import Field, validator
 
 
 class Settings(BaseSettings):
-    """Настройки приложения"""
+    """Application settings"""
 
     # ==============================================
-    # ОСНОВНЫЕ НАСТРОЙКИ
+    # BASIC SETTINGS
     # ==============================================
-    ENV: str = Field(default="development", description="Режим окружения")
-    DEBUG: bool = Field(default=True, description="Режим отладки")
-    PORT: int = Field(default=8000, description="Порт приложения")
-    HOST: str = Field(default="0.0.0.0", description="Хост приложения")
+    ENV: str = Field(default="development", description="Environment mode")
+    DEBUG: bool = Field(default=True, description="Debug mode")
+    PORT: int = Field(default=8000, description="Application port")
+    HOST: str = Field(default="0.0.0.0", description="Application host")
 
     # ==============================================
-    # API КЛЮЧИ BLOCKCHAIN
+    # BLOCKCHAIN API KEYS
     # ==============================================
     QUICKNODE_RPC: Optional[str] = None
     QUICKNODE_WSS: Optional[str] = None
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     RUGCHECK_API_KEY: Optional[str] = None
 
     # ==============================================
-    # СОЦИАЛЬНЫЕ СЕТИ
+    # SOCIAL NETWORKS
     # ==============================================
     DATAIMPULSE_API_KEY: Optional[str] = None
     DATAIMPULSE_BASE_URL: str = "https://api.dataimpulse.com"
@@ -65,7 +65,7 @@ class Settings(BaseSettings):
     WEBHOOK_BASE_URL: Optional[str] = None
 
     # ==============================================
-    # ХРАНИЛИЩЕ
+    # STORAGE
     # ==============================================
     CHROMA_DB_PATH: str = "./shared_data/chroma"
     CHROMA_COLLECTION_NAME: str = "solana_tokens_knowledge"
@@ -88,7 +88,7 @@ class Settings(BaseSettings):
     CELERY_TIMEZONE: str = "UTC"
 
     # ==============================================
-    # AI МОДЕЛИ
+    # AI MODELS
     # ==============================================
     MISTRAL_API_KEY: Optional[str] = None
     MISTRAL_API_URL: str = "https://api.mistral.ai/v1"
@@ -99,18 +99,18 @@ class Settings(BaseSettings):
     LLAMA_MODEL: str = "meta-llama/Llama-3-70b-chat-hf"
 
     # ==============================================
-    # ТОРГОВЫЕ API
+    # TRADING APIS
     # ==============================================
     JUPITER_API_URL: str = "https://quote-api.jup.ag/v6"
 
     # ==============================================
-    # УВЕДОМЛЕНИЯ
+    # NOTIFICATIONS
     # ==============================================
     TELEGRAM_BOT_TOKEN: Optional[str] = None
     TELEGRAM_CHAT_ID: Optional[str] = None
 
     # ==============================================
-    # БЕЗОПАСНОСТЬ
+    # SECURITY
     # ==============================================
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PER_HOUR: int = 1000
 
     # ==============================================
-    # ПРОИЗВОДИТЕЛЬНОСТЬ
+    # PERFORMANCE
     # ==============================================
     API_TIMEOUT: int = 30
     AI_TIMEOUT: int = 60
@@ -131,14 +131,14 @@ class Settings(BaseSettings):
     CACHE_TTL_LONG: int = 7200
 
     # ==============================================
-    # МОНИТОРИНГ
+    # MONITORING
     # ==============================================
     LOG_LEVEL: str = "INFO"
     LOG_FORMAT: str = "json"
     SENTRY_DSN: Optional[str] = None
 
     # ==============================================
-    # РАЗРАБОТКА
+    # DEVELOPMENT
     # ==============================================
     TEST_TOKEN_MINT: str = "So11111111111111111111111111111111111112"
     TEST_SOCIAL_DATA_FILE: str = "test_social_data.json"
@@ -146,20 +146,20 @@ class Settings(BaseSettings):
     MOCK_AI_RESPONSES: bool = False
 
     # ==============================================
-    # ВАЛИДАЦИЯ
+    # VALIDATION
     # ==============================================
     @validator('ENV')
     def validate_env(cls, v):
         allowed = ['development', 'staging', 'production']
         if v not in allowed:
-            raise ValueError(f'ENV должно быть одним из: {allowed}')
+            raise ValueError(f'ENV must be one of: {allowed}')
         return v
 
     @validator('LOG_LEVEL')
     def validate_log_level(cls, v):
         allowed = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
         if v.upper() not in allowed:
-            raise ValueError(f'LOG_LEVEL должно быть одним из: {allowed}')
+            raise ValueError(f'LOG_LEVEL must be one of: {allowed}')
         return v.upper()
 
     @validator('CHROMA_DB_PATH', 'KNOWLEDGE_BASE_PATH', 'LOGS_DIR')
@@ -169,17 +169,17 @@ class Settings(BaseSettings):
         return str(path.absolute())
 
     # ==============================================
-    # КОНФИГУРАЦИЯ ЧТЕНИЯ
+    # CONFIGURATION READING
     # ==============================================
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
-        "extra": "allow"  # <--- Разрешаем лишние ключи в .env
+        "extra": "allow"  # <--- Allow extra keys in .env
     }
 
     # ==============================================
-    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    # HELPER METHODS
     # ==============================================
     @property
     def is_production(self) -> bool:

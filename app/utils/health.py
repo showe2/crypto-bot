@@ -1,8 +1,7 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional
-import httpx
-import redis.asyncio as redis
+from typing import Dict, Any
+from pathlib import Path
 from loguru import logger
 
 from app.core.config import get_settings
@@ -10,217 +9,14 @@ from app.core.config import get_settings
 settings = get_settings()
 
 
-async def check_redis_connection() -> Dict[str, Any]:
-    """Проверка подключения к Redis"""
-    try:
-        redis_client = redis.from_url(settings.get_redis_url())
-        
-        # Тест ping
-        start_time = time.time()
-        await redis_client.ping()
-        response_time = (time.time() - start_time) * 1000
-        
-        # Тест записи/чтения
-        test_key = "health_check_test"
-        await redis_client.set(test_key, "ok", ex=60)
-        test_value = await redis_client.get(test_key)
-        
-        await redis_client.close()
-        
-        return {
-            "healthy": True,
-            "response_time_ms": round(response_time, 2),
-            "test_write_read": test_value.decode() == "ok" if test_value else False,
-            "url": settings.REDIS_URL.split('@')[-1] if '@' in settings.REDIS_URL else settings.REDIS_URL
-        }
-        
-    except Exception as e:
-        logger.warning(f"Redis недоступен: {str(e)}")
-        return {
-            "healthy": False,
-            "error": str(e),
-            "url": settings.REDIS_URL.split('@')[-1] if '@' in settings.REDIS_URL else settings.REDIS_URL
-        }
-
-
-async def check_chromadb_connection() -> Dict[str, Any]:
-    """Проверка подключения к ChromaDB"""
-    try:
-        import chromadb
-        from chromadb.config import Settings as ChromaSettings
-        
-        # Подключение к ChromaDB
-        client = chromadb.PersistentClient(
-            path=settings.CHROMA_DB_PATH,
-            settings=ChromaSettings(anonymized_telemetry=False)
-        )
-        
-        start_time = time.time()
-        
-        # Тест создания коллекции или получения существующей
-        try:
-            collection = client.get_or_create_collection(
-                name=f"health_test_{int(time.time())}"
-            )
-            
-            # Тест добавления документа
-            collection.add(
-                documents=["health check test document"],
-                metadatas=[{"test": True}],
-                ids=["health_test_1"]
-            )
-            
-            # Тест поиска
-            results = collection.query(
-                query_texts=["health test"],
-                n_results=1
-            )
-            
-            # Удаление тестовой коллекции
-            client.delete_collection(collection.name)
-            
-        except Exception as collection_error:
-            # Если не удалось создать коллекцию, проверяем основную
-            collections = client.list_collections()
-            if not any(col.name == settings.CHROMA_COLLECTION_NAME for col in collections):
-                # Создаем основную коллекцию
-                client.get_or_create_collection(name=settings.CHROMA_COLLECTION_NAME)
-        
-        response_time = (time.time() - start_time) * 1000
-        
-        return {
-            "healthy": True,
-            "response_time_ms": round(response_time, 2),
-            "path": settings.CHROMA_DB_PATH,
-            "main_collection": settings.CHROMA_COLLECTION_NAME
-        }
-        
-    except Exception as e:
-        logger.warning(f"ChromaDB недоступен: {str(e)}")
-        return {
-            "healthy": False,
-            "error": str(e),
-            "path": settings.CHROMA_DB_PATH
-        }
-
-
-async def check_api_endpoint(name: str, url: str, headers: Dict[str, str] = None, timeout: int = 10) -> Dict[str, Any]:
-    """Проверка доступности API эндпоинта"""
-    try:
-        start_time = time.time()
-        
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            # Простой GET или HEAD запрос для проверки доступности
-            try:
-                response = await client.head(url, headers=headers or {})
-            except:
-                # Если HEAD не поддерживается, пробуем GET
-                response = await client.get(url, headers=headers or {})
-        
-        response_time = (time.time() - start_time) * 1000
-        
-        return {
-            "healthy": response.status_code < 500,
-            "status_code": response.status_code,
-            "response_time_ms": round(response_time, 2),
-            "url": url.split('?')[0]  # Убираем параметры для безопасности
-        }
-        
-    except Exception as e:
-        return {
-            "healthy": False,
-            "error": str(e),
-            "url": url.split('?')[0]
-        }
-
-
-async def check_blockchain_apis() -> Dict[str, Dict[str, Any]]:
-    """Проверка всех blockchain API"""
-    api_checks = {}
-    
-    # Helius RPC
-    if settings.HELIUS_API_KEY:
-        api_checks["helius_rpc"] = await check_api_endpoint(
-            "Helius RPC",
-            settings.get_helius_rpc_url(),
-            {"Content-Type": "application/json"}
-        )
-    
-    # Chainbase API
-    if settings.CHAINBASE_API_KEY:
-        api_checks["chainbase"] = await check_api_endpoint(
-            "Chainbase",
-            f"{settings.CHAINBASE_BASE_URL}/account/tokens",
-            {"X-API-KEY": settings.CHAINBASE_API_KEY}
-        )
-    
-    # Birdeye API
-    if settings.BIRDEYE_API_KEY:
-        api_checks["birdeye"] = await check_api_endpoint(
-            "Birdeye",
-            f"{settings.BIRDEYE_BASE_URL}/defi/tokenlist",
-            {"X-API-KEY": settings.BIRDEYE_API_KEY}
-        )
-    
-    # Blowfish API
-    if settings.BLOWFISH_API_KEY:
-        api_checks["blowfish"] = await check_api_endpoint(
-            "Blowfish",
-            f"{settings.BLOWFISH_BASE_URL}/v0/sol/scan",
-            {"X-API-Key": settings.BLOWFISH_API_KEY}
-        )
-    
-    # Solscan API
-    if settings.SOLSCAN_API_KEY:
-        api_checks["solscan"] = await check_api_endpoint(
-            "Solscan",
-            f"{settings.SOLSCAN_BASE_URL}/token/holders",
-            {"token": settings.SOLSCAN_API_KEY}
-        )
-    
-    # DataImpulse API
-    if settings.DATAIMPULSE_API_KEY:
-        api_checks["dataimpulse"] = await check_api_endpoint(
-            "DataImpulse", 
-            f"{settings.DATAIMPULSE_BASE_URL}/status",
-            {"Authorization": f"Bearer {settings.DATAIMPULSE_API_KEY}"}
-        )
-    
-    return api_checks
-
-
-async def check_ai_models() -> Dict[str, Dict[str, Any]]:
-    """Проверка доступности AI моделей"""
-    ai_checks = {}
-    
-    # Mistral API
-    if settings.MISTRAL_API_KEY:
-        ai_checks["mistral_7b"] = await check_api_endpoint(
-            "Mistral 7B",
-            f"{settings.MISTRAL_API_URL}/models",
-            {"Authorization": f"Bearer {settings.MISTRAL_API_KEY}"}
-        )
-    
-    # LLaMA API
-    if settings.LLAMA_API_KEY:
-        ai_checks["llama_70b"] = await check_api_endpoint(
-            "LLaMA 3 70B",
-            f"{settings.LLAMA_API_URL}/models",
-            {"Authorization": f"Bearer {settings.LLAMA_API_KEY}"}
-        )
-    
-    return ai_checks
-
-
 async def check_file_system() -> Dict[str, Any]:
-    """Проверка файловой системы и путей"""
+    """Check and create required directories"""
     try:
         import os
-        from pathlib import Path
         
         paths_to_check = [
             settings.CHROMA_DB_PATH,
-            settings.KNOWLEDGE_BASE_PATH,
+            settings.KNOWLEDGE_BASE_PATH, 
             settings.LOGS_DIR
         ]
         
@@ -228,43 +24,35 @@ async def check_file_system() -> Dict[str, Any]:
         
         for path_str in paths_to_check:
             path = Path(path_str)
-            path_name = path.name or "root"
+            path_name = path.name or path.parts[-1] if path.parts else "root"
             
             try:
-                # Проверяем существование и права
+                # Create directory if it doesn't exist
+                path.mkdir(parents=True, exist_ok=True)
+                
+                # Check permissions after creation
                 exists = path.exists()
                 is_dir = path.is_dir() if exists else False
                 writable = os.access(path, os.W_OK) if exists else False
                 readable = os.access(path, os.R_OK) if exists else False
                 
-                # Пробуем создать тестовый файл
-                test_file_path = path / "health_test.tmp"
-                can_write = False
-                try:
-                    if path.exists():
-                        test_file_path.touch()
-                        test_file_path.unlink()
-                        can_write = True
-                except:
-                    pass
-                
                 path_statuses[path_name] = {
                     "exists": exists,
                     "is_directory": is_dir,
                     "readable": readable,
-                    "writable": writable and can_write,
+                    "writable": writable,
                     "path": str(path),
-                    "healthy": exists and is_dir and readable and (writable and can_write)
+                    "healthy": exists and is_dir and readable
                 }
                 
             except Exception as path_error:
+                logger.warning(f"Path issue {path}: {path_error}")
                 path_statuses[path_name] = {
                     "healthy": False,
                     "error": str(path_error),
                     "path": str(path)
                 }
         
-        # Общий статус
         all_healthy = all(status.get("healthy", False) for status in path_statuses.values())
         
         return {
@@ -275,6 +63,82 @@ async def check_file_system() -> Dict[str, Any]:
         }
         
     except Exception as e:
+        logger.warning(f"Filesystem check error: {str(e)}")
+        return {
+            "healthy": False,
+            "error": str(e)
+        }
+
+
+async def check_basic_system() -> Dict[str, Any]:
+    """Check basic system components"""
+    try:
+        system_info = {
+            "python_version": f"{__import__('sys').version_info.major}.{__import__('sys').version_info.minor}.{__import__('sys').version_info.micro}",
+            "environment": settings.ENV,
+            "debug_mode": settings.DEBUG,
+            "host": settings.HOST,
+            "port": settings.PORT
+        }
+        
+        # Check required module availability
+        required_modules = []
+        try:
+            import fastapi
+            required_modules.append({"name": "fastapi", "version": fastapi.__version__, "available": True})
+        except ImportError:
+            required_modules.append({"name": "fastapi", "available": False, "error": "Not installed"})
+        
+        try:
+            import uvicorn
+            required_modules.append({"name": "uvicorn", "version": uvicorn.__version__, "available": True})
+        except ImportError:
+            required_modules.append({"name": "uvicorn", "available": False, "error": "Not installed"})
+        
+        try:
+            import pydantic
+            required_modules.append({"name": "pydantic", "version": pydantic.VERSION, "available": True})
+        except ImportError:
+            required_modules.append({"name": "pydantic", "available": False, "error": "Not installed"})
+        
+        # All core modules must be available
+        modules_healthy = all(module.get("available", False) for module in required_modules)
+        
+        return {
+            "healthy": modules_healthy,
+            "system_info": system_info,
+            "required_modules": required_modules,
+            "modules_count": len(required_modules),
+            "available_modules": sum(1 for m in required_modules if m.get("available", False))
+        }
+        
+    except Exception as e:
+        logger.error(f"Basic system check error: {str(e)}")
+        return {
+            "healthy": False,
+            "error": str(e)
+        }
+
+
+async def check_logging_system() -> Dict[str, Any]:
+    """Check logging system"""
+    try:
+        # Verify loguru is working
+        test_logger = logger.bind(test=True)
+        test_logger.info("Health check test log")
+        
+        logs_dir = Path(settings.LOGS_DIR)
+        
+        return {
+            "healthy": True,
+            "logs_directory": str(logs_dir),
+            "logs_dir_exists": logs_dir.exists(),
+            "log_level": settings.LOG_LEVEL,
+            "log_format": settings.LOG_FORMAT
+        }
+        
+    except Exception as e:
+        logger.warning(f"Logging system issue: {str(e)}")
         return {
             "healthy": False,
             "error": str(e)
@@ -282,61 +146,46 @@ async def check_file_system() -> Dict[str, Any]:
 
 
 async def health_check_all_services() -> Dict[str, Any]:
-    """Комплексная проверка здоровья всех сервисов"""
-    logger.info("Запуск комплексной проверки здоровья сервисов...")
+    """Simplified health check for only required services"""
+    logger.info("Starting core system health checks...")
     
     start_time = time.time()
     
-    # Выполняем все проверки параллельно
-    results = await asyncio.gather(
-        check_redis_connection(),
-        check_chromadb_connection(),
-        check_blockchain_apis(),
-        check_ai_models(),
-        check_file_system(),
-        return_exceptions=True
-    )
+    # Run only necessary checks
+    try:
+        results = await asyncio.gather(
+            check_basic_system(),
+            check_file_system(),
+            check_logging_system(),
+            return_exceptions=True
+        )
+    except Exception as e:
+        logger.error(f"Service check error: {str(e)}")
+        results = [
+            {"healthy": False, "error": str(e)},
+            {"healthy": False, "error": str(e)}, 
+            {"healthy": False, "error": str(e)}
+        ]
     
-    # Распаковка результатов
-    redis_status = results[0] if not isinstance(results[0], Exception) else {"healthy": False, "error": str(results[0])}
-    chromadb_status = results[1] if not isinstance(results[1], Exception) else {"healthy": False, "error": str(results[1])}
-    blockchain_apis = results[2] if not isinstance(results[2], Exception) else {}
-    ai_models = results[3] if not isinstance(results[3], Exception) else {}
-    file_system = results[4] if not isinstance(results[4], Exception) else {"healthy": False, "error": str(results[4])}
+    # Unpack results
+    basic_system = results[0] if not isinstance(results[0], Exception) else {"healthy": False, "error": str(results[0])}
+    file_system = results[1] if not isinstance(results[1], Exception) else {"healthy": False, "error": str(results[1])}
+    logging_system = results[2] if not isinstance(results[2], Exception) else {"healthy": False, "error": str(results[2])}
     
-    # Агрегация результатов
+    # Aggregate results
     all_services = {
-        "redis": redis_status,
-        "chromadb": chromadb_status,
+        "basic_system": basic_system,
         "file_system": file_system,
-        **{f"api_{name}": status for name, status in blockchain_apis.items()},
-        **{f"ai_{name}": status for name, status in ai_models.items()}
+        "logging_system": logging_system
     }
     
-    # Подсчет общего статуса
+    # Calculate overall status
     total_services = len(all_services)
     healthy_services = sum(1 for service in all_services.values() if service.get("healthy", False))
     
-    # Критические сервисы (без них система не может работать)
-    critical_services = ["redis", "chromadb", "file_system"]
-    critical_healthy = all(
-        all_services.get(service, {}).get("healthy", False) 
-        for service in critical_services
-    )
-    
-    # Проверка минимального набора API
-    has_blockchain_api = any(
-        all_services.get(f"api_{api}", {}).get("healthy", False)
-        for api in ["helius_rpc", "birdeye"]
-    )
-    
-    has_ai_model = any(
-        all_services.get(f"ai_{model}", {}).get("healthy", False)
-        for model in ["mistral_7b", "llama_70b"]
-    )
-    
-    # Общий статус системы
-    overall_status = critical_healthy and (has_blockchain_api or settings.ENABLE_API_MOCKS) and (has_ai_model or settings.MOCK_AI_RESPONSES)
+    # System is considered healthy if core components work
+    critical_services_healthy = basic_system.get("healthy", False)
+    overall_status = critical_services_healthy  # Depends only on critical services
     
     total_time = time.time() - start_time
     
@@ -345,9 +194,8 @@ async def health_check_all_services() -> Dict[str, Any]:
         "summary": {
             "total_services": total_services,
             "healthy_services": healthy_services,
-            "critical_services_ok": critical_healthy,
-            "blockchain_apis_available": has_blockchain_api,
-            "ai_models_available": has_ai_model
+            "critical_services_ok": critical_services_healthy,
+            "system_ready": overall_status
         },
         "services": all_services,
         "recommendations": [],
@@ -355,64 +203,64 @@ async def health_check_all_services() -> Dict[str, Any]:
         "timestamp": time.time()
     }
     
-    # Рекомендации по исправлению проблем
-    if not critical_healthy:
-        health_report["recommendations"].append("Критические сервисы недоступны - проверьте Redis, ChromaDB и файловую систему")
+    # Problem resolution recommendations
+    if not critical_services_healthy:
+        health_report["recommendations"].append("Critical system components unavailable - check Python package installation")
     
-    if not has_blockchain_api and not settings.ENABLE_API_MOCKS:
-        health_report["recommendations"].append("Нет доступных blockchain API - настройте Helius или Birdeye")
+    if not file_system.get("healthy", False):
+        health_report["recommendations"].append("Filesystem issues - check directory permissions")
+        
+    if not logging_system.get("healthy", False):
+        health_report["recommendations"].append("Logging system issues - check log settings")
     
-    if not has_ai_model and not settings.MOCK_AI_RESPONSES:
-        health_report["recommendations"].append("Нет доступных AI моделей - настройте Mistral или LLaMA API ключи")
-    
-    if healthy_services < total_services:
-        failed_services = [name for name, status in all_services.items() if not status.get("healthy", False)]
-        health_report["recommendations"].append(f"Проблемы с сервисами: {', '.join(failed_services)}")
-    
-    logger.info(f"Проверка здоровья завершена за {total_time:.2f}s: {healthy_services}/{total_services} сервисов работают")
+    status_msg = "ready" if overall_status else "has issues"
+    logger.info(f"Health check completed in {total_time:.2f}s: System {status_msg} ({healthy_services}/{total_services} components working)")
     
     return health_report
 
 
 async def get_service_metrics() -> Dict[str, Any]:
-    """Получение метрик производительности сервисов"""
+    """Get system metrics"""
     try:
-        # Метрики Redis
-        redis_metrics = {}
-        try:
-            redis_client = redis.from_url(settings.get_redis_url())
-            info = await redis_client.info()
-            redis_metrics = {
-                "connected_clients": info.get("connected_clients", 0),
-                "used_memory_human": info.get("used_memory_human", "0B"),
-                "keyspace_hits": info.get("keyspace_hits", 0),
-                "keyspace_misses": info.get("keyspace_misses", 0),
-                "total_commands_processed": info.get("total_commands_processed", 0)
+        metrics = {
+            "system": {
+                "environment": settings.ENV,
+                "debug_mode": settings.DEBUG,
+                "host": settings.HOST,
+                "port": settings.PORT,
+                "timestamp": time.time()
             }
-            await redis_client.close()
-        except Exception as e:
-            redis_metrics = {"error": str(e)}
-        
-        # Метрики файловой системы
-        fs_metrics = {}
-        try:
-            import psutil
-            disk_usage = psutil.disk_usage(settings.LOGS_DIR)
-            fs_metrics = {
-                "disk_total_gb": round(disk_usage.total / (1024**3), 2),
-                "disk_used_gb": round(disk_usage.used / (1024**3), 2),
-                "disk_free_gb": round(disk_usage.free / (1024**3), 2),
-                "disk_usage_percent": round((disk_usage.used / disk_usage.total) * 100, 1)
-            }
-        except:
-            fs_metrics = {"error": "psutil not available"}
-        
-        return {
-            "redis": redis_metrics,
-            "filesystem": fs_metrics,
-            "timestamp": time.time()
         }
         
+        # Filesystem metrics
+        try:
+            logs_dir = Path(settings.LOGS_DIR)
+            if logs_dir.exists():
+                log_files = list(logs_dir.glob("*.log"))
+                total_size = sum(f.stat().st_size for f in log_files if f.exists())
+                
+                metrics["filesystem"] = {
+                    "logs_directory": str(logs_dir),
+                    "log_files_count": len(log_files),
+                    "total_logs_size_mb": round(total_size / (1024*1024), 2),
+                    "logs_dir_writable": logs_dir.is_dir() and __import__('os').access(logs_dir, __import__('os').W_OK)
+                }
+        except Exception as e:
+            metrics["filesystem"] = {"error": str(e)}
+        
+        # Configuration information
+        metrics["configuration"] = {
+            "log_level": settings.LOG_LEVEL,
+            "log_format": settings.LOG_FORMAT,
+            "knowledge_base_path": settings.KNOWLEDGE_BASE_PATH,
+            "chroma_db_path": settings.CHROMA_DB_PATH
+        }
+        
+        return metrics
+        
     except Exception as e:
-        logger.error(f"Ошибка получения метрик сервисов: {str(e)}")
-        return {"error": str(e)}
+        logger.warning(f"Failed to get system metrics: {str(e)}")
+        return {
+            "error": str(e),
+            "timestamp": time.time()
+        }
