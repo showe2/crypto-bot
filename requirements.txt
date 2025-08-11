@@ -2,4 +2,6 @@ fastapi==0.116.1
 loguru==0.7.3
 pydantic==2.11.7
 pydantic_settings==2.10.1
+python_dateutil==2.9.0.post0
+redis==6.4.0
 uvicorn==0.35.0
