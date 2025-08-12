@@ -47,13 +47,17 @@ cd "$PROJECT_ROOT"
 # Virtual environment directory
 VENV_DIR=".venv"
 
-# Python executable preference (simplified)
+# Python executable preference
 PYTHON_CMD="python"
 
 # Default values
 DEFAULT_HOST="0.0.0.0"
 DEFAULT_PORT="8000"
 DEFAULT_ENV="development"
+
+# ChromaDB version compatibility matrix
+CHROMADB_VERSION="0.4.24"
+SENTENCE_TRANSFORMERS_VERSION="2.7.0"
 
 # ==============================================
 # FUNCTIONS
@@ -133,7 +137,115 @@ setup_virtual_environment() {
     python -m pip install --upgrade pip
 }
 
-# Install dependencies
+# Check if ChromaDB is already properly installed
+check_chromadb_installed() {
+    log_info "Checking existing ChromaDB installation..."
+    
+    if python -c "
+import chromadb
+import sentence_transformers
+print(f'ChromaDB version: {chromadb.__version__}')
+print(f'SentenceTransformers version: {sentence_transformers.__version__}')
+
+# Test basic functionality
+client = chromadb.Client()
+collection = client.create_collection('test_collection_$(date +%s)')
+collection.add(documents=['test'], ids=['test_id'])
+results = collection.query(query_texts=['test'], n_results=1)
+client.delete_collection('test_collection_$(date +%s)')
+print('✅ ChromaDB functionality test passed')
+" 2>/dev/null; then
+        log_success "ChromaDB is already properly installed and working"
+        return 0
+    else
+        log_info "ChromaDB needs to be installed or is not working properly"
+        return 1
+    fi
+}
+
+# Install ChromaDB
+install_chromadb() {
+    log_step "Installing ChromaDB..."
+    
+    # First check if it's already working
+    if check_chromadb_installed; then
+        return 0
+    fi
+    
+    # Clean any existing broken installations
+    log_info "Cleaning any existing ChromaDB installations..."
+    pip uninstall -y chromadb sentence-transformers 2>/dev/null || true
+    
+    # Detect system architecture and Python version for optimal installation
+    PYTHON_VERSION=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+    ARCHITECTURE=$(python -c "import platform; print(platform.machine())")
+    
+    log_info "System info: Python $PYTHON_VERSION, Architecture: $ARCHITECTURE"
+    
+    # Install system-specific optimized packages
+    log_info "Installing ChromaDB with compatible dependencies..."
+    
+    # Step 1: Install core dependencies that ChromaDB needs
+    log_info "Installing core dependencies..."
+    pip install --no-cache-dir \
+        numpy>=1.21.0 \
+        pandas>=1.3.0 \
+        requests>=2.28.0 \
+        pyyaml>=6.0 \
+        overrides>=7.4.0 \
+        importlib-metadata>=6.0.0 \
+        typing-extensions>=4.5.0
+    
+    # Step 2: Install PyTorch with CPU-only for better compatibility
+    log_info "Installing PyTorch (CPU version for compatibility)..."
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+    
+    # Step 3: Install sentence-transformers first (it's a ChromaDB dependency)
+    log_info "Installing sentence-transformers..."
+    pip install --no-cache-dir sentence-transformers==$SENTENCE_TRANSFORMERS_VERSION
+    
+    # Step 4: Install ChromaDB with specific version
+    log_info "Installing ChromaDB..."
+    pip install --no-cache-dir chromadb==$CHROMADB_VERSION
+    
+    # Step 5: Verify installation
+    log_info "Verifying ChromaDB installation..."
+    if python -c "
+import chromadb
+import sentence_transformers
+print(f'✅ ChromaDB {chromadb.__version__} installed successfully')
+print(f'✅ SentenceTransformers {sentence_transformers.__version__} installed successfully')
+
+# Test basic functionality
+try:
+    client = chromadb.Client()
+    test_collection_name = f'test_collection_{int(__import__(\"time\").time())}'
+    collection = client.create_collection(test_collection_name)
+    collection.add(documents=['test document'], ids=['test_id'])
+    results = collection.query(query_texts=['test'], n_results=1)
+    
+    # Cleanup
+    try:
+        client.delete_collection(test_collection_name)
+    except:
+        pass
+        
+    print('✅ ChromaDB functionality test passed')
+    exit(0)
+except Exception as e:
+    print(f'❌ ChromaDB test failed: {e}')
+    exit(1)
+" 2>/dev/null; then
+        log_success "ChromaDB installation completed and verified!"
+        return 0
+    else
+        log_error "ChromaDB installation failed verification"
+        log_warn "ChromaDB will be disabled - system will work without vector storage"
+        return 1
+    fi
+}
+
+# Install dependencies with optimized ChromaDB handling
 install_dependencies() {
     log_step "Installing Python dependencies..."
     
@@ -142,33 +254,24 @@ install_dependencies() {
         exit 1
     fi
     
-    # Install basic requirements first
-    log_info "Installing core dependencies..."
-    pip install -r requirements.txt
+    # Install base requirements first (excluding ChromaDB and sentence-transformers)
+    log_info "Installing core dependencies from requirements.txt..."
     
-    # Check and install optional dependencies
-    log_info "Checking optional dependencies..."
+    # Create temporary requirements file without ChromaDB
+    grep -v -E "(chromadb|sentence-transformers)" requirements.txt > /tmp/requirements_base.txt
+    pip install --no-cache-dir -r /tmp/requirements_base.txt
+    rm -f /tmp/requirements_base.txt
     
-    # Check ChromaDB
-    if python -c "import chromadb, sentence_transformers" 2>/dev/null; then
-        log_success "ChromaDB already installed"
+    # Install Redis client
+    log_info "Installing Redis client..."
+    pip install --no-cache-dir redis
+    
+    # Install ChromaDB with our optimized method
+    if install_chromadb; then
+        log_success "ChromaDB installed successfully"
     else
-        log_info "ChromaDB not found, installing..."
-        
-        # Try different installation methods
-        if install_chromadb; then
-            log_success "ChromaDB installed successfully"
-        else
-            log_warn "ChromaDB installation failed - continuing without it"
-        fi
-    fi
-    
-    # Check Redis
-    if python -c "import redis" 2>/dev/null; then
-        log_success "Redis client already installed"
-    else
-        log_info "Installing Redis client..."
-        pip install redis
+        log_warn "ChromaDB installation failed - continuing without it"
+        log_info "The system will work with basic functionality"
     fi
     
     log_success "Dependencies installation completed"
@@ -179,68 +282,9 @@ install_dependencies() {
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
             log_info "Installing development dependencies..."
-            pip install -r requirements-dev.txt
+            pip install --no-cache-dir -r requirements-dev.txt
         fi
     fi
-}
-
-# Function to install ChromaDB with multiple fallback methods
-install_chromadb() {
-    log_info "Attempting ChromaDB installation..."
-    
-    # Method 1: Try standard installation
-    log_info "Method 1: Standard installation..."
-    if pip install chromadb==0.5.23 sentence-transformers==2.7.0 2>/dev/null; then
-        if python -c "import chromadb, sentence_transformers" 2>/dev/null; then
-            log_success "Standard installation successful"
-            return 0
-        fi
-    fi
-    
-    # Method 2: Try with pre-compiled wheels only
-    log_info "Method 2: Pre-compiled wheels only..."
-    if pip install --only-binary=all chromadb sentence-transformers 2>/dev/null; then
-        if python -c "import chromadb, sentence_transformers" 2>/dev/null; then
-            log_success "Pre-compiled wheels installation successful"
-            return 0
-        fi
-    fi
-    
-    # Method 3: Install dependencies separately
-    log_info "Method 3: Installing dependencies separately..."
-    
-    # Install torch first (CPU version for compatibility)
-    if pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu 2>/dev/null; then
-        log_info "PyTorch installed"
-    fi
-    
-    # Install other dependencies
-    pip install numpy pandas requests 2>/dev/null
-    pip install onnxruntime 2>/dev/null
-    
-    # Try ChromaDB again
-    if pip install chromadb sentence-transformers 2>/dev/null; then
-        if python -c "import chromadb, sentence_transformers" 2>/dev/null; then
-            log_success "Separate dependencies installation successful"
-            return 0
-        fi
-    fi
-    
-    # Method 4: Try lighter version
-    log_info "Method 4: Trying lighter ChromaDB installation..."
-    if pip install chromadb[default] 2>/dev/null; then
-        if python -c "import chromadb" 2>/dev/null; then
-            log_info "Light ChromaDB installed, installing sentence-transformers..."
-            if pip install sentence-transformers 2>/dev/null; then
-                log_success "Light installation successful"
-                return 0
-            fi
-        fi
-    fi
-    
-    log_warn "All ChromaDB installation methods failed"
-    log_info "ChromaDB will be disabled - system will work without vector storage"
-    return 1
 }
 
 # Setup environment file
@@ -327,18 +371,27 @@ except Exception as e:
         exit 1
     }
     
-    # Check optional dependencies
-    log_info "Checking optional dependencies..."
+    # Check dependencies
+    log_info "Checking dependencies status..."
     
     # Check ChromaDB
-    python -c "
+    if python -c "
 try:
     import chromadb
     import sentence_transformers
-    print('✅ ChromaDB: Available')
-except ImportError:
-    print('⚠️  ChromaDB: Not available (optional)')
-"
+    
+    # Test functionality
+    client = chromadb.Client()
+    print(f'✅ ChromaDB {chromadb.__version__}: Fully functional')
+except ImportError as e:
+    print(f'⚠️  ChromaDB: Not available - {e}')
+except Exception as e:
+    print(f'⚠️  ChromaDB: Available but not functional - {e}')
+" 2>/dev/null; then
+        true  # ChromaDB status already printed
+    else
+        log_warn "ChromaDB check failed"
+    fi
     
     # Check Redis client
     python -c "
@@ -346,7 +399,7 @@ try:
     import redis
     print('✅ Redis client: Available')
 except ImportError:
-    print('⚠️  Redis client: Not available (optional)')
+    print('⚠️  Redis client: Not available')
 "
     
     # Test app imports
@@ -360,7 +413,7 @@ except ImportError as e:
     print(f'⚠️  Some utils modules not available: {e}')
 "
     
-    log_success "Health check passed"
+    log_success "Health check completed"
 }
 
 # Load environment variables and get runtime configuration
@@ -431,17 +484,20 @@ main() {
     log_info "  OS: $OSTYPE"
     log_info "  Shell: $SHELL"
     log_info "  Working directory: $(pwd)"
+    log_info "  ChromaDB target version: $CHROMADB_VERSION"
+    log_info "  SentenceTransformers target version: $SENTENCE_TRANSFORMERS_VERSION"
     
     # Check if help was requested
     if [[ "$1" == "--help" || "$1" == "-h" ]]; then
         echo "Usage: $0 [OPTIONS]"
         echo ""
         echo "Options:"
-        echo "  --help, -h         Show this help message"
-        echo "  --check-only       Run health check only"
-        echo "  --install-only     Install dependencies only"
-        echo "  --install-chromadb Force ChromaDB installation"
-        echo "  --debug            Enable debug output"
+        echo "  --help, -h             Show this help message"
+        echo "  --check-only           Run health check only"
+        echo "  --install-only         Install dependencies only"
+        echo "  --reinstall-chromadb   Force reinstall ChromaDB"
+        echo "  --skip-chromadb        Skip ChromaDB installation"
+        echo "  --debug                Enable debug output"
         echo ""
         echo "Environment variables:"
         echo "  HOST          Server host (default: $DEFAULT_HOST)"
@@ -451,9 +507,9 @@ main() {
         exit 0
     fi
     
-    # Force ChromaDB installation if requested
-    if [[ "$1" == "--install-chromadb" || "$2" == "--install-chromadb" ]]; then
-        log_step "Force installing ChromaDB..."
+    # Handle ChromaDB reinstallation
+    if [[ "$1" == "--reinstall-chromadb" || "$2" == "--reinstall-chromadb" ]]; then
+        log_step "Force reinstalling ChromaDB..."
         
         # Check if virtual environment exists
         if [ ! -d "$VENV_DIR" ]; then
@@ -468,21 +524,24 @@ main() {
             source "$VENV_DIR/bin/activate"
         fi
         
-        # Make install script executable and run it
-        chmod +x install_chromadb.sh 2>/dev/null || true
-        if [ -f "install_chromadb.sh" ]; then
-            ./install_chromadb.sh
+        # Force reinstall ChromaDB
+        log_info "Uninstalling existing ChromaDB..."
+        pip uninstall -y chromadb sentence-transformers 2>/dev/null || true
+        
+        if install_chromadb; then
+            log_success "ChromaDB reinstallation completed!"
         else
-            # Fallback to inline installation
-            log_info "Using inline ChromaDB installation..."
-            if install_chromadb; then
-                log_success "ChromaDB installation completed!"
-            else
-                log_error "ChromaDB installation failed"
-                exit 1
-            fi
+            log_error "ChromaDB reinstallation failed"
+            exit 1
         fi
         exit 0
+    fi
+    
+    # Check for skip ChromaDB flag
+    SKIP_CHROMADB=false
+    if [[ "$1" == "--skip-chromadb" || "$2" == "--skip-chromadb" ]]; then
+        SKIP_CHROMADB=true
+        log_info "Skipping ChromaDB installation as requested"
     fi
     
     # Enable debug mode if requested
@@ -502,7 +561,16 @@ main() {
     
     # Step 4: Install dependencies
     if [[ "$1" != "--check-only" ]]; then
-        install_dependencies
+        if [ "$SKIP_CHROMADB" = true ]; then
+            # Install dependencies without ChromaDB
+            log_info "Installing dependencies without ChromaDB..."
+            grep -v -E "(chromadb|sentence-transformers)" requirements.txt > /tmp/requirements_no_chromadb.txt
+            pip install --no-cache-dir -r /tmp/requirements_no_chromadb.txt
+            pip install --no-cache-dir redis
+            rm -f /tmp/requirements_no_chromadb.txt
+        else
+            install_dependencies
+        fi
     fi
     
     # Step 5: Setup environment
