@@ -340,9 +340,11 @@ create_directories() {
 run_health_check() {
     log_step "Running system health check..."
     
-    # Load environment variables
+    # Load environment variables safely
     if [ -f ".env" ]; then
-        export $(grep -v '^#' .env | xargs)
+        set -a  # automatically export all variables
+        source .env
+        set +a  # stop automatically exporting
     fi
     
     # Check if we can import main modules
@@ -371,7 +373,6 @@ except Exception as e:
         exit 1
     }
     
-    # Check dependencies
     log_info "Checking dependencies status..."
     
     # Check ChromaDB
@@ -420,7 +421,9 @@ except ImportError as e:
 load_runtime_config() {
     # Load environment variables from .env
     if [ -f ".env" ]; then
-        export $(grep -v '^#' .env | xargs)
+        set -a  # automatically export all variables
+        source .env
+        set +a  # stop automatically exporting
     fi
     
     # Set runtime variables with fallbacks
