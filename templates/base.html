@@ -121,18 +121,23 @@
         background: linear-gradient(135deg, #6b7280, #9ca3af);
       }
 
-      .dark-mode {
-        background-color: #1f2937;
-        color: #f9fafb;
+      /* Fixed layout styles */
+      .main-content {
+        margin-left: 0;
+        transition: margin-left 0.3s ease;
       }
-      .dark-mode .bg-white {
-        background-color: #374151;
+
+      @media (min-width: 1024px) {
+        .main-content {
+          margin-left: 16rem; /* 64 * 0.25rem = 16rem = 256px */
+        }
       }
-      .dark-mode .text-gray-900 {
-        color: #f9fafb;
-      }
-      .dark-mode .border-gray-200 {
-        border-color: #4b5563;
+
+      .sidebar-overlay {
+        position: fixed;
+        inset: 0;
+        background-color: rgba(0, 0, 0, 0.5);
+        z-index: 30;
       }
     </style>
   </head>
@@ -159,44 +164,45 @@
       <!-- Header -->
       {% include 'components/header.html' %}
 
-      <div class="flex h-full pt-16">
-        <!-- Sidebar -->
-        {% include 'components/sidebar.html' %}
+      <!-- Sidebar -->
+      {% include 'components/sidebar.html' %}
 
-        <!-- Main Content -->
-        <main class="flex-1 overflow-y-auto">
-          <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
-            {% block content %}{% endblock %}
-          </div>
-        </main>
-      </div>
+      <!-- Main Content -->
+      <main class="main-content pt-16 min-h-screen">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          {% block content %}{% endblock %}
+        </div>
+      </main>
     </div>
 
     <!-- Toast Notifications -->
     <div
       x-show="notification"
       x-transition
-      class="fixed top-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50"
+      class="fixed top-20 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50"
     >
       <div class="flex items-start">
         <div
-          x-show="notification.type === 'success'"
+          x-show="notification && notification.type === 'success'"
           class="text-green-500 mr-3"
         >
           <i class="fas fa-check-circle"></i>
         </div>
-        <div x-show="notification.type === 'error'" class="text-red-500 mr-3">
+        <div
+          x-show="notification && notification.type === 'error'"
+          class="text-red-500 mr-3"
+        >
           <i class="fas fa-exclamation-circle"></i>
         </div>
         <div
-          x-show="notification.type === 'warning'"
+          x-show="notification && notification.type === 'warning'"
           class="text-yellow-500 mr-3"
         >
           <i class="fas fa-exclamation-triangle"></i>
         </div>
         <div>
-          <p class="font-medium text-gray-900" x-text="notification.title"></p>
-          <p class="text-sm text-gray-600" x-text="notification.message"></p>
+          <p class="font-medium text-gray-900" x-text="notification?.title"></p>
+          <p class="text-sm text-gray-600" x-text="notification?.message"></p>
         </div>
         <button
           @click="hideNotification()"
@@ -207,20 +213,7 @@
       </div>
     </div>
 
-    <!-- WebSocket Status -->
-    <div
-      x-show="wsStatus !== 'connected'"
-      class="fixed bottom-4 left-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg"
-    >
-      <i class="fas fa-wifi mr-2"></i>
-      <span
-        x-text="wsStatus === 'connecting' ? 'Connecting...' : 'Connection Lost'"
-      ></span>
-    </div>
-
     <!-- Scripts -->
-    <script src="{{ url_for('static', path='js/api.js') }}"></script>
-    <script src="{{ url_for('static', path='js/websocket.js') }}"></script>
     <script src="{{ url_for('static', path='js/main.js') }}"></script>
 
     <script>
@@ -228,29 +221,38 @@
         return {
           loading: true,
           darkMode: false,
-          sidebarOpen: window.innerWidth >= 1024,
+          sidebarOpen: false,
           currentPage: "{{ request.url.path }}",
           systemHealth: null,
           notification: null,
-          wsStatus: "disconnected",
+          realMetrics: {
+            totalAnalyses: 0,
+            successRate: 0,
+            avgResponseTime: 0,
+            activeTokens: 0,
+          },
 
           init() {
             // Initialize app
             setTimeout(() => {
               this.loading = false;
-            }, 1500);
+            }, 1000);
 
-            // Load system health
+            // Load real data
             this.loadSystemHealth();
+            this.loadRealMetrics();
 
-            // Setup WebSocket
-            this.setupWebSocket();
+            // Close sidebar on mobile by default
+            this.sidebarOpen = window.innerWidth >= 1024;
 
-            // Check for dark mode preference
-            const isDark = localStorage.getItem("darkMode") === "true";
-            if (isDark) {
-              this.toggleDarkMode();
-            }
+            // Handle window resize
+            window.addEventListener("resize", () => {
+              if (window.innerWidth >= 1024) {
+                this.sidebarOpen = true;
+              } else {
+                this.sidebarOpen = false;
+              }
+            });
           },
 
           async loadSystemHealth() {
@@ -259,29 +261,31 @@
               this.systemHealth = await response.json();
             } catch (error) {
               console.error("Failed to load system health:", error);
-              this.showNotification(
-                "error",
-                "System Error",
-                "Failed to load system health"
-              );
             }
           },
 
-          setupWebSocket() {
-            // WebSocket logic will be implemented in websocket.js
-            if (typeof initWebSocket === "function") {
-              initWebSocket(this);
+          async loadRealMetrics() {
+            try {
+              const response = await fetch("/api/dashboard");
+              if (response.ok) {
+                const data = await response.json();
+                if (data.metrics) {
+                  this.realMetrics = data.metrics;
+                }
+              }
+            } catch (error) {
+              console.error("Failed to load real metrics:", error);
             }
-          },
-
-          toggleDarkMode() {
-            this.darkMode = !this.darkMode;
-            document.body.classList.toggle("dark-mode");
-            localStorage.setItem("darkMode", this.darkMode);
           },
 
           toggleSidebar() {
             this.sidebarOpen = !this.sidebarOpen;
+          },
+
+          closeSidebar() {
+            if (window.innerWidth < 1024) {
+              this.sidebarOpen = false;
+            }
           },
 
           showNotification(type, title, message) {
@@ -296,16 +300,16 @@
           },
 
           formatNumber(num) {
-            if (!num) return "N/A";
-            if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
-            if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
-            if (num >= 1e3) return (num / 1e3).toFixed(2) + "K";
-            return num.toFixed(2);
+            if (!num && num !== 0) return "0";
+            if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
+            if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+            if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+            return Math.round(num).toString();
           },
 
           formatPercent(num) {
-            if (!num && num !== 0) return "N/A";
-            return `${num > 0 ? "+" : ""}${num.toFixed(2)}%`;
+            if (!num && num !== 0) return "0%";
+            return `${num > 0 ? "+" : ""}${num.toFixed(1)}%`;
           },
 
           isValidSolanaAddress(address) {

@@ -22,13 +22,6 @@ AI{% endblock %} {% block content %}
           ></i>
           Refresh
         </button>
-        <button
-          @click="exportData()"
-          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-        >
-          <i class="fas fa-download mr-2"></i>
-          Export
-        </button>
       </div>
     </div>
   </div>
@@ -64,6 +57,41 @@ AI{% endblock %} {% block content %}
 
   <!-- Key Metrics -->
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+    <!-- System Status -->
+    <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
+      <div class="flex items-center">
+        <div class="flex-shrink-0">
+          <div
+            class="w-8 h-8 rounded-lg flex items-center justify-center"
+            :class="systemHealth && systemHealth.overall_status ? 'bg-green-100' : 'bg-red-100'"
+          >
+            <i
+              :class="systemHealth && systemHealth.overall_status ? 'fas fa-check-circle text-green-600' : 'fas fa-exclamation-circle text-red-600'"
+            ></i>
+          </div>
+        </div>
+        <div class="ml-4 flex-1">
+          <p class="text-sm font-medium text-gray-500">System Status</p>
+          <p
+            class="text-2xl font-semibold"
+            :class="systemHealth && systemHealth.overall_status ? 'text-green-600' : 'text-red-600'"
+            x-text="systemHealth && systemHealth.overall_status ? 'Online' : 'Issues'"
+          ></p>
+          <div class="flex items-center mt-1">
+            <span class="text-sm text-gray-500">
+              <span
+                x-text="systemHealth ? systemHealth.summary?.healthy_services || 0 : 0"
+              ></span
+              >/<span
+                x-text="systemHealth ? systemHealth.summary?.total_services || 0 : 0"
+              ></span>
+              services healthy
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Total Analyses -->
     <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
       <div class="flex items-center">
@@ -78,14 +106,10 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Total Analyses</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="metrics.totalAnalyses"
+            x-text="realMetrics.totalAnalyses"
           ></p>
           <div class="flex items-center mt-1">
-            <span
-              class="text-sm text-green-600"
-              x-text="'+' + metrics.analysesGrowth + '%'"
-            ></span>
-            <span class="text-sm text-gray-500 ml-1">from last week</span>
+            <span class="text-sm text-gray-500">Lifetime total</span>
           </div>
         </div>
       </div>
@@ -105,13 +129,13 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Success Rate</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="metrics.successRate + '%'"
+            x-text="realMetrics.successRate + '%'"
           ></p>
           <div class="flex items-center mt-1">
             <div class="w-full bg-gray-200 rounded-full h-2">
               <div
                 class="bg-green-600 h-2 rounded-full transition-all duration-300"
-                :style="`width: ${metrics.successRate}%`"
+                :style="`width: ${realMetrics.successRate}%`"
               ></div>
             </div>
           </div>
@@ -133,40 +157,10 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Avg Response</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="metrics.avgResponseTime + 's'"
+            x-text="realMetrics.avgResponseTime + 's'"
           ></p>
           <div class="flex items-center mt-1">
-            <span
-              class="text-sm text-green-600"
-              x-text="'-' + metrics.responseImprovement + '%'"
-            ></span>
-            <span class="text-sm text-gray-500 ml-1">improvement</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Active Tokens -->
-    <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
-      <div class="flex items-center">
-        <div class="flex-shrink-0">
-          <div
-            class="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center"
-          >
-            <i class="fas fa-coins text-yellow-600"></i>
-          </div>
-        </div>
-        <div class="ml-4 flex-1">
-          <p class="text-sm font-medium text-gray-500">Tokens Analyzed</p>
-          <p
-            class="text-2xl font-semibold text-gray-900"
-            x-text="metrics.activeTokens"
-          ></p>
-          <div class="flex items-center mt-1">
-            <span
-              class="text-sm text-blue-600"
-              x-text="metrics.newTokens + ' new today'"
-            ></span>
+            <span class="text-sm text-gray-500">Per analysis</span>
           </div>
         </div>
       </div>
@@ -286,10 +280,6 @@ AI{% endblock %} {% block content %}
                 ></code>
               </p>
               <p>
-                <strong>Command:</strong>
-                <span x-text="analysisResult.command"></span>
-              </p>
-              <p>
                 <strong>Status:</strong>
                 <span x-text="analysisResult.message"></span>
               </p>
@@ -346,10 +336,10 @@ AI{% endblock %} {% block content %}
                   <span
                     class="px-2 py-1 text-xs rounded-full"
                     :class="{
-                                              'bg-green-100 text-green-800': analysis.status === 'completed',
-                                              'bg-yellow-100 text-yellow-800': analysis.status === 'processing',
-                                              'bg-red-100 text-red-800': analysis.status === 'failed'
-                                          }"
+                      'bg-green-100 text-green-800': analysis.status === 'completed',
+                      'bg-yellow-100 text-yellow-800': analysis.status === 'processing',
+                      'bg-red-100 text-red-800': analysis.status === 'failed'
+                    }"
                     x-text="analysis.status"
                   ></span>
                   <button
@@ -402,7 +392,7 @@ AI{% endblock %} {% block content %}
             </div>
             <div class="text-right">
               <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-              <p class="text-xs text-gray-500">2.3s avg</p>
+              <p class="text-xs text-gray-500">Online</p>
             </div>
           </div>
 
@@ -422,56 +412,9 @@ AI{% endblock %} {% block content %}
             </div>
             <div class="text-right">
               <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-              <p class="text-xs text-gray-500">8.7s avg</p>
+              <p class="text-xs text-gray-500">Online</p>
             </div>
           </div>
-        </div>
-
-        <div class="mt-4 pt-3 border-t border-gray-200">
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-gray-600">Queue:</span>
-            <span class="font-medium" x-text="analysisQueue + ' tasks'"></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Quick Stats -->
-      <div class="bg-white rounded-xl shadow-lg p-6">
-        <h3 class="text-lg font-semibold text-gray-900 mb-4">
-          Today's Activity
-        </h3>
-
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <span class="text-gray-600">Analyses</span>
-            <span class="font-semibold" x-text="todayActivity.analyses"></span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-gray-600">Success Rate</span>
-            <span
-              class="font-semibold text-green-600"
-              x-text="todayActivity.successRate + '%'"
-            ></span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-gray-600">Avg Response</span>
-            <span
-              class="font-semibold"
-              x-text="todayActivity.avgResponse + 's'"
-            ></span>
-          </div>
-          <div class="flex items-center justify-between">
-            <span class="text-gray-600">Errors</span>
-            <span
-              class="font-semibold text-red-600"
-              x-text="todayActivity.errors"
-            ></span>
-          </div>
-        </div>
-
-        <!-- Mini Chart -->
-        <div class="mt-4 pt-3 border-t border-gray-200">
-          <canvas id="activityChart" width="100" height="50"></canvas>
         </div>
       </div>
     </div>
@@ -484,16 +427,13 @@ AI{% endblock %} {% block content %}
       isLoading: false,
       isAnalyzing: false,
       analysisResult: null,
-      analysisQueue: 0,
+      systemHealth: null,
 
-      metrics: {
-        totalAnalyses: 1247,
-        analysesGrowth: 12.5,
-        successRate: 94.2,
-        avgResponseTime: 3.2,
-        responseImprovement: 8.3,
-        activeTokens: 892,
-        newTokens: 43,
+      realMetrics: {
+        totalAnalyses: 0,
+        successRate: 0,
+        avgResponseTime: 0,
+        activeTokens: 0,
       },
 
       analysisForm: {
@@ -508,52 +448,46 @@ AI{% endblock %} {% block content %}
         { name: "RAY", mint: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R" },
       ],
 
-      recentAnalyses: [
-        {
-          id: 1,
-          symbol: "BONK",
-          mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
-          status: "completed",
-          time: "2 min ago",
-        },
-        {
-          id: 2,
-          symbol: "ORCA",
-          mint: "orcaEKTdK7LKz57vaAYr9QeNsVEPfiu6QeMU1kektZE",
-          status: "completed",
-          time: "5 min ago",
-        },
-        {
-          id: 3,
-          symbol: "STEP",
-          mint: "StepAscQoEioFxxWGnh2sLBDFp9d8rvKz2Yp39iDpyT",
-          status: "processing",
-          time: "8 min ago",
-        },
-      ],
-
-      todayActivity: {
-        analyses: 247,
-        successRate: 94.2,
-        avgResponse: 3.2,
-        errors: 14,
-      },
+      recentAnalyses: [],
 
       async loadDashboard() {
         this.isLoading = true;
         try {
-          // Load dashboard data
+          // Load real dashboard data
           const response = await fetch("/api/dashboard");
           if (response.ok) {
             const data = await response.json();
-            // Update metrics with real data if available
+
+            // Update metrics with real data
             if (data.metrics) {
-              this.metrics = { ...this.metrics, ...data.metrics };
+              this.realMetrics = {
+                totalAnalyses: data.metrics.totalAnalyses || 0,
+                successRate: data.metrics.successRate || 0,
+                avgResponseTime: data.metrics.avgResponseTime || 0,
+                activeTokens: data.metrics.activeTokens || 0,
+              };
             }
+
+            // Update recent analyses
+            if (data.recentActivity) {
+              this.recentAnalyses = data.recentActivity.map((activity) => ({
+                id: activity.id,
+                symbol: activity.token_symbol,
+                mint: activity.mint,
+                status: activity.status,
+                time: this.formatTime(activity.timestamp),
+              }));
+            }
+          }
+
+          // Load system health
+          const healthResponse = await fetch("/health");
+          if (healthResponse.ok) {
+            this.systemHealth = await healthResponse.json();
           }
         } catch (error) {
           console.error("Failed to load dashboard:", error);
-          this.showNotification(
+          this.$parent.showNotification(
             "error",
             "Load Failed",
             "Failed to load dashboard data"
@@ -564,8 +498,8 @@ AI{% endblock %} {% block content %}
       },
 
       async analyzeToken() {
-        if (!this.isValidSolanaAddress(this.analysisForm.tokenMint)) {
-          this.showNotification(
+        if (!this.$parent.isValidSolanaAddress(this.analysisForm.tokenMint)) {
+          this.$parent.showNotification(
             "error",
             "Invalid Address",
             "Please enter a valid Solana token mint address"
@@ -593,7 +527,7 @@ AI{% endblock %} {% block content %}
 
           if (response.ok) {
             this.analysisResult = result;
-            this.showNotification(
+            this.$parent.showNotification(
               "success",
               "Analysis Complete",
               "Token analysis completed successfully"
@@ -610,11 +544,18 @@ AI{% endblock %} {% block content %}
 
             // Keep only last 10
             this.recentAnalyses = this.recentAnalyses.slice(0, 10);
+
+            // Update metrics
+            this.realMetrics.totalAnalyses += 1;
           } else {
             throw new Error(result.message || "Analysis failed");
           }
         } catch (error) {
-          this.showNotification("error", "Analysis Failed", error.message);
+          this.$parent.showNotification(
+            "error",
+            "Analysis Failed",
+            error.message
+          );
         } finally {
           this.isAnalyzing = false;
         }
@@ -623,22 +564,22 @@ AI{% endblock %} {% block content %}
       async pasteFromClipboard() {
         try {
           const text = await navigator.clipboard.readText();
-          if (this.isValidSolanaAddress(text)) {
+          if (this.$parent.isValidSolanaAddress(text)) {
             this.analysisForm.tokenMint = text;
-            this.showNotification(
+            this.$parent.showNotification(
               "success",
               "Pasted",
               "Token address pasted from clipboard"
             );
           } else {
-            this.showNotification(
+            this.$parent.showNotification(
               "warning",
               "Invalid Format",
               "Clipboard content is not a valid Solana address"
             );
           }
         } catch (error) {
-          this.showNotification(
+          this.$parent.showNotification(
             "error",
             "Paste Failed",
             "Failed to access clipboard"
@@ -659,75 +600,18 @@ AI{% endblock %} {% block content %}
         }
       },
 
-      exportData() {
-        const data = {
-          metrics: this.metrics,
-          recentAnalyses: this.recentAnalyses,
-          todayActivity: this.todayActivity,
-          exportedAt: new Date().toISOString(),
-        };
+      formatTime(timestamp) {
+        if (!timestamp) return "Unknown";
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diff = now - date;
 
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `dashboard-export-${
-          new Date().toISOString().split("T")[0]
-        }.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        this.showNotification(
-          "success",
-          "Export Complete",
-          "Dashboard data exported successfully"
-        );
+        if (diff < 60000) return "Just now";
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return date.toLocaleDateString();
       },
     };
   }
-
-  // Initialize mini chart when page loads
-  document.addEventListener("alpine:init", () => {
-    setTimeout(() => {
-      const ctx = document.getElementById("activityChart");
-      if (ctx) {
-        new Chart(ctx, {
-          type: "line",
-          data: {
-            labels: ["6h", "5h", "4h", "3h", "2h", "1h", "Now"],
-            datasets: [
-              {
-                label: "Analyses",
-                data: [12, 15, 8, 22, 18, 25, 20],
-                borderColor: "#3b82f6",
-                backgroundColor: "rgba(59, 130, 246, 0.1)",
-                borderWidth: 2,
-                fill: true,
-                tension: 0.4,
-              },
-            ],
-          },
-          options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-              legend: { display: false },
-            },
-            scales: {
-              x: { display: false },
-              y: { display: false },
-            },
-            elements: {
-              point: { radius: 0 },
-            },
-          },
-        });
-      }
-    }, 1000);
-  });
 </script>
 {% endblock %}

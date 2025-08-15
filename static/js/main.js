@@ -150,10 +150,6 @@ window.SolanaAI.api = {
     return this.request("/api/dashboard");
   },
 
-  async getSystemStatus() {
-    return this.request("/api/system/status");
-  },
-
   // Analysis endpoints
   async quickAnalysis(tokenMint) {
     return this.request("/api/analysis/quick", {
