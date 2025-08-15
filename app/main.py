@@ -72,6 +72,29 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("🚀 Starting Solana Token Analysis System...")
     
+    # Check for frontend files
+    templates_dir = Path("templates")
+    static_dir = Path("static")
+    
+    if templates_dir.exists():
+        logger.info("✅ Templates directory found - web interface enabled")
+    else:
+        logger.warning("⚠️  Templates directory not found - creating basic structure...")
+        templates_dir.mkdir(exist_ok=True)
+        (templates_dir / "components").mkdir(exist_ok=True)
+        (templates_dir / "pages").mkdir(exist_ok=True)
+        logger.info("📁 Created templates directory structure")
+    
+    if static_dir.exists():
+        logger.info("✅ Static files directory found")
+    else:
+        logger.info("📁 Creating static files directory...")
+        static_dir.mkdir(exist_ok=True)
+        (static_dir / "css").mkdir(exist_ok=True)
+        (static_dir / "js").mkdir(exist_ok=True)
+        (static_dir / "img").mkdir(exist_ok=True)
+        logger.info("✅ Created static files directory structure")
+    
     # Initialize dependencies
     try:
         await startup_dependencies()
@@ -114,6 +137,19 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("✅ All optional services available")
     
+    # Check web interface status
+    templates_available = templates_dir.exists() and any(templates_dir.iterdir())
+    static_available = static_dir.exists()
+    
+    if templates_available:
+        logger.info("🌐 Web interface: ENABLED")
+        logger.info("   📊 Dashboard: http://localhost:8000/")
+        logger.info("   🔍 Analysis: http://localhost:8000/analysis")
+        logger.info("   🧭 Discovery: http://localhost:8000/discovery")
+    else:
+        logger.warning("🌐 Web interface: DISABLED (templates not found)")
+        logger.info("   Use API endpoints or create templates directory")
+    
     # Log configuration summary
     logger.info(f"🔧 Environment: {settings.ENV}")
     logger.info(f"🔧 Debug mode: {settings.DEBUG}")
@@ -136,7 +172,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Solana Token Analysis AI System",
-    description="Integrated Solana token analysis system with AI capabilities",
+    description="Integrated Solana token analysis system with AI capabilities and web interface",
     version="1.0.0",
     docs_url="/docs" if settings.ENV == "development" else None,
     redoc_url="/redoc" if settings.ENV == "development" else None,
@@ -166,45 +202,18 @@ if settings.ENV == "production":
 static_dir = Path("static")
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# Templates (for web interface) - optional
-templates = None
-templates_dir = Path("templates")
-if templates_dir.exists():
-    try:
-        from fastapi.templating import Jinja2Templates
-        templates = Jinja2Templates(directory="templates")
-        logger.info("✅ Templates system initialized")
-    except ImportError:
-        logger.warning("⚠️  Jinja2 not installed - dashboard disabled")
-    except Exception as e:
-        logger.warning(f"⚠️  Template initialization failed: {str(e)}")
+    logger.info("✅ Static files mounted at /static")
 else:
-    logger.info("ℹ️  Templates directory not found - dashboard disabled")
+    logger.warning("⚠️  Static files directory not found")
 
-# Include routers
+# Include routers (alex_core now includes frontend routes)
 app.include_router(
     alex_core.router,
     prefix="",
-    tags=["core"]
+    tags=["core", "frontend"]
 )
 
-
-@app.get("/", summary="System status")
-async def root():
-    """Homepage - system status"""
-    return {
-        "service": "Solana Token Analysis AI System",
-        "status": "running",
-        "version": "1.0.0",
-        "environment": settings.ENV,
-        "debug": settings.DEBUG,
-        "docs_url": "/docs" if settings.ENV == "development" else "disabled",
-        "health_check": "/health",
-        "api_commands": "/commands"
-    }
-
-
+# Health check endpoints (keep original simple ones)
 @app.get("/health", summary="System health check")
 async def health_check():
     """Detailed system component health check"""
@@ -280,6 +289,11 @@ async def config_status():
         "port": settings.PORT,
         "log_level": settings.LOG_LEVEL,
         "log_format": settings.LOG_FORMAT,
+        "web_interface": {
+            "templates_available": Path("templates").exists(),
+            "static_files_available": Path("static").exists(),
+            "routes": ["/", "/analysis", "/discovery", "/settings"] if Path("templates").exists() else []
+        },
         "cache_settings": {
             "ttl_short": settings.CACHE_TTL_SHORT,
             "ttl_medium": settings.CACHE_TTL_MEDIUM,
@@ -303,52 +317,6 @@ async def config_status():
     }
     
     return config_info
-
-
-@app.get("/dashboard", summary="Web dashboard interface")
-async def dashboard(request: Request):
-    """Web interface for system management"""
-    if not templates or not templates_dir.exists():
-        return JSONResponse(
-            content={
-                "error": "Dashboard not available", 
-                "reason": "Templates not configured or Jinja2 not installed",
-                "install_command": "pip install jinja2"
-            },
-            status_code=status.HTTP_404_NOT_FOUND
-        )
-    
-    try:
-        # Get system status for dashboard
-        health_status = await health_check_all_services()
-        
-        # Try to get metrics, fallback if not available
-        try:
-            from app.utils.health import get_service_metrics
-            metrics = await get_service_metrics()
-        except (ImportError, AttributeError):
-            metrics = {"error": "Metrics not available"}
-        
-        context = {
-            "request": request,
-            "title": "Solana Token Analysis Dashboard",
-            "environment": settings.ENV,
-            "system_status": health_status,
-            "metrics": metrics,
-            "version": "1.0.0"
-        }
-        
-        return templates.TemplateResponse("dashboard.html", context)
-        
-    except Exception as e:
-        logger.error(f"Dashboard error: {str(e)}")
-        return JSONResponse(
-            content={
-                "error": "Dashboard temporarily unavailable",
-                "detail": str(e)
-            },
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
 
 
 # Error handlers
@@ -412,6 +380,7 @@ if __name__ == "__main__":
         logger.info("📖 API Documentation: http://localhost:8000/docs")
         logger.info("🏥 Health Check: http://localhost:8000/health")
         logger.info("📊 Metrics: http://localhost:8000/metrics")
+        logger.info("🌐 Web Interface: http://localhost:8000/")
     
     # Run the application
     uvicorn.run(

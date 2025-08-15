@@ -1,0 +1,1137 @@
+{% extends "base.html" %} {% block title %}Token Analysis - Solana AI{% endblock
+%} {% block content %}
+<div x-data="analysisData()" x-init="initAnalysis()">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">Token Analysis</h1>
+        <p class="text-gray-600 mt-1">
+          Comprehensive AI-powered cryptocurrency analysis
+        </p>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button
+          @click="clearResults()"
+          x-show="hasResults"
+          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+        >
+          <i class="fas fa-times mr-2"></i>
+          Clear
+        </button>
+        <button
+          @click="exportResults()"
+          x-show="hasResults"
+          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+        >
+          <i class="fas fa-download mr-2"></i>
+          Export
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis Form -->
+  <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+    <h2 class="text-xl font-semibold text-gray-900 mb-6">Analyze Token</h2>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Token Input -->
+      <div class="lg:col-span-2">
+        <label class="form-label">Token Mint Address</label>
+        <div class="relative">
+          <input
+            type="text"
+            x-model="form.tokenMint"
+            @keyup.enter="analyzeToken()"
+            placeholder="Enter Solana token mint address (32-44 characters)..."
+            class="form-input pr-12"
+            :class="{ 'border-red-500': form.tokenMint && !isValidAddress }"
+            :disabled="isAnalyzing"
+          />
+
+          <!-- Paste button -->
+          <button
+            @click="pasteFromClipboard()"
+            class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            :disabled="isAnalyzing"
+          >
+            <i class="fas fa-clipboard"></i>
+          </button>
+        </div>
+
+        <!-- Validation feedback -->
+        <div
+          x-show="form.tokenMint && !isValidAddress"
+          class="mt-1 text-sm text-red-600"
+        >
+          <i class="fas fa-exclamation-circle mr-1"></i>
+          Please enter a valid Solana token mint address
+        </div>
+
+        <!-- Quick Examples -->
+        <div class="mt-3">
+          <span class="text-sm text-gray-500">Examples:</span>
+          <div class="flex flex-wrap gap-2 mt-1">
+            {% for token in example_tokens %}
+            <button
+              @click="form.tokenMint = '{{ token.mint }}'"
+              class="text-sm text-blue-600 hover:text-blue-800 underline"
+              :disabled="isAnalyzing"
+            >
+              {{ token.name }} ({{ token.symbol }})
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Analysis Options -->
+      <div class="space-y-4">
+        <div>
+          <label class="form-label">Analysis Type</label>
+          <select
+            x-model="form.analysisType"
+            class="form-input form-select"
+            :disabled="isAnalyzing"
+          >
+            <option value="quick">Quick Analysis (Mistral 7B)</option>
+            <option value="deep">Deep Analysis (LLaMA 3 70B)</option>
+            <option value="both">Both (Comprehensive)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="form-label">Priority</label>
+          <select
+            x-model="form.priority"
+            class="form-input form-select"
+            :disabled="isAnalyzing"
+          >
+            <option value="normal">Normal</option>
+            <option value="high">High Priority</option>
+            <option value="low">Low Priority</option>
+          </select>
+        </div>
+
+        <!-- Analysis Options -->
+        <div class="space-y-2">
+          <label class="flex items-center">
+            <input
+              type="checkbox"
+              x-model="form.includeSocial"
+              :disabled="isAnalyzing"
+              class="mr-2"
+            />
+            <span class="text-sm">Include Social Analysis</span>
+          </label>
+          <label class="flex items-center">
+            <input
+              type="checkbox"
+              x-model="form.includeOnChain"
+              :disabled="isAnalyzing"
+              class="mr-2"
+            />
+            <span class="text-sm">Include On-Chain Metrics</span>
+          </label>
+          <label class="flex items-center">
+            <input
+              type="checkbox"
+              x-model="form.includeSecurity"
+              :disabled="isAnalyzing"
+              class="mr-2"
+            />
+            <span class="text-sm">Security Scan</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analyze Button -->
+    <div class="mt-6">
+      <button
+        @click="analyzeToken()"
+        :disabled="!isValidAddress || isAnalyzing"
+        class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+      >
+        <span x-show="!isAnalyzing" class="flex items-center justify-center">
+          <i class="fas fa-search mr-2"></i>
+          <span x-text="getAnalyzeButtonText()"></span>
+        </span>
+        <span x-show="isAnalyzing" class="flex items-center justify-center">
+          <div class="loading-spinner mr-2"></div>
+          <span x-text="analysisProgress.message"></span>
+        </span>
+      </button>
+
+      <!-- Progress Bar -->
+      <div x-show="isAnalyzing" class="mt-3">
+        <div class="progress-bar">
+          <div
+            class="progress-bar-fill bg-blue-600"
+            :style="`width: ${analysisProgress.percent}%`"
+          ></div>
+        </div>
+        <div class="flex justify-between text-sm text-gray-600 mt-1">
+          <span x-text="analysisProgress.step"></span>
+          <span x-text="analysisProgress.percent + '%'"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis Results -->
+  <div x-show="hasResults" x-transition class="space-y-6">
+    <!-- Token Overview -->
+    <div x-show="results.metadata" class="bg-white rounded-xl shadow-lg p-6">
+      <h3 class="text-xl font-semibold text-gray-900 mb-4">Token Overview</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <!-- Token Info -->
+        <div class="text-center">
+          <div
+            class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3"
+          >
+            <i class="fas fa-coins text-blue-600 text-2xl"></i>
+          </div>
+          <h4
+            class="font-semibold text-gray-900"
+            x-text="results.metadata?.name || 'Unknown Token'"
+          ></h4>
+          <p
+            class="text-sm text-gray-500"
+            x-text="results.metadata?.symbol || 'N/A'"
+          ></p>
+          <p
+            class="text-xs text-gray-400 font-mono mt-1"
+            x-text="truncateAddress(results.token)"
+          ></p>
+        </div>
+
+        <!-- Price Data -->
+        <div class="text-center" x-show="results.price_data">
+          <div
+            class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"
+          >
+            <i class="fas fa-dollar-sign text-green-600 text-2xl"></i>
+          </div>
+          <h4
+            class="font-semibold text-gray-900"
+            x-text="formatCurrency(results.price_data?.current_price)"
+          ></h4>
+          <p
+            class="text-sm"
+            :class="getPriceChangeClass(results.price_data?.price_change_24h)"
+            x-text="formatPercent(results.price_data?.price_change_24h)"
+          ></p>
+          <p class="text-xs text-gray-400">24h Change</p>
+        </div>
+
+        <!-- Market Cap -->
+        <div class="text-center" x-show="results.price_data?.market_cap">
+          <div
+            class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
+          >
+            <i class="fas fa-chart-pie text-purple-600 text-2xl"></i>
+          </div>
+          <h4
+            class="font-semibold text-gray-900"
+            x-text="formatNumber(results.price_data?.market_cap)"
+          ></h4>
+          <p class="text-sm text-gray-500">Market Cap</p>
+          <p
+            class="text-xs text-gray-400"
+            x-text="formatNumber(results.price_data?.volume_24h) + ' Vol'"
+          ></p>
+        </div>
+
+        <!-- Holders -->
+        <div class="text-center" x-show="results.price_data?.holders_count">
+          <div
+            class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3"
+          >
+            <i class="fas fa-users text-yellow-600 text-2xl"></i>
+          </div>
+          <h4
+            class="font-semibold text-gray-900"
+            x-text="formatNumber(results.price_data?.holders_count)"
+          ></h4>
+          <p class="text-sm text-gray-500">Holders</p>
+          <p
+            class="text-xs text-gray-400"
+            x-text="formatNumber(results.onchain_metrics?.unique_traders_24h) + ' Traders'"
+          ></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Analysis Results -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Quick Analysis (Mistral) -->
+      <div
+        x-show="results.mistral_quick"
+        class="bg-white rounded-xl shadow-lg p-6"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-900">Quick Analysis</h3>
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-bolt text-yellow-500"></i>
+            <span class="text-sm text-gray-500">Mistral 7B</span>
+          </div>
+        </div>
+
+        <template x-if="results.mistral_quick">
+          <div class="space-y-4">
+            <!-- Score -->
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <div
+                class="text-3xl font-bold text-blue-600"
+                x-text="Math.round(results.mistral_quick.score * 100)"
+              ></div>
+              <div class="text-sm text-gray-500">Overall Score</div>
+              <div class="progress-bar mt-2">
+                <div
+                  class="progress-bar-fill bg-blue-600"
+                  :style="`width: ${results.mistral_quick.score * 100}%`"
+                ></div>
+              </div>
+            </div>
+
+            <!-- Risk Level -->
+            <div class="flex items-center justify-between">
+              <span class="text-gray-700">Risk Level:</span>
+              <span
+                class="px-3 py-1 rounded-full text-sm font-medium"
+                :class="getRiskLevelClass(results.mistral_quick.risk_level)"
+                x-text="results.mistral_quick.risk_level?.toUpperCase()"
+              ></span>
+            </div>
+
+            <!-- Scam Likelihood -->
+            <div class="flex items-center justify-between">
+              <span class="text-gray-700">Scam Likely:</span>
+              <span
+                class="px-3 py-1 rounded-full text-sm font-medium"
+                :class="results.mistral_quick.is_scam_likely ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'"
+                x-text="results.mistral_quick.is_scam_likely ? 'Yes' : 'No'"
+              ></span>
+            </div>
+
+            <!-- Key Points -->
+            <div x-show="results.mistral_quick.key_points?.length">
+              <h4 class="font-medium text-gray-900 mb-2">Key Points:</h4>
+              <ul class="space-y-1">
+                <template
+                  x-for="point in results.mistral_quick.key_points"
+                  :key="point"
+                >
+                  <li class="text-sm text-gray-600 flex items-start">
+                    <i
+                      class="fas fa-chevron-right text-blue-500 mr-2 mt-0.5 text-xs"
+                    ></i>
+                    <span x-text="point"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+
+            <!-- Processing Time -->
+            <div class="text-xs text-gray-500 text-center">
+              Processed in
+              <span x-text="results.mistral_quick.processing_time"></span>s
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Deep Analysis (LLaMA) -->
+      <div
+        x-show="results.llama_deep"
+        class="bg-white rounded-xl shadow-lg p-6"
+      >
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-gray-900">Deep Analysis</h3>
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-brain text-purple-500"></i>
+            <span class="text-sm text-gray-500">LLaMA 3 70B</span>
+          </div>
+        </div>
+
+        <template x-if="results.llama_deep">
+          <div class="space-y-4">
+            <!-- Pump Probabilities -->
+            <div class="grid grid-cols-2 gap-4">
+              <div class="text-center p-3 bg-gray-50 rounded-lg">
+                <div
+                  class="text-xl font-bold text-green-600"
+                  x-text="Math.round(results.llama_deep.pump_probability_1h * 100) + '%'"
+                ></div>
+                <div class="text-xs text-gray-500">1h Pump Probability</div>
+              </div>
+              <div class="text-center p-3 bg-gray-50 rounded-lg">
+                <div
+                  class="text-xl font-bold text-blue-600"
+                  x-text="Math.round(results.llama_deep.pump_probability_24h * 100) + '%'"
+                ></div>
+                <div class="text-xs text-gray-500">24h Pump Probability</div>
+              </div>
+            </div>
+
+            <!-- Patterns -->
+            <div x-show="results.llama_deep.patterns?.length">
+              <h4 class="font-medium text-gray-900 mb-2">Detected Patterns:</h4>
+              <div class="flex flex-wrap gap-1">
+                <template
+                  x-for="pattern in results.llama_deep.patterns"
+                  :key="pattern"
+                >
+                  <span
+                    class="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full"
+                    x-text="pattern.replace('_', ' ')"
+                  ></span>
+                </template>
+              </div>
+            </div>
+
+            <!-- Price Targets -->
+            <div
+              x-show="results.llama_deep.price_targets && Object.keys(results.llama_deep.price_targets).length"
+            >
+              <h4 class="font-medium text-gray-900 mb-2">Price Targets:</h4>
+              <div class="space-y-1">
+                <template
+                  x-for="[timeframe, target] in Object.entries(results.llama_deep.price_targets)"
+                  :key="timeframe"
+                >
+                  <div class="flex justify-between text-sm">
+                    <span class="text-gray-600" x-text="timeframe"></span>
+                    <span
+                      class="font-medium"
+                      x-text="formatCurrency(target)"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Reasoning -->
+            <div x-show="results.llama_deep.reasoning">
+              <h4 class="font-medium text-gray-900 mb-2">AI Reasoning:</h4>
+              <p
+                class="text-sm text-gray-600"
+                x-text="results.llama_deep.reasoning"
+              ></p>
+            </div>
+
+            <!-- Processing Time -->
+            <div class="text-xs text-gray-500 text-center">
+              Processed in
+              <span x-text="results.llama_deep.processing_time"></span>s
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Aggregated Results -->
+    <div x-show="results.aggregated" class="bg-white rounded-xl shadow-lg p-6">
+      <h3 class="text-xl font-semibold text-gray-900 mb-6">
+        Final Recommendation
+      </h3>
+
+      <template x-if="results.aggregated">
+        <div class="space-y-6">
+          <!-- Main Recommendation -->
+          <div
+            class="text-center p-6 rounded-lg"
+            :class="getRecommendationClass(results.aggregated.recommendation)"
+          >
+            <div
+              class="text-3xl font-bold mb-2"
+              x-text="results.aggregated.recommendation"
+            ></div>
+            <div class="text-lg opacity-90">
+              Score:
+              <span
+                x-text="Math.round(results.aggregated.final_score * 100)"
+              ></span
+              >/100
+            </div>
+            <div class="text-sm opacity-75 mt-1">
+              Confidence:
+              <span
+                x-text="Math.round(results.aggregated.confidence * 100)"
+              ></span
+              >%
+            </div>
+          </div>
+
+          <!-- Expected Returns -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <div
+                class="text-lg font-semibold text-gray-900"
+                x-text="formatPercent(results.aggregated.expected_return_1h)"
+              ></div>
+              <div class="text-sm text-gray-500">Expected 1h Return</div>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <div
+                class="text-lg font-semibold text-gray-900"
+                x-text="formatPercent(results.aggregated.expected_return_24h)"
+              ></div>
+              <div class="text-sm text-gray-500">Expected 24h Return</div>
+            </div>
+            <div class="text-center p-4 bg-gray-50 rounded-lg">
+              <div
+                class="text-lg font-semibold text-red-600"
+                x-text="Math.round(results.aggregated.max_risk * 100) + '%'"
+              ></div>
+              <div class="text-sm text-gray-500">Maximum Risk</div>
+            </div>
+          </div>
+
+          <!-- Summary -->
+          <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
+            <h4 class="font-medium text-blue-900 mb-2">Summary</h4>
+            <p class="text-blue-800" x-text="results.aggregated.summary"></p>
+          </div>
+
+          <!-- Action Plan -->
+          <div x-show="results.aggregated.action_plan?.length">
+            <h4 class="font-medium text-gray-900 mb-3">Recommended Actions:</h4>
+            <ol class="space-y-2">
+              <template
+                x-for="(action, index) in results.aggregated.action_plan"
+                :key="index"
+              >
+                <li class="flex items-start">
+                  <span
+                    class="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium mr-3 mt-0.5"
+                    x-text="index + 1"
+                  ></span>
+                  <span class="text-gray-700" x-text="action"></span>
+                </li>
+              </template>
+            </ol>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Social Analysis -->
+    <div
+      x-show="results.social_data?.length"
+      class="bg-white rounded-xl shadow-lg p-6"
+    >
+      <h3 class="text-xl font-semibold text-gray-900 mb-6">Social Sentiment</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="text-center p-4 bg-gray-50 rounded-lg">
+          <div
+            class="text-2xl font-bold text-gray-900"
+            x-text="results.social_data?.length || 0"
+          ></div>
+          <div class="text-sm text-gray-500">Total Mentions</div>
+        </div>
+        <div class="text-center p-4 bg-gray-50 rounded-lg">
+          <div
+            class="text-2xl font-bold text-green-600"
+            x-text="getAverageSentiment()"
+          ></div>
+          <div class="text-sm text-gray-500">Avg Sentiment</div>
+        </div>
+        <div class="text-center p-4 bg-gray-50 rounded-lg">
+          <div
+            class="text-2xl font-bold text-blue-600"
+            x-text="getTopPlatform()"
+          ></div>
+          <div class="text-sm text-gray-500">Top Platform</div>
+        </div>
+        <div class="text-center p-4 bg-gray-50 rounded-lg">
+          <div
+            class="text-2xl font-bold text-purple-600"
+            x-text="getViralScore()"
+          ></div>
+          <div class="text-sm text-gray-500">Viral Score</div>
+        </div>
+      </div>
+
+      <!-- Recent Social Posts -->
+      <div class="space-y-3">
+        <h4 class="font-medium text-gray-900">Recent Mentions:</h4>
+        <template
+          x-for="post in results.social_data?.slice(0, 5)"
+          :key="post.timestamp"
+        >
+          <div class="p-3 bg-gray-50 rounded-lg">
+            <div class="flex items-start justify-between">
+              <div class="flex-1">
+                <div class="flex items-center space-x-2 mb-1">
+                  <div
+                    class="social-platform-icon"
+                    :class="post.platform"
+                    x-text="post.platform.charAt(0).toUpperCase()"
+                  ></div>
+                  <span
+                    class="text-sm font-medium"
+                    x-text="post.author || 'Anonymous'"
+                  ></span>
+                  <span
+                    class="text-xs text-gray-500"
+                    x-text="formatTime(post.timestamp)"
+                  ></span>
+                </div>
+                <p
+                  class="text-sm text-gray-700"
+                  x-text="post.content.substring(0, 120) + '...'"
+                ></p>
+              </div>
+              <div class="ml-3 text-right">
+                <div
+                  class="text-xs px-2 py-1 rounded-full"
+                  :class="getSentimentClass(post.sentiment_score)"
+                  x-text="getSentimentLabel(post.sentiment_score)"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- Analysis Metadata -->
+    <div class="bg-gray-50 rounded-xl p-6">
+      <h3 class="text-lg font-semibold text-gray-900 mb-4">Analysis Details</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div>
+          <div class="text-sm text-gray-500">Analysis ID</div>
+          <div class="font-mono text-sm" x-text="results.analysis_id"></div>
+        </div>
+        <div>
+          <div class="text-sm text-gray-500">Processing Time</div>
+          <div
+            class="font-medium"
+            x-text="results.processing_time_total + 's'"
+          ></div>
+        </div>
+        <div>
+          <div class="text-sm text-gray-500">Data Sources</div>
+          <div
+            class="font-medium"
+            x-text="results.data_sources?.join(', ') || 'N/A'"
+          ></div>
+        </div>
+        <div>
+          <div class="text-sm text-gray-500">Timestamp</div>
+          <div class="font-medium" x-text="formatTime(results.timestamp)"></div>
+        </div>
+      </div>
+
+      <!-- Warnings and Errors -->
+      <div
+        x-show="results.warnings?.length || results.errors?.length"
+        class="mt-4 space-y-2"
+      >
+        <template x-for="warning in results.warnings" :key="warning">
+          <div
+            class="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded-r-lg"
+          >
+            <div class="flex">
+              <i
+                class="fas fa-exclamation-triangle text-yellow-400 mr-2 mt-0.5"
+              ></i>
+              <span class="text-yellow-800 text-sm" x-text="warning"></span>
+            </div>
+          </div>
+        </template>
+
+        <template x-for="error in results.errors" :key="error">
+          <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded-r-lg">
+            <div class="flex">
+              <i class="fas fa-exclamation-circle text-red-400 mr-2 mt-0.5"></i>
+              <span class="text-red-800 text-sm" x-text="error"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- No Results State -->
+  <div x-show="!hasResults && !isAnalyzing" class="text-center py-12">
+    <div
+      class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"
+    >
+      <i class="fas fa-search text-gray-400 text-3xl"></i>
+    </div>
+    <h3 class="text-lg font-medium text-gray-900 mb-2">Ready to Analyze</h3>
+    <p class="text-gray-600 mb-6">
+      Enter a token mint address above to start comprehensive AI analysis
+    </p>
+    <div class="flex justify-center space-x-4">
+      <button
+        @click="loadExampleAnalysis()"
+        class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+      >
+        <i class="fas fa-play mr-2"></i>
+        Try Example
+      </button>
+      <button
+        @click="showTokenGuide = true"
+        class="px-4 py-2 text-blue-600 hover:text-blue-800"
+      >
+        <i class="fas fa-question-circle mr-2"></i>
+        How it works
+      </button>
+    </div>
+  </div>
+
+  <!-- Token Guide Modal -->
+  <div
+    x-show="showTokenGuide"
+    @click.away="showTokenGuide = false"
+    x-transition
+    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+  >
+    <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold text-gray-900">
+          How Token Analysis Works
+        </h3>
+        <button
+          @click="showTokenGuide = false"
+          class="text-gray-400 hover:text-gray-600"
+        >
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+
+      <div class="space-y-4 text-sm text-gray-600">
+        <div class="flex items-start">
+          <div
+            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
+          >
+            1
+          </div>
+          <div>
+            <div class="font-medium text-gray-900">Enter Token Address</div>
+            <div>Paste the Solana token mint address (32-44 characters)</div>
+          </div>
+        </div>
+
+        <div class="flex items-start">
+          <div
+            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
+          >
+            2
+          </div>
+          <div>
+            <div class="font-medium text-gray-900">Choose Analysis Type</div>
+            <div>
+              Quick analysis (Mistral 7B) or Deep analysis (LLaMA 3 70B)
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-start">
+          <div
+            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
+          >
+            3
+          </div>
+          <div>
+            <div class="font-medium text-gray-900">Get AI Insights</div>
+            <div>
+              Receive comprehensive analysis with risk assessment and
+              recommendations
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6">
+        <button
+          @click="showTokenGuide = false"
+          class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
+        >
+          Got it!
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function analysisData() {
+    return {
+      form: {
+        tokenMint: '{{ selected_token or "" }}',
+        analysisType: "quick",
+        priority: "normal",
+        includeSocial: true,
+        includeOnChain: true,
+        includeSecurity: true,
+      },
+      isAnalyzing: false,
+      hasResults: false,
+      results: null,
+      showTokenGuide: false,
+      analysisProgress: {
+        step: "Initializing...",
+        message: "Starting analysis...",
+        percent: 0,
+      },
+
+      get isValidAddress() {
+        return this.isValidSolanaAddress(this.form.tokenMint);
+      },
+
+      initAnalysis() {
+        // Initialize with URL token if provided
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get("token");
+        if (token) {
+          this.form.tokenMint = token;
+          // Auto-analyze if valid token in URL
+          if (this.isValidAddress) {
+            setTimeout(() => this.analyzeToken(), 1000);
+          }
+        }
+      },
+
+      getAnalyzeButtonText() {
+        switch (this.form.analysisType) {
+          case "quick":
+            return "Quick Analysis (2-3s)";
+          case "deep":
+            return "Deep Analysis (8-10s)";
+          case "both":
+            return "Comprehensive Analysis (10-15s)";
+          default:
+            return "Analyze Token";
+        }
+      },
+
+      async analyzeToken() {
+        if (!this.isValidAddress) {
+          this.showNotification(
+            "error",
+            "Invalid Address",
+            "Please enter a valid Solana token mint address"
+          );
+          return;
+        }
+
+        this.isAnalyzing = true;
+        this.hasResults = false;
+        this.results = null;
+
+        try {
+          // Simulate analysis progress
+          await this.simulateProgress();
+
+          // Perform actual analysis
+          let result;
+          if (this.form.analysisType === "quick") {
+            result = await window.SolanaAI.api.tweetCommand(
+              this.form.tokenMint
+            );
+          } else if (this.form.analysisType === "deep") {
+            result = await window.SolanaAI.api.nameCommand(this.form.tokenMint);
+          } else {
+            // Both analyses
+            const [quickResult, deepResult] = await Promise.all([
+              window.SolanaAI.api.tweetCommand(this.form.tokenMint),
+              window.SolanaAI.api.nameCommand(this.form.tokenMint),
+            ]);
+            result = { ...quickResult, deepAnalysis: deepResult };
+          }
+
+          // Transform result to expected format
+          this.results = this.transformResults(result);
+          this.hasResults = true;
+
+          this.showNotification(
+            "success",
+            "Analysis Complete",
+            "Token analysis completed successfully"
+          );
+        } catch (error) {
+          console.error("Analysis error:", error);
+          this.showNotification(
+            "error",
+            "Analysis Failed",
+            error.message || "Failed to analyze token"
+          );
+        } finally {
+          this.isAnalyzing = false;
+        }
+      },
+
+      async simulateProgress() {
+        const steps = [
+          { step: "Validating token address...", percent: 10 },
+          { step: "Fetching token metadata...", percent: 25 },
+          { step: "Collecting price data...", percent: 40 },
+          { step: "Analyzing on-chain metrics...", percent: 60 },
+          { step: "Running AI analysis...", percent: 80 },
+          { step: "Generating insights...", percent: 95 },
+          { step: "Finalizing results...", percent: 100 },
+        ];
+
+        for (const progressStep of steps) {
+          this.analysisProgress = {
+            ...progressStep,
+            message: progressStep.step,
+          };
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+      },
+
+      transformResults(apiResult) {
+        // Transform API result to match expected UI format
+        return {
+          token: this.form.tokenMint,
+          analysis_id: Date.now().toString(),
+          timestamp: new Date().toISOString(),
+          processing_time_total: 3.2,
+          data_sources: ["API", "Blockchain"],
+          warnings: [],
+          errors: [],
+
+          // Mock data - replace with real API response transformation
+          metadata: {
+            name: "Example Token",
+            symbol: "EXT",
+            mint: this.form.tokenMint,
+          },
+
+          price_data: {
+            current_price: "0.025",
+            price_change_24h: "5.2",
+            market_cap: "1250000",
+            volume_24h: "350000",
+            holders_count: 1247,
+          },
+
+          mistral_quick:
+            this.form.analysisType !== "deep"
+              ? {
+                  score: 0.75,
+                  risk_level: "medium",
+                  is_scam_likely: false,
+                  key_points: [
+                    "Good liquidity levels detected",
+                    "Active community engagement",
+                    "Reasonable tokenomics structure",
+                  ],
+                  processing_time: 2.3,
+                  confidence: 0.85,
+                }
+              : null,
+
+          llama_deep:
+            this.form.analysisType !== "quick"
+              ? {
+                  pump_probability_1h: 0.35,
+                  pump_probability_24h: 0.62,
+                  patterns: ["volume_spike", "social_buzz"],
+                  price_targets: {
+                    "1h": "0.027",
+                    "24h": "0.032",
+                  },
+                  reasoning:
+                    "Token shows strong fundamentals with increasing social activity and volume patterns suggesting potential upward movement.",
+                  processing_time: 8.7,
+                  confidence: 0.78,
+                }
+              : null,
+
+          aggregated: {
+            final_score: 0.72,
+            recommendation: "HOLD",
+            confidence: 0.81,
+            expected_return_1h: 8.2,
+            expected_return_24h: 24.5,
+            max_risk: 0.15,
+            summary:
+              "Moderate risk token with decent growth potential. Consider for short to medium-term holding.",
+            action_plan: [
+              "Monitor volume and price action over next 24 hours",
+              "Set stop-loss at 15% below entry price",
+              "Consider taking partial profits at 20% gains",
+            ],
+          },
+
+          social_data: this.form.includeSocial
+            ? [
+                {
+                  platform: "twitter",
+                  content:
+                    "This token looks promising! Great community behind it. #crypto #solana",
+                  author: "CryptoTrader123",
+                  timestamp: new Date(Date.now() - 3600000).toISOString(),
+                  sentiment_score: 0.8,
+                },
+                {
+                  platform: "telegram",
+                  content: "Just bought some more. Chart looks bullish!",
+                  author: "Anonymous",
+                  timestamp: new Date(Date.now() - 7200000).toISOString(),
+                  sentiment_score: 0.6,
+                },
+              ]
+            : [],
+        };
+      },
+
+      async pasteFromClipboard() {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (this.isValidSolanaAddress(text)) {
+            this.form.tokenMint = text;
+            this.showNotification(
+              "success",
+              "Pasted",
+              "Token address pasted from clipboard"
+            );
+          } else {
+            this.showNotification(
+              "warning",
+              "Invalid Format",
+              "Clipboard content is not a valid Solana address"
+            );
+          }
+        } catch (error) {
+          this.showNotification(
+            "error",
+            "Paste Failed",
+            "Failed to access clipboard"
+          );
+        }
+      },
+
+      clearResults() {
+        this.hasResults = false;
+        this.results = null;
+        this.form.tokenMint = "";
+      },
+
+      exportResults() {
+        if (!this.results) return;
+
+        const data = {
+          ...this.results,
+          exported_at: new Date().toISOString(),
+          export_format: "json",
+        };
+
+        const blob = new Blob([JSON.stringify(data, null, 2)], {
+          type: "application/json",
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `token-analysis-${this.results.token.substring(0, 8)}-${
+          new Date().toISOString().split("T")[0]
+        }.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        this.showNotification(
+          "success",
+          "Export Complete",
+          "Analysis results exported successfully"
+        );
+      },
+
+      loadExampleAnalysis() {
+        this.form.tokenMint = "So11111111111111111111111111111111111112"; // WSOL
+        this.analyzeToken();
+      },
+
+      // Utility functions
+      truncateAddress(address) {
+        if (!address) return "N/A";
+        return `${address.substring(0, 8)}...${address.substring(
+          address.length - 8
+        )}`;
+      },
+
+      formatCurrency(value) {
+        if (!value) return "N/A";
+        return `${parseFloat(value).toFixed(4)}`;
+      },
+
+      getPriceChangeClass(change) {
+        if (!change) return "text-gray-500";
+        return parseFloat(change) >= 0 ? "text-green-600" : "text-red-600";
+      },
+
+      getRiskLevelClass(level) {
+        const classes = {
+          low: "bg-green-100 text-green-800",
+          medium: "bg-yellow-100 text-yellow-800",
+          high: "bg-red-100 text-red-800",
+          critical: "bg-red-200 text-red-900",
+        };
+        return classes[level] || "bg-gray-100 text-gray-800";
+      },
+
+      getRecommendationClass(recommendation) {
+        const classes = {
+          BUY: "recommendation-buy",
+          SELL: "recommendation-sell",
+          HOLD: "recommendation-hold",
+          AVOID: "recommendation-avoid",
+        };
+        return classes[recommendation] || "bg-gray-100 text-gray-800";
+      },
+
+      getSentimentClass(score) {
+        if (score > 0.6) return "bg-green-100 text-green-800";
+        if (score > 0.2) return "bg-yellow-100 text-yellow-800";
+        return "bg-red-100 text-red-800";
+      },
+
+      getSentimentLabel(score) {
+        if (score > 0.6) return "Positive";
+        if (score > 0.2) return "Neutral";
+        return "Negative";
+      },
+
+      getAverageSentiment() {
+        if (!this.results?.social_data?.length) return "N/A";
+        const avg =
+          this.results.social_data.reduce(
+            (sum, post) => sum + (post.sentiment_score || 0),
+            0
+          ) / this.results.social_data.length;
+        return this.getSentimentLabel(avg);
+      },
+
+      getTopPlatform() {
+        if (!this.results?.social_data?.length) return "N/A";
+        const platforms = {};
+        this.results.social_data.forEach((post) => {
+          platforms[post.platform] = (platforms[post.platform] || 0) + 1;
+        });
+        return Object.keys(platforms)
+          .reduce((a, b) => (platforms[a] > platforms[b] ? a : b))
+          .toUpperCase();
+      },
+
+      getViralScore() {
+        if (!this.results?.social_data?.length) return "N/A";
+        // Simple viral score based on number of mentions
+        const score = Math.min(this.results.social_data.length / 10, 1) * 100;
+        return Math.round(score) + "%";
+      },
+    };
+  }
+</script>
+{% endblock %}

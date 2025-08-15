@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>
+      {% block title %}Solana Token Analysis AI System{% endblock %}
+    </title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Font Awesome Icons -->
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
+      rel="stylesheet"
+    />
+
+    <!-- Google Fonts -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Alpine.js -->
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
+    ></script>
+
+    <!-- Custom CSS -->
+    <link
+      href="{{ url_for('static', path='css/main.css') }}"
+      rel="stylesheet"
+    />
+
+    <style>
+      * {
+        font-family: "Inter", sans-serif;
+      }
+
+      .gradient-bg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+
+      .glass-effect {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .card-hover {
+        transition: all 0.3s ease;
+      }
+
+      .card-hover:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+      }
+
+      .status-healthy {
+        background-color: #10b981;
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
+      }
+
+      .status-unhealthy {
+        background-color: #ef4444;
+        box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+      }
+
+      .status-warning {
+        background-color: #f59e0b;
+        box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+      }
+
+      .loading-spinner {
+        border: 3px solid #f3f4f6;
+        border-top: 3px solid #3b82f6;
+        border-radius: 50%;
+        width: 24px;
+        height: 24px;
+        animation: spin 1s linear infinite;
+      }
+
+      @keyframes spin {
+        0% {
+          transform: rotate(0deg);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
+      }
+
+      .pulse-glow {
+        animation: pulseGlow 2s infinite;
+      }
+
+      @keyframes pulseGlow {
+        0%,
+        100% {
+          box-shadow: 0 0 10px rgba(59, 130, 246, 0.3);
+        }
+        50% {
+          box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+        }
+      }
+
+      .recommendation-buy {
+        background: linear-gradient(135deg, #10b981, #34d399);
+      }
+      .recommendation-sell {
+        background: linear-gradient(135deg, #ef4444, #f87171);
+      }
+      .recommendation-hold {
+        background: linear-gradient(135deg, #f59e0b, #fbbf24);
+      }
+      .recommendation-avoid {
+        background: linear-gradient(135deg, #6b7280, #9ca3af);
+      }
+
+      .dark-mode {
+        background-color: #1f2937;
+        color: #f9fafb;
+      }
+      .dark-mode .bg-white {
+        background-color: #374151;
+      }
+      .dark-mode .text-gray-900 {
+        color: #f9fafb;
+      }
+      .dark-mode .border-gray-200 {
+        border-color: #4b5563;
+      }
+    </style>
+  </head>
+  <body class="h-full bg-gray-50" x-data="appData()" x-init="init()">
+    <!-- Loading Screen -->
+    <div
+      x-show="loading"
+      x-transition
+      class="fixed inset-0 bg-white z-50 flex items-center justify-center"
+    >
+      <div class="text-center">
+        <div class="loading-spinner mx-auto mb-4"></div>
+        <h2 class="text-xl font-semibold text-gray-900">
+          Loading AI System...
+        </h2>
+        <p class="text-gray-600 mt-2">
+          Initializing components and checking system health
+        </p>
+      </div>
+    </div>
+
+    <!-- Main App -->
+    <div x-show="!loading" x-transition class="h-full">
+      <!-- Header -->
+      {% include 'components/header.html' %}
+
+      <div class="flex h-full pt-16">
+        <!-- Sidebar -->
+        {% include 'components/sidebar.html' %}
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto">
+          <div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            {% block content %}{% endblock %}
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div
+      x-show="notification"
+      x-transition
+      class="fixed top-4 right-4 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm z-50"
+    >
+      <div class="flex items-start">
+        <div
+          x-show="notification.type === 'success'"
+          class="text-green-500 mr-3"
+        >
+          <i class="fas fa-check-circle"></i>
+        </div>
+        <div x-show="notification.type === 'error'" class="text-red-500 mr-3">
+          <i class="fas fa-exclamation-circle"></i>
+        </div>
+        <div
+          x-show="notification.type === 'warning'"
+          class="text-yellow-500 mr-3"
+        >
+          <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        <div>
+          <p class="font-medium text-gray-900" x-text="notification.title"></p>
+          <p class="text-sm text-gray-600" x-text="notification.message"></p>
+        </div>
+        <button
+          @click="hideNotification()"
+          class="ml-4 text-gray-400 hover:text-gray-600"
+        >
+          <i class="fas fa-times"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- WebSocket Status -->
+    <div
+      x-show="wsStatus !== 'connected'"
+      class="fixed bottom-4 left-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg"
+    >
+      <i class="fas fa-wifi mr-2"></i>
+      <span
+        x-text="wsStatus === 'connecting' ? 'Connecting...' : 'Connection Lost'"
+      ></span>
+    </div>
+
+    <!-- Scripts -->
+    <script src="{{ url_for('static', path='js/api.js') }}"></script>
+    <script src="{{ url_for('static', path='js/websocket.js') }}"></script>
+    <script src="{{ url_for('static', path='js/main.js') }}"></script>
+
+    <script>
+      function appData() {
+        return {
+          loading: true,
+          darkMode: false,
+          sidebarOpen: window.innerWidth >= 1024,
+          currentPage: "{{ request.url.path }}",
+          systemHealth: null,
+          notification: null,
+          wsStatus: "disconnected",
+
+          init() {
+            // Initialize app
+            setTimeout(() => {
+              this.loading = false;
+            }, 1500);
+
+            // Load system health
+            this.loadSystemHealth();
+
+            // Setup WebSocket
+            this.setupWebSocket();
+
+            // Check for dark mode preference
+            const isDark = localStorage.getItem("darkMode") === "true";
+            if (isDark) {
+              this.toggleDarkMode();
+            }
+          },
+
+          async loadSystemHealth() {
+            try {
+              const response = await fetch("/health");
+              this.systemHealth = await response.json();
+            } catch (error) {
+              console.error("Failed to load system health:", error);
+              this.showNotification(
+                "error",
+                "System Error",
+                "Failed to load system health"
+              );
+            }
+          },
+
+          setupWebSocket() {
+            // WebSocket logic will be implemented in websocket.js
+            if (typeof initWebSocket === "function") {
+              initWebSocket(this);
+            }
+          },
+
+          toggleDarkMode() {
+            this.darkMode = !this.darkMode;
+            document.body.classList.toggle("dark-mode");
+            localStorage.setItem("darkMode", this.darkMode);
+          },
+
+          toggleSidebar() {
+            this.sidebarOpen = !this.sidebarOpen;
+          },
+
+          showNotification(type, title, message) {
+            this.notification = { type, title, message };
+            setTimeout(() => {
+              this.hideNotification();
+            }, 5000);
+          },
+
+          hideNotification() {
+            this.notification = null;
+          },
+
+          formatNumber(num) {
+            if (!num) return "N/A";
+            if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
+            if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
+            if (num >= 1e3) return (num / 1e3).toFixed(2) + "K";
+            return num.toFixed(2);
+          },
+
+          formatPercent(num) {
+            if (!num && num !== 0) return "N/A";
+            return `${num > 0 ? "+" : ""}${num.toFixed(2)}%`;
+          },
+
+          isValidSolanaAddress(address) {
+            if (!address || typeof address !== "string") return false;
+            if (address.length < 32 || address.length > 44) return false;
+            return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
+          },
+        };
+      }
+    </script>
+
+    {% block scripts %}{% endblock %}
+  </body>
+</html>
