@@ -4,3 +4,4 @@
 **/chroma
 *.log
 .benchmarks
+.pytest_cache
