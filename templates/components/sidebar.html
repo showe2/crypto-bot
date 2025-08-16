@@ -49,6 +49,20 @@
         ></i>
         Token Analysis
       </a>
+
+      <!-- Marketplace -->
+      <a
+        href="/marketplace"
+        @click="$parent.closeSidebar()"
+        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
+        :class="currentPage.startsWith('/marketplace') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+      >
+        <i
+          class="fas fa-shopping-cart mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/marketplace') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+        ></i>
+        Marketplace
+      </a>
     </div>
 
     <!-- AI Tools Section -->

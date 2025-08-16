@@ -179,3 +179,82 @@ async def dashboard_api():
                 "llama": {"status": "unknown", "type": "Deep Analysis"}
             }
         }
+    
+
+# ==============================================
+# MARKETPLACE ENDPOINTS (COMMING SOON)
+# ==============================================
+    
+@router.get("/marketplace", response_class=HTMLResponse, summary="Token marketplace page")
+async def marketplace_page(request: Request):
+    """
+    Token marketplace page (coming soon)
+    """
+    if not templates:
+        return JSONResponse({
+            "error": "Web interface not available",
+            "message": "Templates not found - use API endpoints instead",
+            "feature": "marketplace",
+            "status": "coming_soon"
+        })
+    
+    context = await get_template_context(request)
+    context.update({
+        "page": "marketplace",
+        "title": "Marketplace - Solana AI",
+        "active_nav": "marketplace"
+    })
+    
+    return templates.TemplateResponse("pages/marketplace.html", context)
+
+
+@router.get("/analysis", response_class=HTMLResponse, summary="Token analysis page")
+async def analysis_page(request: Request, token: Optional[str] = None):
+    """
+    Token analysis page with detailed analysis tools
+    """
+    if not templates:
+        return JSONResponse({
+            "error": "Web interface not available",
+            "message": "Templates not found - use API endpoints instead",
+            "api_endpoints": ["/tweet/{token}", "/name/{token}"]
+        })
+    
+    context = await get_template_context(request)
+    context.update({
+        "page": "analysis",
+        "title": "Token Analysis - Solana AI",
+        "active_nav": "analysis",
+        "selected_token": token,
+        "analysis_types": ["quick", "deep"],
+        "example_tokens": [
+            {"name": "Wrapped SOL", "mint": "So11111111111111111111111111111111111112", "symbol": "WSOL"},
+            {"name": "USD Coin", "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "symbol": "USDC"},
+            {"name": "Raydium", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "symbol": "RAY"}
+        ]
+    })
+    
+    return templates.TemplateResponse("pages/analysis.html", context)
+
+
+@router.get("/marketplace", response_class=HTMLResponse, summary="Token marketplace page")
+async def marketplace_page(request: Request):
+    """
+    Token marketplace page (coming soon)
+    """
+    if not templates:
+        return JSONResponse({
+            "error": "Web interface not available",
+            "message": "Templates not found - use API endpoints instead",
+            "feature": "marketplace",
+            "status": "coming_soon"
+        })
+    
+    context = await get_template_context(request)
+    context.update({
+        "page": "marketplace",
+        "title": "Marketplace - Solana AI",
+        "active_nav": "marketplace"
+    })
+    
+    return templates.TemplateResponse("pages/marketplace.html", context)

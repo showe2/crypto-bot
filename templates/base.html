@@ -124,12 +124,21 @@
       /* Fixed layout styles */
       .main-content {
         margin-left: 0;
+        padding-top: 5rem; /* Space for fixed header on mobile */
         transition: margin-left 0.3s ease;
+        min-height: 100vh;
+      }
+
+      @media (min-width: 768px) {
+        .main-content {
+          padding-top: 4rem; /* Smaller padding on larger screens */
+        }
       }
 
       @media (min-width: 1024px) {
         .main-content {
           margin-left: 16rem; /* 64 * 0.25rem = 16rem = 256px */
+          padding-top: 4rem;
         }
       }
 
@@ -168,7 +177,7 @@
       {% include 'components/sidebar.html' %}
 
       <!-- Main Content -->
-      <main class="main-content pt-16 min-h-screen">
+      <main class="main-content">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           {% block content %}{% endblock %}
         </div>

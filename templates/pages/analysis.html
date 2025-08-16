@@ -678,87 +678,6 @@
         <i class="fas fa-play mr-2"></i>
         Try Example
       </button>
-      <button
-        @click="showTokenGuide = true"
-        class="px-4 py-2 text-blue-600 hover:text-blue-800"
-      >
-        <i class="fas fa-question-circle mr-2"></i>
-        How it works
-      </button>
-    </div>
-  </div>
-
-  <!-- Token Guide Modal -->
-  <div
-    x-show="showTokenGuide"
-    @click.away="showTokenGuide = false"
-    x-transition
-    class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-  >
-    <div class="bg-white rounded-xl p-6 max-w-md w-full mx-4">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold text-gray-900">
-          How Token Analysis Works
-        </h3>
-        <button
-          @click="showTokenGuide = false"
-          class="text-gray-400 hover:text-gray-600"
-        >
-          <i class="fas fa-times"></i>
-        </button>
-      </div>
-
-      <div class="space-y-4 text-sm text-gray-600">
-        <div class="flex items-start">
-          <div
-            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
-          >
-            1
-          </div>
-          <div>
-            <div class="font-medium text-gray-900">Enter Token Address</div>
-            <div>Paste the Solana token mint address (32-44 characters)</div>
-          </div>
-        </div>
-
-        <div class="flex items-start">
-          <div
-            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
-          >
-            2
-          </div>
-          <div>
-            <div class="font-medium text-gray-900">Choose Analysis Type</div>
-            <div>
-              Quick analysis (Mistral 7B) or Deep analysis (LLaMA 3 70B)
-            </div>
-          </div>
-        </div>
-
-        <div class="flex items-start">
-          <div
-            class="w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-medium mr-3 mt-0.5"
-          >
-            3
-          </div>
-          <div>
-            <div class="font-medium text-gray-900">Get AI Insights</div>
-            <div>
-              Receive comprehensive analysis with risk assessment and
-              recommendations
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="mt-6">
-        <button
-          @click="showTokenGuide = false"
-          class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700"
-        >
-          Got it!
-        </button>
-      </div>
     </div>
   </div>
 </div>
@@ -777,7 +696,6 @@
       isAnalyzing: false,
       hasResults: false,
       results: null,
-      showTokenGuide: false,
       analysisProgress: {
         step: "Initializing...",
         message: "Starting analysis...",
@@ -816,7 +734,7 @@
 
       async analyzeToken() {
         if (!this.isValidAddress) {
-          this.showNotification(
+          this.$parent.showNotification(
             "error",
             "Invalid Address",
             "Please enter a valid Solana token mint address"
@@ -853,14 +771,14 @@
           this.results = this.transformResults(result);
           this.hasResults = true;
 
-          this.showNotification(
+          this.$parent.showNotification(
             "success",
             "Analysis Complete",
             "Token analysis completed successfully"
           );
         } catch (error) {
           console.error("Analysis error:", error);
-          this.showNotification(
+          this.$parent.showNotification(
             "error",
             "Analysis Failed",
             error.message || "Failed to analyze token"
@@ -990,22 +908,22 @@
       async pasteFromClipboard() {
         try {
           const text = await navigator.clipboard.readText();
-          if (this.isValidSolanaAddress(text)) {
+          if (this.$parent.isValidSolanaAddress(text)) {
             this.form.tokenMint = text;
-            this.showNotification(
+            this.$parent.showNotification(
               "success",
               "Pasted",
               "Token address pasted from clipboard"
             );
           } else {
-            this.showNotification(
+            this.$parent.showNotification(
               "warning",
               "Invalid Format",
               "Clipboard content is not a valid Solana address"
             );
           }
         } catch (error) {
-          this.showNotification(
+          this.$parent.showNotification(
             "error",
             "Paste Failed",
             "Failed to access clipboard"
@@ -1042,7 +960,7 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        this.showNotification(
+        this.$parent.showNotification(
           "success",
           "Export Complete",
           "Analysis results exported successfully"
@@ -1065,6 +983,37 @@
       formatCurrency(value) {
         if (!value) return "N/A";
         return `${parseFloat(value).toFixed(4)}`;
+      },
+
+      formatNumber(num) {
+        if (!num && num !== 0) return "N/A";
+        if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
+        if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+        return Math.round(num).toString();
+      },
+
+      formatPercent(num) {
+        if (!num && num !== 0) return "N/A";
+        return `${num > 0 ? "+" : ""}${num.toFixed(1)}%`;
+      },
+
+      formatTime(timestamp) {
+        if (!timestamp) return "Unknown";
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diff = now - date;
+
+        if (diff < 60000) return "Just now";
+        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+        return date.toLocaleDateString();
+      },
+
+      isValidSolanaAddress(address) {
+        if (!address || typeof address !== "string") return false;
+        if (address.length < 32 || address.length > 44) return false;
+        return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
       },
 
       getPriceChangeClass(change) {
