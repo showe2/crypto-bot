@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     SOLSCAN_API_KEY: Optional[str] = None
     SOLSCAN_BASE_URL: str = "https://public-api.solscan.io"
 
+    # DexScreener
+    DEXSCREENER_BASE_URL: str = "https://api.dexscreener.com/latest/dex/tokens"
+
     # PumpFun API
     PUMPFUN_API_KEY: Optional[str] = None
 
@@ -115,6 +118,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = "your-secret-key-change-in-production"
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 1440
+    WALLET_SECRET_KEY: Optional[str] = None
     RATE_LIMIT_PER_MINUTE: int = 60
     RATE_LIMIT_PER_HOUR: int = 1000
 

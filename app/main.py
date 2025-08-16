@@ -305,9 +305,24 @@ async def config_status():
             "http_pool_size": settings.HTTP_POOL_SIZE,
             "http_max_retries": settings.HTTP_MAX_RETRIES
         },
-        "rate_limits": {
-            "per_minute": settings.RATE_LIMIT_PER_MINUTE,
-            "per_hour": settings.RATE_LIMIT_PER_HOUR
+        "security_settings": {
+            "jwt_algorithm": settings.JWT_ALGORITHM,
+            "jwt_expire_minutes": settings.JWT_EXPIRE_MINUTES,
+            "wallet_configured": bool(settings.WALLET_SECRET_KEY),
+            "rate_limits": {
+                "per_minute": settings.RATE_LIMIT_PER_MINUTE,
+                "per_hour": settings.RATE_LIMIT_PER_HOUR
+            }
+        },
+        "api_urls": {
+            "helius_rpc": bool(settings.HELIUS_RPC_URL),
+            "chainbase": bool(settings.CHAINBASE_BASE_URL),
+            "birdeye": bool(settings.BIRDEYE_BASE_URL),
+            "blowfish": bool(settings.BLOWFISH_BASE_URL),
+            "solscan": bool(settings.SOLSCAN_BASE_URL),
+            "dexscreener": bool(settings.DEXSCREENER_BASE_URL),
+            "dataimpulse": bool(settings.DATAIMPULSE_BASE_URL),
+            "jupiter": bool(settings.JUPITER_API_URL)
         },
         "api_keys_configured": len([
             key for key, status in settings.get_all_api_keys_status().items()
