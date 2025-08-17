@@ -133,6 +133,37 @@ check_dependencies() {
     fi
 }
 
+# Check if service testing dependencies are available
+check_service_dependencies() {
+    log_step "Checking service testing dependencies..."
+    
+    local missing_deps=()
+    local service_deps=("aiohttp" "asyncio")
+    
+    for dep in "${service_deps[@]}"; do
+        if ! python -c "import $dep" >/dev/null 2>&1; then
+            missing_deps+=("$dep")
+        fi
+    done
+    
+    if [ ${#missing_deps[@]} -eq 0 ]; then
+        log_success "Service testing dependencies available"
+        return 0
+    else
+        log_warn "Missing service dependencies: ${missing_deps[*]}"
+        log_info "Installing missing dependencies..."
+        
+        if [ -f "requirements-test.txt" ]; then
+            python -m pip install -r requirements-test.txt
+        else
+            python -m pip install aiohttp aiofiles
+        fi
+        
+        log_success "Service dependencies installed"
+        return 0
+    fi
+}
+
 # Check project structure
 check_project_structure() {
     log_step "Checking project structure..."
@@ -171,11 +202,13 @@ check_test_structure() {
     mkdir -p "$TESTS_DIR"
     mkdir -p "$UNIT_TESTS_DIR"
     mkdir -p "$INTEGRATION_TESTS_DIR"
+    mkdir -p "$TESTS_DIR/services"
     
     # Create __init__.py files
     touch "$TESTS_DIR/__init__.py"
     touch "$UNIT_TESTS_DIR/__init__.py"
     touch "$INTEGRATION_TESTS_DIR/__init__.py"
+    touch "$TESTS_DIR/services/__init__.py"
     
     log_success "Test structure ready"
 }
@@ -512,13 +545,30 @@ show_help() {
     echo "  --quick             Run only basic tests (fast)"
     echo "  --unit-only         Run only unit tests"
     echo "  --integration-only  Run only integration tests"
+    echo "  --services          Run service/API tests (mocked)"
+    echo "  --services-safe     Run safe service testing tool (mock mode)"
+    echo "  --services-free     Run free API tests only"
+    echo "  --services-paid     Run paid API tests (⚠️  COSTS MONEY)"
+    echo "  --services-health   Run service health monitoring tests"
     echo "  --create-samples    Create sample tests"
     echo "  --with-coverage     Run tests with coverage report"
+    echo ""
+    echo "Service Testing Modes:"
+    echo "  --services          Pytest-based service tests (safe, mocked)"
+    echo "  --services-safe     Safe service tester in mock mode (FREE)"
+    echo "  --services-free     Safe service tester with free APIs (FREE)"
+    echo "  --services-paid     Safe service tester with paid APIs (💰 COSTS MONEY)"
+    echo "  --services-health   Service health monitoring tests (FREE)"
     echo ""
     echo "Examples:"
     echo "  $0                  # Run full test suite"
     echo "  $0 --quick          # Quick tests only"
     echo "  $0 --unit-only      # Unit tests only"
+    echo "  $0 --services       # Service tests (mocked, safe)"
+    echo "  $0 --services-safe  # Safe service testing (mock mode)"
+    echo "  $0 --services-free  # Test free APIs only"
+    echo ""
+    echo "⚠️  WARNING: --services-paid may consume API credits!"
     echo ""
 }
 
@@ -549,6 +599,131 @@ main() {
             check_dependencies || exit 1
             check_test_structure
             run_pytest_suite "$INTEGRATION_TESTS_DIR" "Integration Tests" "-m integration"
+            generate_report
+            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+            ;;
+        --services)
+            log_header "Service Tests Only"
+            activate_venv || exit 1
+            check_dependencies || exit 1
+            check_service_dependencies || exit 1
+            check_test_structure
+            
+            # Check if services directory exists
+            SERVICES_DIR="$TESTS_DIR/services"
+            if [ ! -d "$SERVICES_DIR" ]; then
+                log_warn "Services test directory not found: $SERVICES_DIR"
+                log_info "Creating services test directory..."
+                mkdir -p "$SERVICES_DIR"
+                touch "$SERVICES_DIR/__init__.py"
+            fi
+            
+            run_pytest_suite "$SERVICES_DIR" "Service Tests" "-m services"
+            generate_report
+            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+            ;;
+        --services-safe)
+            log_header "Safe Service Testing Tool"
+            activate_venv || exit 1
+            check_dependencies || exit 1
+            check_service_dependencies || exit 1
+            
+            # Check if safe service tester exists
+            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+            if [ ! -f "$SAFE_TESTER" ]; then
+                log_error "Safe service tester not found: $SAFE_TESTER"
+                log_info "Please ensure tests/services/test_services.py exists"
+                exit 1
+            fi
+            
+            # Create results directory
+            mkdir -p "$TESTS_DIR/services/results"
+            
+            log_info "Running safe service tester in mock mode (safest)..."
+            log_info "This will test system components even if the server isn't running"
+            python -m tests.services.test_services --mode mock
+            
+            # Show results location
+            if [ -f "$TESTS_DIR/services/results/latest_mock.json" ]; then
+                log_success "Latest results available at: $TESTS_DIR/services/results/latest_mock.json"
+            fi
+            
+            exit $?
+            ;;
+        --services-free)
+            log_header "Free API Service Testing"
+            activate_venv || exit 1
+            check_dependencies || exit 1
+            check_service_dependencies || exit 1
+            
+            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+            if [ ! -f "$SAFE_TESTER" ]; then
+                log_error "Safe service tester not found: $SAFE_TESTER"
+                exit 1
+            fi
+            
+            # Create results directory
+            mkdir -p "$TESTS_DIR/services/results"
+            
+            log_info "Running safe service tester with free APIs only..."
+            python -m tests.services.test_services --mode free
+            
+            # Show results location
+            if [ -f "$TESTS_DIR/services/results/latest_free.json" ]; then
+                log_success "Latest results available at: $TESTS_DIR/services/results/latest_free.json"
+            fi
+            
+            exit $?
+            ;;
+        --services-paid)
+            log_header "⚠️  PAID API SERVICE TESTING ⚠️"
+            log_warn "This mode will test paid APIs and may consume credits!"
+            log_warn "Make sure you have:"
+            log_warn "  • Set ENABLE_API_MOCKS=true in .env (recommended)"
+            log_warn "  • Sufficient API credits"
+            log_warn "  • Monitoring enabled on API dashboards"
+            
+            activate_venv || exit 1
+            check_dependencies || exit 1
+            check_service_dependencies || exit 1
+            
+            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+            if [ ! -f "$SAFE_TESTER" ]; then
+                log_error "Safe service tester not found: $SAFE_TESTER"
+                exit 1
+            fi
+            
+            # Create results directory
+            mkdir -p "$TESTS_DIR/services/results"
+            
+            # Ask for confirmation
+            echo ""
+            echo -e "${YELLOW}Continue with paid API testing? This may cost money! (yes/no):${NC}"
+            read -r confirmation
+            if [[ "$confirmation" != "yes" && "$confirmation" != "y" ]]; then
+                log_info "Paid API testing cancelled"
+                exit 0
+            fi
+            
+            log_info "Running safe service tester with limited paid API calls..."
+            python -m tests.services.test_services --mode limited
+            
+            # Show results location
+            if [ -f "$TESTS_DIR/services/results/latest_limited.json" ]; then
+                log_success "Latest results available at: $TESTS_DIR/services/results/latest_limited.json"
+            fi
+            
+            exit $?
+            ;;
+        --services-health)
+            log_header "Service Health Testing"
+            activate_venv || exit 1
+            check_dependencies || exit 1
+            check_service_dependencies || exit 1
+            check_test_structure
+            
+            # Run health-specific tests
+            run_pytest_suite "$TESTS_DIR/services" "Service Health Tests" "-m health"
             generate_report
             exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
             ;;

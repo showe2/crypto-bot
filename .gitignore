@@ -5,3 +5,4 @@
 *.log
 .benchmarks
 .pytest_cache
+tests/services/results
