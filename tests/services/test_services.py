@@ -295,7 +295,7 @@ class SafeServiceTester:
         return results
     
     async def _test_service_health(self, service_name: str) -> TestResult:
-        """Test individual service health"""
+        """Test individual service health with improved error handling"""
         print(f"   🔍 Testing {service_name} service health...")
         
         start_time = time.time()
@@ -319,17 +319,36 @@ class SafeServiceTester:
             response_time = time.time() - start_time
             success = health_data.get("healthy", False)
             
-            # Estimate cost (health checks are usually free or very cheap)
-            cost_estimate = self.api_costs.get(service_name, 0.001)
-            cost_str = f"${cost_estimate:.3f}" if cost_estimate > 0 else "FREE"
+            # Check for specific API key issues
+            api_key_configured = health_data.get("api_key_configured", False)
+            error_message = health_data.get("error", "")
+            
+            # Determine cost estimate
+            if not api_key_configured:
+                cost_estimate = "FREE"  # No API calls made
+            elif "invalid" in error_message.lower() or "suspended" in error_message.lower():
+                cost_estimate = "FREE"  # Failed before making billable calls
+            else:
+                cost_estimate = f"${self.api_costs.get(service_name, 0.001):.3f}"
+            
+            # Create detailed error message for API key issues
+            if not success and not api_key_configured:
+                error = f"API key not configured. Set {service_name.upper()}_API_KEY in .env file"
+            elif not success and "invalid" in error_message.lower():
+                error = f"API key invalid or suspended. Check your {service_name} account"
+            elif not success and "permissions" in error_message.lower():
+                error = f"API key lacks permissions. Upgrade your {service_name} plan"
+            else:
+                error = health_data.get("error")
             
             return TestResult(
                 service=service_name,
                 endpoint="health_check",
                 success=success,
                 response_time=response_time,
-                cost_estimate=cost_str,
-                data_size=len(str(health_data))
+                cost_estimate=cost_estimate,
+                data_size=len(str(health_data)),
+                error=error
             )
             
         except Exception as e:
@@ -339,7 +358,7 @@ class SafeServiceTester:
                 success=False,
                 response_time=time.time() - start_time,
                 cost_estimate="FREE",
-                error=str(e)
+                error=f"Health check failed: {str(e)}"
             )
     
     def _confirm_paid_testing(self) -> bool:
