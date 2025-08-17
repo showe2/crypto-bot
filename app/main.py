@@ -16,6 +16,7 @@ from app.core.logging import setup_logging
 from app.core.dependencies import startup_dependencies, shutdown_dependencies
 from app.routers import alex_core
 from app.utils.health import health_check_all_services
+from app.routers.api_router import router as api_router
 
 # Global settings
 settings = get_settings()
@@ -206,11 +207,17 @@ if static_dir.exists():
 else:
     logger.warning("⚠️  Static files directory not found")
 
-# Include routers (alex_core now includes frontend routes)
+# Include routers
 app.include_router(
     alex_core.router,
     prefix="",
     tags=["core", "frontend"]
+)
+
+app.include_router(
+    api_router,
+    prefix="",
+    tags=["api", "services"]
 )
 
 # Health check endpoints (keep original simple ones)
