@@ -1,8 +1,7 @@
 .env
 .venv
 **/__pycache__
-**/chroma
-*.log
-.benchmarks
-.pytest_cache
-tests/services/results
+/shared_data
+/.benchmarks
+/.pytest_cache
+/tests/services/results

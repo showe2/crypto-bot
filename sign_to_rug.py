@@ -18,6 +18,7 @@ import base58
 #   raise ValueError("Please set the SOLANA_PRIVATE_KEY environment variable.")
 
 PRIVATE_KEY_JSON = [217,80,175,155,90,193,90,100,8,86,124,24,55,235,241,97,241,198,3,29,41,149,38,238,218,142,180,29,172,9,9,193,81,28,116,57,112,108,76,110,123,5,54,184,194,224,218,76,172,182,91,163,53,130,91,167,248,22,208,37,109,137,159,198]
+PRIVATE_KEY="5oyP6rBbSKMoM5oQSKAW7ZeZMoqGvQ1EQSqpoVZ9GUCRbstopcd7u62pzySg3d51wNwx8DHpVAyxSA9mjYGYqUde"
 
 # Parse the JSON array string → list of ints → bytes
 try:
@@ -27,6 +28,8 @@ except Exception as e:
 
 # Create wallet (Keypair) from raw secret key bytes
 wallet: Keypair = Keypair.from_bytes(secret_key_bytes)
+
+wallet: Keypair = Keypair.from_base58_string(PRIVATE_KEY)
 
 def sign_message(wallet: Keypair, message: str) -> dict:
   # Create a message object (not required for simple signing, but included for completeness)
