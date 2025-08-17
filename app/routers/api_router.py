@@ -11,7 +11,7 @@ from app.services.service_manager import (
     search_for_tokens,
     get_trending_analysis
 )
-from app.core.dependencies import rate_limit_per_ip, CacheDep
+from app.core.dependencies import rate_limit_per_ip
 from app.models.token import TokenAnalysisRequest, TokenAnalysisResponse
 
 router = APIRouter(prefix="/api", tags=["API Services"])
@@ -41,7 +41,6 @@ async def api_services_health():
 async def analyze_token(
     request: TokenAnalysisRequest,
     background_tasks: BackgroundTasks,
-    cache: CacheDep,
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -59,6 +58,9 @@ async def analyze_token(
     
     try:
         # Check cache first
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         cache_key = f"token_analysis:{request.mint}:{request.priority}"
         cached_result = await cache.get(cache_key, namespace="analysis")
         
@@ -117,7 +119,6 @@ async def analyze_token(
 async def search_tokens(
     query: str = Query(..., description="Search query (token name, symbol, or address)"),
     limit: int = Query(20, ge=1, le=100, description="Maximum number of results"),
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -129,6 +130,10 @@ async def search_tokens(
     - Solscan token list
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = f"token_search:{query}:{limit}"
         cached_results = await cache.get(cache_key, namespace="search")
@@ -166,7 +171,6 @@ async def search_tokens(
 async def get_trending_tokens(
     limit: int = Query(20, ge=1, le=50, description="Maximum number of trending tokens"),
     sort_by: str = Query("volume", description="Sort by: volume, market_cap, social_buzz"),
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -178,6 +182,10 @@ async def get_trending_tokens(
     - DataImpulse social trending
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = f"trending_tokens:{limit}:{sort_by}"
         cached_results = await cache.get(cache_key, namespace="trending")
@@ -228,7 +236,6 @@ async def analyze_social_sentiment(
     token_symbol: str,
     token_name: Optional[str] = None,
     time_range: str = Query("24h", description="Time range: 1h, 24h, 7d"),
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -241,6 +248,10 @@ async def analyze_social_sentiment(
     - Discord server messages
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = f"social_sentiment:{token_symbol}:{time_range}"
         cached_results = await cache.get(cache_key, namespace="social")
@@ -275,7 +286,6 @@ async def analyze_social_sentiment(
 @router.post("/analyze/security", summary="Security Analysis")
 async def analyze_token_security(
     token_address: str,
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -289,6 +299,10 @@ async def analyze_token_security(
     - Liquidity analysis
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = f"security_analysis:{token_address}"
         cached_results = await cache.get(cache_key, namespace="security")
@@ -323,7 +337,6 @@ async def analyze_token_security(
 @router.get("/whale-activity/{token_address}", summary="Whale Activity Analysis")
 async def get_whale_activity(
     token_address: str,
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -336,6 +349,10 @@ async def get_whale_activity(
     - Risk assessment
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = f"whale_activity:{token_address}"
         cached_results = await cache.get(cache_key, namespace="whale")
@@ -361,7 +378,6 @@ async def get_whale_activity(
 
 @router.get("/market-overview", summary="Market Overview")
 async def get_market_overview(
-    cache: CacheDep = Depends(),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
@@ -374,6 +390,10 @@ async def get_market_overview(
     - Volume analysis
     """
     try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
         # Check cache
         cache_key = "market_overview"
         cached_results = await cache.get(cache_key, namespace="market")

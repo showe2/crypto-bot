@@ -27,6 +27,15 @@ class BirdeyeClient:
         self._last_request_time = 0
         self.timeout = settings.API_TIMEOUT
         
+        # API endpoint variations to try
+        self.api_endpoints = {
+            "price_v1": "/defi/price",
+            "price_v2": "/defi/token_overview", 
+            "price_v3": "/defi/tokens/{address}/price",
+            "overview": "/defi/token_overview",
+            "multi_price": "/defi/multi_price"
+        }
+        
         if not self.api_key:
             logger.warning("Birdeye API key not configured")
     
@@ -59,83 +68,206 @@ class BirdeyeClient:
         
         self._last_request_time = time.time()
     
-    async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make HTTP request with error handling and rate limiting"""
+    def _validate_solana_address(self, address: str) -> bool:
+        """Validate Solana address format"""
+        if not address or not isinstance(address, str):
+            return False
+        
+        # Solana addresses are base58 encoded, 32-44 characters
+        if len(address) < 32 or len(address) > 44:
+            return False
+        
+        # Check for valid base58 characters
+        import re
+        base58_pattern = re.compile(r'^[1-9A-HJ-NP-Za-km-z]+$')
+        return bool(base58_pattern.match(address))
+    
+    async def _request_with_fallback(self, endpoints_to_try: List[Dict], token_address: str) -> Dict[str, Any]:
+        """Try multiple API endpoint formats until one works"""
         if not self.api_key:
             raise BirdeyeAPIError("Birdeye API key not configured")
         
         await self._ensure_session()
         await self._rate_limit()
         
-        url = f"{self.base_url}{endpoint}"
-        headers = {
-            "X-API-KEY": self.api_key,
-            "Content-Type": "application/json",
-            **kwargs.pop("headers", {})
-        }
+        # Validate address first
+        if not self._validate_solana_address(token_address):
+            raise BirdeyeAPIError(f"Invalid Solana address format: {token_address}")
         
-        try:
-            async with self.session.request(method, url, headers=headers, **kwargs) as response:
-                response_data = await response.json()
+        last_error = None
+        
+        for i, endpoint_config in enumerate(endpoints_to_try):
+            try:
+                method = endpoint_config.get("method", "GET")
+                endpoint = endpoint_config["endpoint"]
+                params = endpoint_config.get("params", {})
+                json_data = endpoint_config.get("json", None)
                 
-                if response.status == 200:
-                    return response_data
-                elif response.status == 429:
-                    # Rate limited
-                    retry_after = int(response.headers.get('Retry-After', 1))
-                    logger.warning(f"Birdeye rate limited, waiting {retry_after}s")
-                    await asyncio.sleep(retry_after)
-                    # Retry once
-                    return await self._request(method, endpoint, **kwargs)
-                elif response.status == 401:
-                    raise BirdeyeAPIError("Invalid Birdeye API key")
-                else:
-                    error_msg = response_data.get('message', f'HTTP {response.status}')
-                    raise BirdeyeAPIError(f"Birdeye API error: {error_msg}")
+                # Replace address placeholder in URL
+                url = f"{self.base_url}{endpoint}".format(address=token_address)
+                
+                headers = {
+                    "X-API-KEY": self.api_key,
+                    "Content-Type": "application/json"
+                }
+                
+                logger.debug(f"Trying Birdeye API endpoint {i+1}/{len(endpoints_to_try)}: {method} {url}")
+                
+                async with self.session.request(
+                    method=method,
+                    url=url,
+                    headers=headers,
+                    params=params,
+                    json=json_data
+                ) as response:
                     
-        except asyncio.TimeoutError:
-            raise BirdeyeAPIError("Birdeye API request timeout")
-        except aiohttp.ClientError as e:
-            raise BirdeyeAPIError(f"Birdeye client error: {str(e)}")
+                    response_data = await response.json()
+                    
+                    if response.status == 200:
+                        logger.debug(f"✅ Birdeye API endpoint {i+1} successful")
+                        return response_data
+                    elif response.status == 429:
+                        # Rate limited - wait and retry this endpoint
+                        retry_after = int(response.headers.get('Retry-After', 2))
+                        logger.warning(f"Birdeye rate limited, waiting {retry_after}s")
+                        await asyncio.sleep(retry_after)
+                        # Retry the same endpoint once
+                        async with self.session.request(
+                            method=method,
+                            url=url,
+                            headers=headers,
+                            params=params,
+                            json=json_data
+                        ) as retry_response:
+                            retry_data = await retry_response.json()
+                            if retry_response.status == 200:
+                                return retry_data
+                            else:
+                                last_error = f"HTTP {retry_response.status}: {retry_data.get('message', 'Unknown error')}"
+                    else:
+                        last_error = f"HTTP {response.status}: {response_data.get('message', 'Unknown error')}"
+                        logger.debug(f"❌ Endpoint {i+1} failed: {last_error}")
+                        
+            except Exception as e:
+                last_error = f"Request failed: {str(e)}"
+                logger.debug(f"❌ Endpoint {i+1} exception: {last_error}")
+                continue
+        
+        # If all endpoints failed
+        raise BirdeyeAPIError(f"All API endpoints failed. Last error: {last_error}")
     
     async def get_token_price(self, token_address: str, include_liquidity: bool = True) -> Dict[str, Any]:
-        """Get current token price and basic info"""
+        """Get current token price and basic info with multiple endpoint fallbacks"""
         try:
-            endpoint = f"/defi/price"
-            params = {
-                "address": token_address,
-                "include_liquidity": str(include_liquidity).lower()
-            }
+            # Define endpoint variations to try in order of preference
+            endpoints_to_try = [
+                # Try the most common current format first
+                {
+                    "endpoint": "/defi/token_overview",
+                    "method": "GET",
+                    "params": {
+                        "address": token_address,
+                        "include_liquidity": str(include_liquidity).lower()
+                    }
+                },
+                # Try alternative parameter name
+                {
+                    "endpoint": "/defi/token_overview", 
+                    "method": "GET",
+                    "params": {
+                        "token_address": token_address,
+                        "include_liquidity": str(include_liquidity).lower()
+                    }
+                },
+                # Try the old price endpoint
+                {
+                    "endpoint": "/defi/price",
+                    "method": "GET", 
+                    "params": {
+                        "address": token_address,
+                        "include_liquidity": str(include_liquidity).lower()
+                    }
+                },
+                # Try with mint parameter
+                {
+                    "endpoint": "/defi/price",
+                    "method": "GET",
+                    "params": {
+                        "mint": token_address,
+                        "include_liquidity": str(include_liquidity).lower()
+                    }
+                },
+                # Try POST method
+                {
+                    "endpoint": "/defi/price",
+                    "method": "POST",
+                    "json": {
+                        "address": token_address,
+                        "include_liquidity": include_liquidity
+                    }
+                },
+                # Try path-based endpoint
+                {
+                    "endpoint": "/defi/tokens/{address}/price",
+                    "method": "GET",
+                    "params": {
+                        "include_liquidity": str(include_liquidity).lower()
+                    } if include_liquidity else {}
+                }
+            ]
             
-            response = await self._request("GET", endpoint, params=params)
+            response = await self._request_with_fallback(endpoints_to_try, token_address)
             
-            if not response.get("data"):
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data for {token_address}")
                 return None
             
-            data = response["data"]
+            # Handle different response formats
+            data = response.get("data", response)
+            
+            # Standardize the response format
             price_info = {
                 "address": token_address,
-                "value": data.get("value"),  # Price in USD
-                "updateUnixTime": data.get("updateUnixTime"),
-                "updateHumanTime": data.get("updateHumanTime"),
-                "priceChange24h": data.get("priceChange24h"),
-                "priceChange24hPercent": data.get("priceChange24hPercent"),
-                "liquidity": data.get("liquidity") if include_liquidity else None
+                "value": data.get("value") or data.get("price") or data.get("priceUsd"),
+                "updateUnixTime": data.get("updateUnixTime") or data.get("lastTradeUnixTime"),
+                "updateHumanTime": data.get("updateHumanTime") or data.get("lastTradeHumanTime"),
+                "priceChange24h": data.get("priceChange24h") or data.get("price24hChange"),
+                "priceChange24hPercent": data.get("priceChange24hPercent") or data.get("price24hChangePercent"),
+                "liquidity": data.get("liquidity") if include_liquidity else None,
+                "volume24h": data.get("v24hUSD") or data.get("volume24h"),
+                "marketCap": data.get("mc") or data.get("marketCap")
             }
             
             return price_info
             
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
             logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
             return None
     
     async def get_token_metadata(self, token_address: str) -> Dict[str, Any]:
-        """Get token metadata from Birdeye"""
+        """Get token metadata from Birdeye with fallback endpoints"""
         try:
-            endpoint = f"/defi/token_overview"
-            params = {"address": token_address}
+            endpoints_to_try = [
+                {
+                    "endpoint": "/defi/token_overview",
+                    "method": "GET",
+                    "params": {"address": token_address}
+                },
+                {
+                    "endpoint": "/defi/token_overview",
+                    "method": "GET", 
+                    "params": {"token_address": token_address}
+                },
+                {
+                    "endpoint": "/defi/tokens/{address}",
+                    "method": "GET"
+                }
+            ]
             
-            response = await self._request("GET", endpoint, params=params)
+            response = await self._request_with_fallback(endpoints_to_try, token_address)
             
             if not response.get("data"):
                 return None
@@ -146,17 +278,17 @@ class BirdeyeClient:
                 "name": data.get("name"),
                 "symbol": data.get("symbol"),
                 "decimals": data.get("decimals"),
-                "logoURI": data.get("logoURI"),
-                "mc": data.get("mc"),  # Market cap
-                "v24hUSD": data.get("v24hUSD"),  # 24h volume in USD
-                "v24hChangePercent": data.get("v24hChangePercent"),
+                "logoURI": data.get("logoURI") or data.get("image"),
+                "mc": data.get("mc") or data.get("marketCap"),
+                "v24hUSD": data.get("v24hUSD") or data.get("volume24h"),
+                "v24hChangePercent": data.get("v24hChangePercent") or data.get("volume24hChangePercent"),
                 "liquidity": data.get("liquidity"),
                 "lastTradeUnixTime": data.get("lastTradeUnixTime"),
                 "lastTradeHumanTime": data.get("lastTradeHumanTime"),
                 "buy24h": data.get("buy24h"),
                 "sell24h": data.get("sell24h"),
-                "holder": data.get("holder"),
-                "supply": data.get("supply"),
+                "holder": data.get("holder") or data.get("holderCount"),
+                "supply": data.get("supply") or data.get("totalSupply"),
                 "extensions": data.get("extensions", {})
             }
             
@@ -166,273 +298,57 @@ class BirdeyeClient:
             logger.error(f"Error getting token metadata from Birdeye for {token_address}: {str(e)}")
             return None
     
-    async def get_price_history(self, token_address: str, address_type: str = "token", 
-                               time_from: int = None, time_to: int = None, 
-                               type_interval: str = "1h") -> List[Dict[str, Any]]:
-        """Get historical price data"""
+    async def search_tokens(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Search tokens by keyword with fallback endpoints"""
         try:
-            endpoint = f"/defi/history_price"
-            
-            # Default to last 7 days if no time range specified
-            if time_to is None:
-                time_to = int(datetime.utcnow().timestamp())
-            if time_from is None:
-                time_from = int((datetime.utcnow() - timedelta(days=7)).timestamp())
-            
-            params = {
-                "address": token_address,
-                "address_type": address_type,
-                "type": type_interval,  # 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 6h, 8h, 12h, 1d
-                "time_from": time_from,
-                "time_to": time_to
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("items"):
-                return []
-            
-            history = []
-            for item in response["data"]["items"]:
-                price_point = {
-                    "unixTime": item.get("unixTime"),
-                    "value": item.get("value"),
-                    "address": token_address,
-                    "type": type_interval
+            endpoints_to_try = [
+                {
+                    "endpoint": "/defi/search",
+                    "method": "GET",
+                    "params": {
+                        "keyword": keyword,
+                        "limit": min(limit, 50)
+                    }
+                },
+                {
+                    "endpoint": "/defi/search_token",
+                    "method": "GET",
+                    "params": {
+                        "q": keyword,
+                        "limit": min(limit, 50)
+                    }
+                },
+                {
+                    "endpoint": "/defi/tokenlist",
+                    "method": "GET",
+                    "params": {
+                        "search": keyword,
+                        "limit": min(limit, 50)
+                    }
                 }
-                history.append(price_point)
+            ]
             
-            return history
-            
-        except Exception as e:
-            logger.error(f"Error getting price history from Birdeye for {token_address}: {str(e)}")
-            return []
-    
-    async def get_volume_history(self, token_address: str, address_type: str = "token",
-                                time_from: int = None, time_to: int = None,
-                                type_interval: str = "1h") -> List[Dict[str, Any]]:
-        """Get historical volume data"""
-        try:
-            endpoint = f"/defi/ohlcv"
-            
-            # Default to last 7 days if no time range specified
-            if time_to is None:
-                time_to = int(datetime.utcnow().timestamp())
-            if time_from is None:
-                time_from = int((datetime.utcnow() - timedelta(days=7)).timestamp())
-            
-            params = {
-                "address": token_address,
-                "address_type": address_type,
-                "type": type_interval,
-                "time_from": time_from,
-                "time_to": time_to
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("items"):
-                return []
-            
-            volume_history = []
-            for item in response["data"]["items"]:
-                volume_point = {
-                    "unixTime": item.get("unixTime"),
-                    "open": item.get("o"),
-                    "high": item.get("h"),
-                    "low": item.get("l"),
-                    "close": item.get("c"),
-                    "volume": item.get("v"),
-                    "address": token_address,
-                    "type": type_interval
-                }
-                volume_history.append(volume_point)
-            
-            return volume_history
-            
-        except Exception as e:
-            logger.error(f"Error getting volume history from Birdeye for {token_address}: {str(e)}")
-            return []
-    
-    async def get_token_trades(self, token_address: str, limit: int = 100, 
-                              offset: int = 0, tx_type: str = "all") -> List[Dict[str, Any]]:
-        """Get recent trades for a token"""
-        try:
-            endpoint = f"/defi/txs/{token_address}"
-            params = {
-                "limit": min(limit, 100),  # API usually limits to 100
-                "offset": offset,
-                "tx_type": tx_type  # all, swap, add_liquidity, remove_liquidity
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("items"):
-                return []
-            
-            trades = []
-            for trade in response["data"]["items"]:
-                trade_info = {
-                    "txHash": trade.get("txHash"),
-                    "blockUnixTime": trade.get("blockUnixTime"),
-                    "txType": trade.get("txType"),
-                    "source": trade.get("source"),
-                    "from": trade.get("from"),
-                    "to": trade.get("to"),
-                    "changeAmount": trade.get("changeAmount"),
-                    "balanceChange": trade.get("balanceChange"),
-                    "side": trade.get("side"),  # buy or sell
-                    "volumeInUSD": trade.get("volumeInUSD"),
-                    "price": trade.get("price"),
-                    "fee": trade.get("fee")
-                }
-                trades.append(trade_info)
-            
-            return trades
-            
-        except Exception as e:
-            logger.error(f"Error getting token trades from Birdeye for {token_address}: {str(e)}")
-            return []
-    
-    async def get_top_traders(self, token_address: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get top traders for a token"""
-        try:
-            endpoint = f"/defi/top_traders/{token_address}"
-            params = {"limit": min(limit, 100)}
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("items"):
-                return []
-            
-            traders = []
-            for trader in response["data"]["items"]:
-                trader_info = {
-                    "address": trader.get("address"),
-                    "totalVolumeInUSD": trader.get("totalVolumeInUSD"),
-                    "totalTxns": trader.get("totalTxns"),
-                    "totalBuyInUSD": trader.get("totalBuyInUSD"),
-                    "totalSellInUSD": trader.get("totalSellInUSD"),
-                    "buyTxns": trader.get("buyTxns"),
-                    "sellTxns": trader.get("sellTxns"),
-                    "avgBuyPrice": trader.get("avgBuyPrice"),
-                    "avgSellPrice": trader.get("avgSellPrice"),
-                    "pnl": trader.get("pnl"),
-                    "pnlPercent": trader.get("pnlPercent"),
-                    "winRate": trader.get("winRate")
-                }
-                traders.append(trader_info)
-            
-            return traders
-            
-        except Exception as e:
-            logger.warning(f"Error getting top traders from Birdeye for {token_address}: {str(e)}")
-            return []
-    
-    async def get_token_security(self, token_address: str) -> Dict[str, Any]:
-        """Get token security information"""
-        try:
-            endpoint = f"/defi/token_security"
-            params = {"address": token_address}
-            
-            response = await self._request("GET", endpoint, params=params)
+            response = await self._request_with_fallback(endpoints_to_try, keyword)
             
             if not response.get("data"):
-                return None
+                return []
             
             data = response["data"]
-            security_info = {
-                "address": token_address,
-                "ownerBalance": data.get("ownerBalance"),
-                "creatorBalance": data.get("creatorBalance"),
-                "ownerPercentage": data.get("ownerPercentage"),
-                "creatorPercentage": data.get("creatorPercentage"),
-                "top10HolderBalance": data.get("top10HolderBalance"),
-                "top10HolderPercent": data.get("top10HolderPercent"),
-                "metaplexUpdate": data.get("metaplexUpdate"),
-                "metaplexUpdateAuth": data.get("metaplexUpdateAuth"),
-                "freezeable": data.get("freezeable"),
-                "frozen": data.get("frozen"),
-                "mintable": data.get("mintable"),
-                "supply": data.get("supply"),
-                "decimals": data.get("decimals"),
-                "nonCirculatingSupply": data.get("nonCirculatingSupply"),
-                "circulatingSupply": data.get("circulatingSupply")
-            }
             
-            return security_info
-            
-        except Exception as e:
-            logger.warning(f"Error getting token security from Birdeye for {token_address}: {str(e)}")
-            return None
-    
-    async def get_trending_tokens(self, sort_by: str = "v24hUSD", sort_type: str = "desc", 
-                                 offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get trending tokens"""
-        try:
-            endpoint = "/defi/tokenlist"
-            params = {
-                "sort_by": sort_by,  # v24hUSD, mc, liquidity, etc.
-                "sort_type": sort_type,  # asc, desc
-                "offset": offset,
-                "limit": min(limit, 50)
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("tokens"):
-                return []
-            
-            trending = []
-            for token in response["data"]["tokens"]:
-                token_info = {
-                    "address": token.get("address"),
-                    "name": token.get("name"),
-                    "symbol": token.get("symbol"),
-                    "decimals": token.get("decimals"),
-                    "logoURI": token.get("logoURI"),
-                    "mc": token.get("mc"),
-                    "v24hUSD": token.get("v24hUSD"),
-                    "v24hChangePercent": token.get("v24hChangePercent"),
-                    "priceChange24hPercent": token.get("priceChange24hPercent"),
-                    "liquidity": token.get("liquidity"),
-                    "price": token.get("price"),
-                    "holder": token.get("holder"),
-                    "supply": token.get("supply")
-                }
-                trending.append(token_info)
-            
-            return trending
-            
-        except Exception as e:
-            logger.warning(f"Error getting trending tokens from Birdeye: {str(e)}")
-            return []
-    
-    async def search_tokens(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search tokens by keyword"""
-        try:
-            endpoint = "/defi/search"
-            params = {
-                "keyword": keyword,
-                "limit": min(limit, 50)
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data") or not response["data"].get("tokens"):
-                return []
+            # Handle different response structures
+            tokens_list = data.get("tokens", data.get("results", data if isinstance(data, list) else []))
             
             tokens = []
-            for token in response["data"]["tokens"]:
+            for token in tokens_list:
                 token_info = {
-                    "address": token.get("address"),
+                    "address": token.get("address") or token.get("mint"),
                     "name": token.get("name"),
                     "symbol": token.get("symbol"),
                     "decimals": token.get("decimals"),
-                    "logoURI": token.get("logoURI"),
-                    "mc": token.get("mc"),
-                    "price": token.get("price"),
-                    "v24hUSD": token.get("v24hUSD"),
+                    "logoURI": token.get("logoURI") or token.get("image"),
+                    "mc": token.get("mc") or token.get("marketCap"),
+                    "price": token.get("price") or token.get("priceUsd"),
+                    "v24hUSD": token.get("v24hUSD") or token.get("volume24h"),
                     "liquidity": token.get("liquidity")
                 }
                 tokens.append(token_info)
@@ -443,41 +359,79 @@ class BirdeyeClient:
             logger.warning(f"Token search failed on Birdeye for keyword '{keyword}': {str(e)}")
             return []
     
-    async def get_multi_price(self, token_addresses: List[str]) -> Dict[str, Dict[str, Any]]:
-        """Get prices for multiple tokens at once"""
+    async def get_trending_tokens(self, sort_by: str = "v24hUSD", sort_type: str = "desc", 
+                                 offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get trending tokens with fallback endpoints"""
         try:
-            endpoint = "/defi/multi_price"
-            params = {
-                "list_address": ",".join(token_addresses[:100])  # Limit to 100 addresses
-            }
+            endpoints_to_try = [
+                {
+                    "endpoint": "/defi/tokenlist",
+                    "method": "GET",
+                    "params": {
+                        "sort_by": sort_by,
+                        "sort_type": sort_type,
+                        "offset": offset,
+                        "limit": min(limit, 50)
+                    }
+                },
+                {
+                    "endpoint": "/defi/trending",
+                    "method": "GET",
+                    "params": {
+                        "sort": sort_by,
+                        "order": sort_type,
+                        "limit": min(limit, 50)
+                    }
+                },
+                {
+                    "endpoint": "/defi/tokens/top",
+                    "method": "GET",
+                    "params": {
+                        "sortBy": sort_by,
+                        "limit": min(limit, 50)
+                    }
+                }
+            ]
             
-            response = await self._request("GET", endpoint, params=params)
+            response = await self._request_with_fallback(endpoints_to_try, "")
             
             if not response.get("data"):
-                return {}
+                return []
             
-            prices = {}
-            for address, price_data in response["data"].items():
-                prices[address] = {
-                    "value": price_data.get("value"),
-                    "updateUnixTime": price_data.get("updateUnixTime"),
-                    "updateHumanTime": price_data.get("updateHumanTime"),
-                    "priceChange24h": price_data.get("priceChange24h"),
-                    "priceChange24hPercent": price_data.get("priceChange24hPercent")
+            data = response["data"]
+            tokens_list = data.get("tokens", data.get("results", data if isinstance(data, list) else []))
+            
+            trending = []
+            for token in tokens_list:
+                token_info = {
+                    "address": token.get("address") or token.get("mint"),
+                    "name": token.get("name"),
+                    "symbol": token.get("symbol"),
+                    "decimals": token.get("decimals"),
+                    "logoURI": token.get("logoURI") or token.get("image"),
+                    "mc": token.get("mc") or token.get("marketCap"),
+                    "v24hUSD": token.get("v24hUSD") or token.get("volume24h"),
+                    "v24hChangePercent": token.get("v24hChangePercent"),
+                    "priceChange24hPercent": token.get("priceChange24hPercent"),
+                    "liquidity": token.get("liquidity"),
+                    "price": token.get("price") or token.get("priceUsd"),
+                    "holder": token.get("holder") or token.get("holderCount"),
+                    "supply": token.get("supply") or token.get("totalSupply")
                 }
+                trending.append(token_info)
             
-            return prices
+            return trending
             
         except Exception as e:
-            logger.error(f"Error getting multi-price from Birdeye: {str(e)}")
-            return {}
+            logger.warning(f"Error getting trending tokens from Birdeye: {str(e)}")
+            return []
     
     async def health_check(self) -> Dict[str, Any]:
         """Check Birdeye API health"""
         try:
             start_time = time.time()
             
-            # Simple API test - get SOL price
+            # Test with a well-known token (Wrapped SOL)
             sol_address = "So11111111111111111111111111111111111112"
             price_data = await self.get_token_price(sol_address, include_liquidity=False)
             
@@ -488,7 +442,9 @@ class BirdeyeClient:
                 "api_key_configured": bool(self.api_key),
                 "base_url": self.base_url,
                 "response_time": response_time,
-                "test_data": price_data
+                "test_token": sol_address,
+                "test_data": price_data,
+                "endpoints_available": len(self.api_endpoints)
             }
             
         except Exception as e:
@@ -496,7 +452,8 @@ class BirdeyeClient:
                 "healthy": False,
                 "api_key_configured": bool(self.api_key),
                 "error": str(e),
-                "base_url": self.base_url
+                "base_url": self.base_url,
+                "test_token": "So11111111111111111111111111111111111112"
             }
 
 
