@@ -1,10 +1,3 @@
-"""
-Service Health Testing
-
-Tests for service availability, health monitoring, and status reporting.
-These tests focus on service monitoring and alerting capabilities.
-"""
-
 import pytest
 import asyncio
 import time

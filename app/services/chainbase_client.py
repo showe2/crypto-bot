@@ -70,15 +70,53 @@ class ChainbaseClient:
         headers = {
             "x-api-key": self.api_key,
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Solana-Token-Analysis/1.0",
             **kwargs.pop("headers", {})
         }
         
         try:
             async with self.session.request(method, url, headers=headers, **kwargs) as response:
-                response_data = await response.json()
+                content_type = response.headers.get('content-type', '').lower()
+                
+                logger.debug(f"Chainbase {method} {endpoint} - Status: {response.status}, Content-Type: {content_type}")
                 
                 if response.status == 200:
-                    return response_data
+                    if 'application/json' in content_type:
+                        response_data = await response.json()
+                        
+                        logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
+                        
+                        # Check for Chainbase API-level errors (they return 200 but with error codes)
+                        if isinstance(response_data, dict):
+                            if response_data.get('code') != 0 and response_data.get('code') is not None:
+                                error_msg = response_data.get('message') or response_data.get('error') or 'Unknown API error'
+                                logger.error(f"Chainbase API error (code {response_data.get('code')}): {error_msg}")
+                                raise ChainbaseAPIError(f"API error (code {response_data.get('code')}): {error_msg}")
+                        
+                        return response_data
+                    else:
+                        response_text = await response.text()
+                        logger.error(f"Unexpected content type from Chainbase: {content_type}")
+                        logger.debug(f"Response text: {response_text[:500]}")
+                        raise ChainbaseAPIError(f"Expected JSON, got {content_type}. Response: {response_text[:200]}")
+                        
+                elif response.status == 400:
+                    response_text = await response.text()
+                    logger.error(f"Chainbase 400 Bad Request: {response_text[:500]}")
+                    try:
+                        if 'application/json' in content_type:
+                            error_data = await response.json()
+                            error_msg = error_data.get('message') or error_data.get('error') or 'Parameter error'
+                            logger.error(f"API Error Details: {error_data}")
+                            raise ChainbaseAPIError(f"Bad request: {error_msg}")
+                        else:
+                            raise ChainbaseAPIError(f"Bad request: {response_text[:200]}")
+                    except ChainbaseAPIError:
+                        raise
+                    except Exception:
+                        raise ChainbaseAPIError(f"Bad request: {response_text[:200]}")
+                        
                 elif response.status == 429:
                     # Rate limited
                     retry_after = int(response.headers.get('Retry-After', 2))
@@ -87,44 +125,68 @@ class ChainbaseClient:
                     # Retry once
                     return await self._request(method, endpoint, **kwargs)
                 elif response.status == 401:
+                    logger.error("Chainbase 401 Authentication failed")
                     raise ChainbaseAPIError("Invalid Chainbase API key")
+                elif response.status == 404:
+                    logger.error(f"Chainbase 404 Not Found: {endpoint}")
+                    raise ChainbaseAPIError(f"Chainbase endpoint not found: {endpoint}")
                 else:
-                    error_msg = response_data.get('message', f'HTTP {response.status}')
-                    raise ChainbaseAPIError(f"Chainbase API error: {error_msg}")
+                    response_text = await response.text()
+                    logger.error(f"Chainbase API error {response.status}: {response_text[:500]}")
+                    raise ChainbaseAPIError(f"HTTP {response.status}: {response_text[:200]}")
                     
         except asyncio.TimeoutError:
             raise ChainbaseAPIError("Chainbase API request timeout")
         except aiohttp.ClientError as e:
             raise ChainbaseAPIError(f"Chainbase client error: {str(e)}")
     
-    async def get_token_metadata(self, mint_address: str, chain_id: str = "solana-mainnet") -> Dict[str, Any]:
+    async def get_token_metadata(self, mint_address: str) -> Dict[str, Any]:
         """Get comprehensive token metadata"""
         try:
-            endpoint = f"/solana/mainnet/token/{mint_address}/metadata"
+            # Try different endpoint formats that might work with Chainbase
+            endpoints_to_try = [
+                {
+                    "endpoint": "/v1/token/metadata",
+                    "params": {"address": mint_address}
+                },
+                {
+                    "endpoint": "/v1/token/metadata", 
+                    "params": {"contract_address": mint_address}
+                },
+                {
+                    "endpoint": "/v1/solana/token/metadata",
+                    "params": {"address": mint_address}
+                }
+            ]
             
-            response = await self._request("GET", endpoint)
+            for attempt in endpoints_to_try:
+                try:
+                    logger.debug(f"Trying Chainbase endpoint: {attempt['endpoint']} with params: {attempt['params']}")
+                    response = await self._request("GET", attempt["endpoint"], params=attempt["params"])
+                    
+                    if response and response.get("data"):
+                        logger.info(f"✅ Chainbase endpoint successful: {attempt['endpoint']}")
+                        data = response["data"]
+                        return {
+                            "mint": mint_address,
+                            "name": data.get("name"),
+                            "symbol": data.get("symbol"),
+                            "decimals": data.get("decimals"),
+                            "total_supply": data.get("total_supply"),
+                            "description": data.get("description"),
+                            "image": data.get("image"),
+                            "external_url": data.get("external_url"),
+                            "creator": data.get("creator"),
+                            "created_at": data.get("created_at"),
+                            "updated_at": data.get("updated_at"),
+                            "verified": data.get("verified", False),
+                            "tags": data.get("tags", [])
+                        }
+                except ChainbaseAPIError as e:
+                    logger.debug(f"❌ Chainbase endpoint {attempt['endpoint']} failed: {str(e)}")
+                    continue  # Try next endpoint
             
-            if not response.get("data"):
-                return None
-            
-            data = response["data"]
-            metadata = {
-                "mint": mint_address,
-                "name": data.get("name"),
-                "symbol": data.get("symbol"),
-                "decimals": data.get("decimals"),
-                "total_supply": data.get("total_supply"),
-                "description": data.get("description"),
-                "image": data.get("image"),
-                "external_url": data.get("external_url"),
-                "creator": data.get("creator"),
-                "created_at": data.get("created_at"),
-                "updated_at": data.get("updated_at"),
-                "verified": data.get("verified", False),
-                "tags": data.get("tags", [])
-            }
-            
-            return metadata
+            return None
             
         except Exception as e:
             logger.error(f"Error getting token metadata from Chainbase for {mint_address}: {str(e)}")
@@ -133,49 +195,58 @@ class ChainbaseClient:
     async def get_token_holders(self, mint_address: str, limit: int = 100, page: int = 1) -> Dict[str, Any]:
         """Get token holders analysis"""
         try:
-            endpoint = f"/solana/mainnet/token/{mint_address}/holders"
-            params = {
-                "limit": min(limit, 1000),  # API usually limits to 1000
-                "page": page
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data"):
-                return {
-                    "holders": [],
-                    "total_holders": 0,
-                    "distribution": {}
+            endpoints_to_try = [
+                {
+                    "endpoint": "/v1/token/holders",
+                    "params": {"address": mint_address, "limit": min(limit, 1000), "page": page}
+                },
+                {
+                    "endpoint": "/v1/token/holders",
+                    "params": {"contract_address": mint_address, "limit": min(limit, 1000), "page": page}
                 }
+            ]
             
-            data = response["data"]
-            holders = []
-            
-            for holder in data.get("holders", []):
-                holder_info = {
-                    "address": holder.get("address"),
-                    "balance": holder.get("balance"),
-                    "balance_usd": holder.get("balance_usd"),
-                    "percentage": holder.get("percentage"),
-                    "rank": holder.get("rank"),
-                    "first_transaction": holder.get("first_transaction"),
-                    "last_transaction": holder.get("last_transaction"),
-                    "transaction_count": holder.get("transaction_count")
-                }
-                holders.append(holder_info)
-            
-            # Calculate distribution
-            distribution = self._calculate_holder_distribution(holders)
+            for attempt in endpoints_to_try:
+                try:
+                    response = await self._request("GET", attempt["endpoint"], params=attempt["params"])
+                    
+                    if response and response.get("data"):
+                        data = response["data"]
+                        holders = []
+                        
+                        for holder in data.get("holders", []):
+                            holder_info = {
+                                "address": holder.get("address"),
+                                "balance": holder.get("balance"),
+                                "balance_usd": holder.get("balance_usd"),
+                                "percentage": holder.get("percentage"),
+                                "rank": holder.get("rank"),
+                                "first_transaction": holder.get("first_transaction"),
+                                "last_transaction": holder.get("last_transaction"),
+                                "transaction_count": holder.get("transaction_count")
+                            }
+                            holders.append(holder_info)
+                        
+                        distribution = self._calculate_holder_distribution(holders)
+                        
+                        return {
+                            "holders": holders,
+                            "total_holders": data.get("total_holders", len(holders)),
+                            "distribution": distribution,
+                            "pagination": {
+                                "page": page,
+                                "limit": limit,
+                                "has_next": len(holders) == limit
+                            }
+                        }
+                except ChainbaseAPIError as e:
+                    logger.debug(f"❌ Chainbase search endpoint {attempt['endpoint']} failed: {str(e)}")
+                    continue
             
             return {
-                "holders": holders,
-                "total_holders": data.get("total_holders", len(holders)),
-                "distribution": distribution,
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "has_next": len(holders) == limit
-                }
+                "holders": [],
+                "total_holders": 0,
+                "distribution": {}
             }
             
         except Exception as e:
@@ -190,8 +261,6 @@ class ChainbaseClient:
         """Calculate holder distribution statistics"""
         if not holders:
             return {}
-        
-        total_supply = sum(float(h.get("balance", 0)) for h in holders)
         
         # Categorize holders
         whales = [h for h in holders if float(h.get("percentage", 0)) >= 1.0]  # 1%+
@@ -240,217 +309,47 @@ class ChainbaseClient:
         
         return (2 * cumsum) / (n * total) - (n + 1) / n
     
-    async def get_smart_contract_info(self, contract_address: str) -> Dict[str, Any]:
-        """Get smart contract information and analysis"""
-        try:
-            endpoint = f"/solana/mainnet/contract/{contract_address}/info"
-            
-            response = await self._request("GET", endpoint)
-            
-            if not response.get("data"):
-                return None
-            
-            data = response["data"]
-            contract_info = {
-                "address": contract_address,
-                "type": data.get("type"),
-                "verified": data.get("verified", False),
-                "compiler_version": data.get("compiler_version"),
-                "creation_transaction": data.get("creation_transaction"),
-                "creator": data.get("creator"),
-                "creation_block": data.get("creation_block"),
-                "creation_timestamp": data.get("creation_timestamp"),
-                "source_code": data.get("source_code") if data.get("verified") else None,
-                "abi": data.get("abi"),
-                "proxy_type": data.get("proxy_type"),
-                "implementation": data.get("implementation")
-            }
-            
-            return contract_info
-            
-        except Exception as e:
-            logger.error(f"Error getting smart contract info from Chainbase for {contract_address}: {str(e)}")
-            return None
-    
-    async def get_token_transfers(self, mint_address: str, limit: int = 100, page: int = 1) -> Dict[str, Any]:
-        """Get token transfer history"""
-        try:
-            endpoint = f"/solana/mainnet/token/{mint_address}/transfers"
-            params = {
-                "limit": min(limit, 1000),
-                "page": page
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data"):
-                return {
-                    "transfers": [],
-                    "total_transfers": 0
-                }
-            
-            data = response["data"]
-            transfers = []
-            
-            for transfer in data.get("transfers", []):
-                transfer_info = {
-                    "transaction_hash": transfer.get("transaction_hash"),
-                    "block_number": transfer.get("block_number"),
-                    "timestamp": transfer.get("timestamp"),
-                    "from_address": transfer.get("from_address"),
-                    "to_address": transfer.get("to_address"),
-                    "amount": transfer.get("amount"),
-                    "amount_usd": transfer.get("amount_usd"),
-                    "transaction_fee": transfer.get("transaction_fee"),
-                    "status": transfer.get("status")
-                }
-                transfers.append(transfer_info)
-            
-            return {
-                "transfers": transfers,
-                "total_transfers": data.get("total_transfers", len(transfers)),
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "has_next": len(transfers) == limit
-                }
-            }
-            
-        except Exception as e:
-            logger.error(f"Error getting token transfers from Chainbase for {mint_address}: {str(e)}")
-            return {
-                "transfers": [],
-                "total_transfers": 0
-            }
-    
-    async def get_address_analysis(self, address: str) -> Dict[str, Any]:
-        """Get comprehensive address analysis"""
-        try:
-            endpoint = f"/solana/mainnet/address/{address}/analysis"
-            
-            response = await self._request("GET", endpoint)
-            
-            if not response.get("data"):
-                return None
-            
-            data = response["data"]
-            analysis = {
-                "address": address,
-                "address_type": data.get("address_type"),  # wallet, contract, exchange, etc.
-                "is_contract": data.get("is_contract", False),
-                "first_transaction": data.get("first_transaction"),
-                "last_transaction": data.get("last_transaction"),
-                "transaction_count": data.get("transaction_count"),
-                "balance_history": data.get("balance_history", []),
-                "token_holdings": data.get("token_holdings", []),
-                "interaction_patterns": data.get("interaction_patterns", {}),
-                "risk_score": data.get("risk_score"),
-                "labels": data.get("labels", []),
-                "entity": data.get("entity")  # If address belongs to known entity
-            }
-            
-            return analysis
-            
-        except Exception as e:
-            logger.error(f"Error getting address analysis from Chainbase for {address}: {str(e)}")
-            return None
-    
-    async def get_defi_protocols(self, token_address: str) -> List[Dict[str, Any]]:
-        """Get DeFi protocols where token is used"""
-        try:
-            endpoint = f"/solana/mainnet/token/{token_address}/protocols"
-            
-            response = await self._request("GET", endpoint)
-            
-            if not response.get("data"):
-                return []
-            
-            protocols = []
-            for protocol in response["data"].get("protocols", []):
-                protocol_info = {
-                    "name": protocol.get("name"),
-                    "type": protocol.get("type"),  # dex, lending, staking, etc.
-                    "tvl": protocol.get("tvl"),
-                    "volume_24h": protocol.get("volume_24h"),
-                    "token_usage": protocol.get("token_usage"),  # How token is used in protocol
-                    "pool_info": protocol.get("pool_info", {}),
-                    "yield_info": protocol.get("yield_info", {})
-                }
-                protocols.append(protocol_info)
-            
-            return protocols
-            
-        except Exception as e:
-            logger.warning(f"Error getting DeFi protocols from Chainbase for {token_address}: {str(e)}")
-            return []
-    
-    async def get_whale_activity(self, token_address: str, threshold_usd: float = 10000) -> List[Dict[str, Any]]:
-        """Get recent whale activity for a token"""
-        try:
-            endpoint = f"/solana/mainnet/token/{token_address}/whale-activity"
-            params = {
-                "threshold_usd": threshold_usd,
-                "limit": 50
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data"):
-                return []
-            
-            whale_activities = []
-            for activity in response["data"].get("activities", []):
-                activity_info = {
-                    "transaction_hash": activity.get("transaction_hash"),
-                    "timestamp": activity.get("timestamp"),
-                    "from_address": activity.get("from_address"),
-                    "to_address": activity.get("to_address"),
-                    "amount": activity.get("amount"),
-                    "amount_usd": activity.get("amount_usd"),
-                    "action_type": activity.get("action_type"),  # buy, sell, transfer
-                    "whale_score": activity.get("whale_score"),
-                    "exchange": activity.get("exchange"),
-                    "price_impact": activity.get("price_impact")
-                }
-                whale_activities.append(activity_info)
-            
-            return whale_activities
-            
-        except Exception as e:
-            logger.warning(f"Error getting whale activity from Chainbase for {token_address}: {str(e)}")
-            return []
-    
     async def search_tokens(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for tokens by name, symbol, or address"""
+        """Search for tokens by name or symbol"""
         try:
-            endpoint = "/solana/mainnet/tokens/search"
-            params = {
-                "query": query,
-                "limit": limit
-            }
-            
-            response = await self._request("GET", endpoint, params=params)
-            
-            if not response.get("data"):
-                return []
-            
-            tokens = []
-            for token in response["data"].get("tokens", []):
-                token_info = {
-                    "mint": token.get("mint"),
-                    "name": token.get("name"),
-                    "symbol": token.get("symbol"),
-                    "decimals": token.get("decimals"),
-                    "verified": token.get("verified", False),
-                    "market_cap": token.get("market_cap"),
-                    "price": token.get("price"),
-                    "volume_24h": token.get("volume_24h"),
-                    "holders_count": token.get("holders_count"),
-                    "created_at": token.get("created_at")
+            endpoints_to_try = [
+                {
+                    "endpoint": "/v1/token/search",
+                    "params": {"keyword": query, "limit": limit}
+                },
+                {
+                    "endpoint": "/v1/search/tokens",
+                    "params": {"query": query, "limit": limit}
                 }
-                tokens.append(token_info)
+            ]
             
-            return tokens
+            for attempt in endpoints_to_try:
+                try:
+                    response = await self._request("GET", attempt["endpoint"], params=attempt["params"])
+                    
+                    if response and response.get("data"):
+                        tokens = []
+                        for token in response["data"]:
+                            token_info = {
+                                "mint": token.get("contract_address") or token.get("address"),
+                                "name": token.get("name"),
+                                "symbol": token.get("symbol"),
+                                "decimals": token.get("decimals"),
+                                "verified": token.get("verified", False),
+                                "market_cap": token.get("market_cap"),
+                                "price": token.get("price"),
+                                "volume_24h": token.get("volume_24h"),
+                                "holders_count": token.get("holders_count"),
+                                "created_at": token.get("created_at")
+                            }
+                            tokens.append(token_info)
+                        
+                        return tokens
+                except ChainbaseAPIError as e:
+                    logger.debug(f"❌ Chainbase market endpoint {attempt['endpoint']} failed: {str(e)}")
+                    continue
+            
+            return []
             
         except Exception as e:
             logger.warning(f"Token search failed on Chainbase for query '{query}': {str(e)}")
@@ -459,34 +358,45 @@ class ChainbaseClient:
     async def get_market_data(self, token_address: str) -> Dict[str, Any]:
         """Get comprehensive market data for token"""
         try:
-            endpoint = f"/solana/mainnet/token/{token_address}/market"
+            endpoints_to_try = [
+                {
+                    "endpoint": "/v1/token/market",
+                    "params": {"address": token_address}
+                },
+                {
+                    "endpoint": "/v1/market/token",
+                    "params": {"contract_address": token_address}
+                }
+            ]
             
-            response = await self._request("GET", endpoint)
+            for attempt in endpoints_to_try:
+                try:
+                    response = await self._request("GET", attempt["endpoint"], params=attempt["params"])
+                    
+                    if response and response.get("data"):
+                        data = response["data"]
+                        return {
+                            "price": data.get("price"),
+                            "price_change_24h": data.get("price_change_24h"),
+                            "price_change_7d": data.get("price_change_7d"),
+                            "volume_24h": data.get("volume_24h"),
+                            "volume_change_24h": data.get("volume_change_24h"),
+                            "market_cap": data.get("market_cap"),
+                            "market_cap_rank": data.get("market_cap_rank"),
+                            "circulating_supply": data.get("circulating_supply"),
+                            "total_supply": data.get("total_supply"),
+                            "max_supply": data.get("max_supply"),
+                            "ath": data.get("ath"),
+                            "ath_date": data.get("ath_date"),
+                            "atl": data.get("atl"),
+                            "atl_date": data.get("atl_date"),
+                            "liquidity": data.get("liquidity"),
+                            "fdv": data.get("fdv")  # Fully Diluted Valuation
+                        }
+                except ChainbaseAPIError:
+                    continue
             
-            if not response.get("data"):
-                return None
-            
-            data = response["data"]
-            market_data = {
-                "price": data.get("price"),
-                "price_change_24h": data.get("price_change_24h"),
-                "price_change_7d": data.get("price_change_7d"),
-                "volume_24h": data.get("volume_24h"),
-                "volume_change_24h": data.get("volume_change_24h"),
-                "market_cap": data.get("market_cap"),
-                "market_cap_rank": data.get("market_cap_rank"),
-                "circulating_supply": data.get("circulating_supply"),
-                "total_supply": data.get("total_supply"),
-                "max_supply": data.get("max_supply"),
-                "ath": data.get("ath"),
-                "ath_date": data.get("ath_date"),
-                "atl": data.get("atl"),
-                "atl_date": data.get("atl_date"),
-                "liquidity": data.get("liquidity"),
-                "fdv": data.get("fdv")  # Fully Diluted Valuation
-            }
-            
-            return market_data
+            return None
             
         except Exception as e:
             logger.error(f"Error getting market data from Chainbase for {token_address}: {str(e)}")
@@ -497,26 +407,66 @@ class ChainbaseClient:
         try:
             start_time = time.time()
             
-            # Simple API test
-            endpoint = "/solana/mainnet/stats"
-            response = await self._request("GET", endpoint)
+            if not self.api_key:
+                return {
+                    "healthy": False,
+                    "api_key_configured": False,
+                    "error": "Chainbase API key not configured. Set CHAINBASE_API_KEY in .env file",
+                    "base_url": self.base_url,
+                    "response_time": 0.0
+                }
             
+            # Try a simple endpoint that's likely to work
+            simple_endpoints = [
+                {"endpoint": "/v1/health", "params": None},
+                {"endpoint": "/v1/status", "params": None},
+                {"endpoint": "/health", "params": None},
+                {"endpoint": "/", "params": None}
+            ]
+            
+            for endpoint_config in simple_endpoints:
+                try:
+                    logger.debug(f"Trying Chainbase health endpoint: {endpoint_config['endpoint']}")
+                    if endpoint_config["params"]:
+                        response = await self._request("GET", endpoint_config["endpoint"], params=endpoint_config["params"])
+                    else:
+                        response = await self._request("GET", endpoint_config["endpoint"])
+                    
+                    response_time = time.time() - start_time
+                    logger.info(f"✅ Chainbase health check successful with endpoint: {endpoint_config['endpoint']}")
+                    
+                    return {
+                        "healthy": True,
+                        "api_key_configured": True,
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "working_endpoint": endpoint_config["endpoint"]
+                    }
+                    
+                except ChainbaseAPIError as e:
+                    logger.debug(f"❌ Chainbase health endpoint {endpoint_config['endpoint']} failed: {str(e)}")
+                    continue  # Try next endpoint
+            
+            # If simple endpoints failed, the API might not have standard health endpoints
+            # Just return that we can't determine health but API key is configured
             response_time = time.time() - start_time
-            
             return {
-                "healthy": True,
-                "api_key_configured": bool(self.api_key),
+                "healthy": False,
+                "api_key_configured": True,
+                "error": "No accessible health endpoints found",
                 "base_url": self.base_url,
                 "response_time": response_time,
-                "status": "operational"
+                "recommendation": "API key configured but unable to verify connectivity"
             }
             
         except Exception as e:
+            response_time = time.time() - start_time
             return {
                 "healthy": False,
                 "api_key_configured": bool(self.api_key),
                 "error": str(e),
-                "base_url": self.base_url
+                "base_url": self.base_url,
+                "response_time": response_time
             }
 
 

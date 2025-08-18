@@ -1,11 +1,3 @@
-"""
-API Client Tests
-
-Tests for individual API client implementations.
-These tests use mocks by default to avoid API costs.
-Use pytest markers to control real API testing.
-"""
-
 import pytest
 import asyncio
 from unittest.mock import patch, AsyncMock, Mock
