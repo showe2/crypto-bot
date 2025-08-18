@@ -201,6 +201,53 @@ class TestBlowfishClient:
 
 
 @pytest.mark.services
+class TestSolscanClient:
+    """Tests for Solscan API client"""
+    
+    @pytest.mark.asyncio
+    async def test_solscan_client_creation(self):
+        """Test Solscan client can be created"""
+        from app.services.solscan_client import SolscanClient
+        
+        client = SolscanClient()
+        assert client is not None
+        assert hasattr(client, 'api_key')
+        assert hasattr(client, 'base_url')
+    
+    @pytest.mark.asyncio
+    async def test_solscan_health_check_mock(self):
+        """Test Solscan health check with mock"""
+        from app.services.solscan_client import check_solscan_health
+        
+        with patch('app.services.solscan_client.SolscanClient') as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.health_check.return_value = {
+                "healthy": True,
+                "api_key_configured": True,
+                "response_time": 0.25
+            }
+            MockClient.return_value.__aenter__.return_value = mock_instance
+            
+            result = await check_solscan_health()
+            
+            assert result["healthy"] == True
+            assert "api_key_configured" in result
+    
+    @pytest.mark.real_api
+    @pytest.mark.solscan
+    @pytest.mark.asyncio
+    async def test_solscan_real_health_check(self):
+        """Test real Solscan health check"""
+        from app.services.solscan_client import check_solscan_health
+        
+        result = await check_solscan_health()
+        
+        assert isinstance(result, dict)
+        assert "healthy" in result
+        assert "api_key_configured" in result
+
+
+@pytest.mark.services
 class TestServiceManager:
     """Tests for Service Manager that coordinates all API clients"""
     
@@ -237,7 +284,8 @@ class TestServiceManager:
             check_helius_health=AsyncMock(return_value={"healthy": True}),
             check_birdeye_health=AsyncMock(return_value={"healthy": True}),
             check_chainbase_health=AsyncMock(return_value={"healthy": False}),
-            check_blowfish_health=AsyncMock(return_value={"healthy": True})
+            check_blowfish_health=AsyncMock(return_value={"healthy": True}),
+            check_solscan_health=AsyncMock(return_value={"healthy": True})
         ):
             manager = APIManager()
             health = await manager.check_all_services_health()
@@ -271,7 +319,7 @@ class TestServiceIntegration:
         
         # Test concurrent health checks
         tasks = []
-        for service in ["helius", "birdeye", "chainbase"]:
+        for service in ["helius", "birdeye", "chainbase", "solscan"]:
             if hasattr(api_manager, f'check_{service}_health'):
                 task = getattr(api_manager, f'check_{service}_health')()
                 tasks.append(task)
@@ -311,6 +359,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "blowfish: marks tests specific to Blowfish API"
+    )
+    config.addinivalue_line(
+        "markers", "solscan: marks tests specific to Solscan API"
     )
 
 

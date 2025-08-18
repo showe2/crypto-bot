@@ -63,6 +63,10 @@ PASSED_TESTS=0
 FAILED_TESTS=0
 START_TIME=$(date +%s)
 
+# Service selection variables
+INTERACTIVE_MODE=false
+SKIP_SERVICES=()
+
 # ==============================================
 # UTILITY FUNCTIONS
 # ==============================================
@@ -133,35 +137,46 @@ check_dependencies() {
     fi
 }
 
-# Check if service testing dependencies are available
-check_service_dependencies() {
-    log_step "Checking service testing dependencies..."
+# Ask user which services to test
+ask_service_selection() {
+    if [ "$INTERACTIVE_MODE" = false ]; then
+        return 0
+    fi
     
-    local missing_deps=()
-    local service_deps=("aiohttp" "asyncio")
+    local services=("helius" "birdeye" "chainbase" "blowfish" "solscan" "dataimpulse")
     
-    for dep in "${service_deps[@]}"; do
-        if ! python -c "import $dep" >/dev/null 2>&1; then
-            missing_deps+=("$dep")
+    log_header "SERVICE SELECTION"
+    echo "Choose which services to test. Press Enter to test all, or select specific services:"
+    echo ""
+    
+    for service in "${services[@]}"; do
+        echo -n "Test $service? (Y/n): "
+        read -r response
+        
+        if [[ "$response" =~ ^[Nn]$ ]]; then
+            SKIP_SERVICES+=("$service")
+            log_info "Skipping $service"
+        else
+            log_info "Will test $service"
         fi
     done
     
-    if [ ${#missing_deps[@]} -eq 0 ]; then
-        log_success "Service testing dependencies available"
-        return 0
-    else
-        log_warn "Missing service dependencies: ${missing_deps[*]}"
-        log_info "Installing missing dependencies..."
-        
-        if [ -f "requirements-test.txt" ]; then
-            python -m pip install -r requirements-test.txt
-        else
-            python -m pip install aiohttp aiofiles
-        fi
-        
-        log_success "Service dependencies installed"
-        return 0
+    if [ ${#SKIP_SERVICES[@]} -gt 0 ]; then
+        log_warn "Skipping services: ${SKIP_SERVICES[*]}"
     fi
+    
+    echo ""
+}
+
+# Check if service should be skipped
+should_skip_service() {
+    local service="$1"
+    for skip_service in "${SKIP_SERVICES[@]}"; do
+        if [ "$service" = "$skip_service" ]; then
+            return 0  # Should skip
+        fi
+    done
+    return 1  # Should not skip
 }
 
 # Check project structure
@@ -314,7 +329,7 @@ print('✅ FastAPI endpoints working')
     fi
 }
 
-# Run pytest suite
+# Run pytest suite with service filtering
 run_pytest_suite() {
     local test_path="$1"
     local test_name="$2"
@@ -332,6 +347,19 @@ run_pytest_suite() {
     
     # Add standard options
     cmd="$cmd -v --tb=short --no-header"
+    
+    # Add service filtering if we have skipped services
+    if [ ${#SKIP_SERVICES[@]} -gt 0 ]; then
+        local skip_markers=""
+        for service in "${SKIP_SERVICES[@]}"; do
+            if [ -n "$skip_markers" ]; then
+                skip_markers="$skip_markers and "
+            fi
+            skip_markers="${skip_markers}not $service"
+        done
+        cmd="$cmd -m \"$skip_markers\""
+        log_info "Skipping services: ${SKIP_SERVICES[*]}"
+    fi
     
     # Add extra arguments
     if [ -n "$extra_args" ]; then
@@ -453,6 +481,10 @@ generate_report() {
     echo "Tests passed: $PASSED_TESTS"
     echo "Tests failed: $FAILED_TESTS"
     
+    if [ ${#SKIP_SERVICES[@]} -gt 0 ]; then
+        echo "Skipped services: ${SKIP_SERVICES[*]}"
+    fi
+    
     if [ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; then
         log_success "ALL TESTS PASSED ($PASSED_TESTS/$TOTAL_TESTS)"
         echo
@@ -473,6 +505,7 @@ Total Duration: ${total_duration}s
 Total Tests: $TOTAL_TESTS
 Passed: $PASSED_TESTS
 Failed: $FAILED_TESTS
+Skipped Services: ${SKIP_SERVICES[*]}
 Success Rate: $(( TOTAL_TESTS > 0 ? (PASSED_TESTS * 100) / TOTAL_TESTS : 0 ))%
 EOF
     
@@ -506,6 +539,9 @@ run_full_tests() {
     check_dependencies || return 1
     check_project_structure || return 1
     check_test_structure
+    
+    # Ask for service selection if interactive
+    ask_service_selection
     
     # Basic tests
     test_imports || return 1
@@ -542,6 +578,7 @@ show_help() {
     echo ""
     echo "Options:"
     echo "  --help              Show this help message"
+    echo "  --interactive       Ask which services to test"
     echo "  --quick             Run only basic tests (fast)"
     echo "  --unit-only         Run only unit tests"
     echo "  --integration-only  Run only integration tests"
@@ -552,224 +589,218 @@ show_help() {
     echo "  --services-health   Run service health monitoring tests"
     echo "  --create-samples    Create sample tests"
     echo "  --with-coverage     Run tests with coverage report"
+    echo "  --skip-service SERVICE  Skip specific service (can be used multiple times)"
     echo ""
-    echo "Service Testing Modes:"
-    echo "  --services          Pytest-based service tests (safe, mocked)"
-    echo "  --services-safe     Safe service tester in mock mode (FREE)"
-    echo "  --services-free     Safe service tester with free APIs (FREE)"
-    echo "  --services-paid     Safe service tester with paid APIs (💰 COSTS MONEY)"
-    echo "  --services-health   Service health monitoring tests (FREE)"
+    echo "Service Options:"
+    echo "  Available services: helius, birdeye, chainbase, blowfish, solscan, dataimpulse"
     echo ""
     echo "Examples:"
-    echo "  $0                  # Run full test suite"
-    echo "  $0 --quick          # Quick tests only"
-    echo "  $0 --unit-only      # Unit tests only"
-    echo "  $0 --services       # Service tests (mocked, safe)"
-    echo "  $0 --services-safe  # Safe service testing (mock mode)"
-    echo "  $0 --services-free  # Test free APIs only"
-    echo ""
-    echo "⚠️  WARNING: --services-paid may consume API credits!"
+    echo "  $0                              # Run full test suite"
+    echo "  $0 --interactive                # Choose services interactively"
+    echo "  $0 --skip-service birdeye       # Skip Birdeye tests"
+    echo "  $0 --skip-service helius --skip-service chainbase  # Skip multiple services"
+    echo "  $0 --services --interactive     # Service tests with selection"
     echo ""
 }
 
 # Main function
 main() {
     # Parse command line arguments
-    case "${1:-}" in
-        --help|-h)
-            show_help
-            exit 0
-            ;;
-        --quick)
-            run_quick_tests
-            exit $?
-            ;;
-        --unit-only)
-            log_header "Unit Tests Only"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_test_structure
-            run_pytest_suite "$UNIT_TESTS_DIR" "Unit Tests" "-m unit"
-            generate_report
-            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
-            ;;
-        --integration-only)
-            log_header "Integration Tests Only"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_test_structure
-            run_pytest_suite "$INTEGRATION_TESTS_DIR" "Integration Tests" "-m integration"
-            generate_report
-            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
-            ;;
-        --services)
-            log_header "Service Tests Only"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_service_dependencies || exit 1
-            check_test_structure
-            
-            # Check if services directory exists
-            SERVICES_DIR="$TESTS_DIR/services"
-            if [ ! -d "$SERVICES_DIR" ]; then
-                log_warn "Services test directory not found: $SERVICES_DIR"
-                log_info "Creating services test directory..."
-                mkdir -p "$SERVICES_DIR"
-                touch "$SERVICES_DIR/__init__.py"
-            fi
-            
-            run_pytest_suite "$SERVICES_DIR" "Service Tests" "-m services"
-            generate_report
-            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
-            ;;
-        --services-safe)
-            log_header "Safe Service Testing Tool"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_service_dependencies || exit 1
-            
-            # Check if safe service tester exists
-            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
-            if [ ! -f "$SAFE_TESTER" ]; then
-                log_error "Safe service tester not found: $SAFE_TESTER"
-                log_info "Please ensure tests/services/test_services.py exists"
-                exit 1
-            fi
-            
-            # Create results directory
-            mkdir -p "$TESTS_DIR/services/results"
-            
-            log_info "Running safe service tester in mock mode (safest)..."
-            log_info "This will test system components even if the server isn't running"
-            python -m tests.services.test_services --mode mock
-            
-            # Show results location
-            if [ -f "$TESTS_DIR/services/results/latest_mock.json" ]; then
-                log_success "Latest results available at: $TESTS_DIR/services/results/latest_mock.json"
-            fi
-            
-            exit $?
-            ;;
-        --services-free)
-            log_header "Free API Service Testing"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_service_dependencies || exit 1
-            
-            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
-            if [ ! -f "$SAFE_TESTER" ]; then
-                log_error "Safe service tester not found: $SAFE_TESTER"
-                exit 1
-            fi
-            
-            # Create results directory
-            mkdir -p "$TESTS_DIR/services/results"
-            
-            log_info "Running safe service tester with free APIs only..."
-            python -m tests.services.test_services --mode free
-            
-            # Show results location
-            if [ -f "$TESTS_DIR/services/results/latest_free.json" ]; then
-                log_success "Latest results available at: $TESTS_DIR/services/results/latest_free.json"
-            fi
-            
-            exit $?
-            ;;
-        --services-paid)
-            log_header "⚠️  PAID API SERVICE TESTING ⚠️"
-            log_warn "This mode will test paid APIs and may consume credits!"
-            log_warn "Make sure you have:"
-            log_warn "  • Set ENABLE_API_MOCKS=true in .env (recommended)"
-            log_warn "  • Sufficient API credits"
-            log_warn "  • Monitoring enabled on API dashboards"
-            
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_service_dependencies || exit 1
-            
-            SAFE_TESTER="$TESTS_DIR/services/test_services.py"
-            if [ ! -f "$SAFE_TESTER" ]; then
-                log_error "Safe service tester not found: $SAFE_TESTER"
-                exit 1
-            fi
-            
-            # Create results directory
-            mkdir -p "$TESTS_DIR/services/results"
-            
-            # Ask for confirmation
-            echo ""
-            echo -e "${YELLOW}Continue with paid API testing? This may cost money! (yes/no):${NC}"
-            read -r confirmation
-            if [[ "$confirmation" != "yes" && "$confirmation" != "y" ]]; then
-                log_info "Paid API testing cancelled"
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --help|-h)
+                show_help
                 exit 0
-            fi
-            
-            log_info "Running safe service tester with limited paid API calls..."
-            python -m tests.services.test_services --mode limited
-            
-            # Show results location
-            if [ -f "$TESTS_DIR/services/results/latest_limited.json" ]; then
-                log_success "Latest results available at: $TESTS_DIR/services/results/latest_limited.json"
-            fi
-            
-            exit $?
-            ;;
-        --services-health)
-            log_header "Service Health Testing"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_service_dependencies || exit 1
-            check_test_structure
-            
-            # Run health-specific tests
-            run_pytest_suite "$TESTS_DIR/services" "Service Health Tests" "-m health"
-            generate_report
-            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
-            ;;
-        --create-samples)
-            log_header "Creating Sample Tests"
-            check_test_structure
-            create_sample_tests
-            log_success "Sample tests created!"
-            log_info "Run '$0' to execute all tests"
-            exit 0
-            ;;
-        --with-coverage)
-            log_header "Tests with Coverage"
-            activate_venv || exit 1
-            check_dependencies || exit 1
-            check_test_structure
-            
-            # Install coverage if needed
-            if ! python -c "import coverage" >/dev/null 2>&1; then
-                log_info "Installing coverage..."
-                python -m pip install coverage pytest-cov
-            fi
-            
-            run_pytest_suite "$TESTS_DIR" "All Tests with Coverage" "--cov=app --cov-report=html --cov-report=term"
-            log_info "Coverage report generated in htmlcov/ directory"
-            generate_report
-            exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
-            ;;
-        "")
-            # Default: run full test suite
-            echo -e "${BLUE}"
-            echo "==============================================="
-            echo "  SOLANA TOKEN ANALYSIS AI SYSTEM"
-            echo "  TEST SUITE"
-            echo "==============================================="
-            echo -e "${NC}"
-            
-            run_full_tests
-            exit $?
-            ;;
-        *)
-            log_error "Unknown option: $1"
-            show_help
-            exit 1
-            ;;
-    esac
+                ;;
+            --interactive)
+                INTERACTIVE_MODE=true
+                shift
+                ;;
+            --skip-service)
+                if [[ -n "$2" && "$2" != --* ]]; then
+                    SKIP_SERVICES+=("$2")
+                    shift 2
+                else
+                    log_error "Error: --skip-service requires a service name"
+                    exit 1
+                fi
+                ;;
+            --quick)
+                run_quick_tests
+                exit $?
+                ;;
+            --unit-only)
+                log_header "Unit Tests Only"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                check_test_structure
+                ask_service_selection
+                run_pytest_suite "$UNIT_TESTS_DIR" "Unit Tests" "-m unit"
+                generate_report
+                exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+                ;;
+            --integration-only)
+                log_header "Integration Tests Only"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                check_test_structure
+                ask_service_selection
+                run_pytest_suite "$INTEGRATION_TESTS_DIR" "Integration Tests" "-m integration"
+                generate_report
+                exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+                ;;
+            --services)
+                log_header "Service Tests Only"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                check_test_structure
+                ask_service_selection
+                
+                SERVICES_DIR="$TESTS_DIR/services"
+                if [ ! -d "$SERVICES_DIR" ]; then
+                    log_warn "Services test directory not found: $SERVICES_DIR"
+                    log_info "Creating services test directory..."
+                    mkdir -p "$SERVICES_DIR"
+                    touch "$SERVICES_DIR/__init__.py"
+                fi
+                
+                run_pytest_suite "$SERVICES_DIR" "Service Tests" "-m services"
+                generate_report
+                exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+                ;;
+            --services-safe)
+                log_header "Safe Service Testing Tool"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                
+                SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+                if [ ! -f "$SAFE_TESTER" ]; then
+                    log_error "Safe service tester not found: $SAFE_TESTER"
+                    exit 1
+                fi
+                
+                mkdir -p "$TESTS_DIR/services/results"
+                
+                log_info "Running safe service tester in mock mode..."
+                python -m tests.services.test_services --mode mock
+                
+                if [ -f "$TESTS_DIR/services/results/latest_mock.json" ]; then
+                    log_success "Latest results: $TESTS_DIR/services/results/latest_mock.json"
+                fi
+                
+                exit $?
+                ;;
+            --services-free)
+                log_header "Free API Service Testing"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                
+                SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+                if [ ! -f "$SAFE_TESTER" ]; then
+                    log_error "Safe service tester not found: $SAFE_TESTER"
+                    exit 1
+                fi
+                
+                mkdir -p "$TESTS_DIR/services/results"
+                
+                log_info "Running safe service tester with free APIs only..."
+                python -m tests.services.test_services --mode free
+                
+                if [ -f "$TESTS_DIR/services/results/latest_free.json" ]; then
+                    log_success "Latest results: $TESTS_DIR/services/results/latest_free.json"
+                fi
+                
+                exit $?
+                ;;
+            --services-paid)
+                log_header "⚠️  PAID API SERVICE TESTING ⚠️"
+                log_warn "This mode will test paid APIs and may consume credits!"
+                
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                
+                SAFE_TESTER="$TESTS_DIR/services/test_services.py"
+                if [ ! -f "$SAFE_TESTER" ]; then
+                    log_error "Safe service tester not found: $SAFE_TESTER"
+                    exit 1
+                fi
+                
+                mkdir -p "$TESTS_DIR/services/results"
+                
+                echo ""
+                echo -e "${YELLOW}Continue with paid API testing? (yes/no):${NC}"
+                read -r confirmation
+                if [[ "$confirmation" != "yes" && "$confirmation" != "y" ]]; then
+                    log_info "Paid API testing cancelled"
+                    exit 0
+                fi
+                
+                log_info "Running safe service tester with limited paid API calls..."
+                python -m tests.services.test_services --mode limited
+                
+                if [ -f "$TESTS_DIR/services/results/latest_limited.json" ]; then
+                    log_success "Latest results: $TESTS_DIR/services/results/latest_limited.json"
+                fi
+                
+                exit $?
+                ;;
+            --services-health)
+                log_header "Service Health Testing"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                check_test_structure
+                ask_service_selection
+                
+                run_pytest_suite "$TESTS_DIR/services" "Service Health Tests" "-m health"
+                generate_report
+                exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+                ;;
+            --create-samples)
+                log_header "Creating Sample Tests"
+                check_test_structure
+                create_sample_tests
+                log_success "Sample tests created!"
+                log_info "Run '$0' to execute all tests"
+                exit 0
+                ;;
+            --with-coverage)
+                log_header "Tests with Coverage"
+                activate_venv || exit 1
+                check_dependencies || exit 1
+                check_test_structure
+                ask_service_selection
+                
+                if ! python -c "import coverage" >/dev/null 2>&1; then
+                    log_info "Installing coverage..."
+                    python -m pip install coverage pytest-cov
+                fi
+                
+                run_pytest_suite "$TESTS_DIR" "All Tests with Coverage" "--cov=app --cov-report=html --cov-report=term"
+                log_info "Coverage report generated in htmlcov/ directory"
+                generate_report
+                exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)
+                ;;
+            "")
+                break
+                ;;
+            *)
+                log_error "Unknown option: $1"
+                show_help
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Default: run full test suite
+    echo -e "${BLUE}"
+    echo "==============================================="
+    echo "  SOLANA TOKEN ANALYSIS AI SYSTEM"
+    echo "  TEST SUITE"
+    echo "==============================================="
+    echo -e "${NC}"
+    
+    run_full_tests
+    exit $?
 }
 
 # Handle script interruption
