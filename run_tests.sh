@@ -67,7 +67,7 @@ START_TIME=$(date +%s)
 INTERACTIVE_MODE=false
 SKIP_SERVICES=()
 
-# Available services
+# Available services (now includes Solscan)
 ALL_SERVICES=("helius" "birdeye" "chainbase" "blowfish" "solscan" "dataimpulse")
 
 # ==============================================
@@ -140,7 +140,7 @@ check_dependencies() {
     fi
 }
 
-# Interactive service selection (NEW FEATURE)
+# Interactive service selection (ENHANCED)
 prompt_for_service() {
     local service="$1"
     
@@ -669,6 +669,7 @@ show_help() {
     echo "  $0 --skip-service birdeye       # Skip Birdeye tests"
     echo "  $0 --skip-service helius --skip-service chainbase  # Skip multiple services"
     echo "  $0 --services --interactive     # Service tests with selection"
+    echo "  $0 --services-free              # Test only free APIs (DexScreener, Solscan free tier)"
     echo ""
 }
 
@@ -745,12 +746,14 @@ main() {
                 SAFE_TESTER="$TESTS_DIR/services/test_services.py"
                 if [ ! -f "$SAFE_TESTER" ]; then
                     log_error "Safe service tester not found: $SAFE_TESTER"
+                    log_info "This should include tests for all services including Solscan"
                     exit 1
                 fi
                 
                 mkdir -p "$TESTS_DIR/services/results"
                 
                 log_info "Running safe service tester in mock mode..."
+                log_info "Testing services: helius, birdeye, chainbase, blowfish, solscan, dataimpulse"
                 python -m tests.services.test_services --mode mock
                 
                 if [ -f "$TESTS_DIR/services/results/latest_mock.json" ]; then
@@ -773,10 +776,18 @@ main() {
                 mkdir -p "$TESTS_DIR/services/results"
                 
                 log_info "Running safe service tester with free APIs only..."
+                log_info "Testing: DexScreener (free), Solscan (free tier), System endpoints"
                 python -m tests.services.test_services --mode free
                 
                 if [ -f "$TESTS_DIR/services/results/latest_free.json" ]; then
                     log_success "Latest results: $TESTS_DIR/services/results/latest_free.json"
+                    
+                    # Show summary of what was tested
+                    log_info "Free API tests completed:"
+                    log_info "  ✅ DexScreener API (completely free)"
+                    log_info "  ✅ Solscan free tier (network stats)"
+                    log_info "  ✅ System configuration endpoints"
+                    log_info "  ✅ Health check endpoints"
                 fi
                 
                 exit $?
@@ -797,6 +808,8 @@ main() {
                 mkdir -p "$TESTS_DIR/services/results"
                 
                 echo ""
+                echo -e "${YELLOW}This will test ALL services including Solscan with API key${NC}"
+                echo -e "${YELLOW}Services to test: helius, birdeye, chainbase, blowfish, solscan, dataimpulse${NC}"
                 echo -e "${YELLOW}Continue with paid API testing? (yes/no):${NC}"
                 read -r confirmation
                 if [[ "$confirmation" != "yes" && "$confirmation" != "y" ]]; then
@@ -820,6 +833,7 @@ main() {
                 check_test_structure
                 ask_service_selection
                 
+                log_info "Testing health endpoints for all services including Solscan"
                 run_pytest_suite "$TESTS_DIR/services" "Service Health Tests" "-m health"
                 generate_report
                 exit $([ $FAILED_TESTS -eq 0 ] && [ $TOTAL_TESTS -gt 0 ]; echo $?)

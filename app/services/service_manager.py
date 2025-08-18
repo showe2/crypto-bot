@@ -21,7 +21,7 @@ class APIManager:
             "birdeye": None,
             "blowfish": None,
             "dataimpulse": None,
-            "solscan": None
+            "solscan": None  # Ensure Solscan is included
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
@@ -35,9 +35,9 @@ class APIManager:
                 "birdeye": BirdeyeClient(),
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
-                "solscan": SolscanClient()
+                "solscan": SolscanClient()  # Initialize Solscan client
             }
-            logger.info("✅ All API clients initialized")
+            logger.info("✅ All API clients initialized (including Solscan)")
         except Exception as e:
             logger.error(f"❌ Error initializing API clients: {str(e)}")
             raise
@@ -53,23 +53,23 @@ class APIManager:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
     async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services"""
+        """Check health of all API services including Solscan"""
         current_time = time.time()
         
         # Check cache
         if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
             return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services...")
+        logger.info("🔍 Checking health of all API services (including Solscan)...")
         
-        # Health check functions
+        # Health check functions - now includes Solscan
         health_checks = {
             "helius": check_helius_health(),
             "chainbase": check_chainbase_health(),
             "birdeye": check_birdeye_health(),
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
-            "solscan": check_solscan_health()
+            "solscan": check_solscan_health()  # Add Solscan health check
         }
         
         # Run all health checks concurrently
@@ -109,7 +109,7 @@ class APIManager:
             "recommendations": []
         }
         
-        # Add recommendations
+        # Add service-specific recommendations
         if configured_services < total_services:
             missing_keys = [name for name, status in health_status.items() 
                            if not status.get("api_key_configured", False)]
@@ -124,6 +124,14 @@ class APIManager:
                 f"Check service status for: {', '.join(unhealthy)}"
             )
         
+        # Solscan-specific recommendations
+        if "solscan" in health_status:
+            solscan_status = health_status["solscan"]
+            if not solscan_status.get("healthy") and not solscan_status.get("api_key_configured"):
+                overall_health["recommendations"].append(
+                    "Solscan: Consider getting an API key for higher rate limits and more features"
+                )
+        
         # Cache results
         self._health_cache = {
             "data": overall_health,
@@ -134,7 +142,7 @@ class APIManager:
         return overall_health
     
     async def get_comprehensive_token_data(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token data from all available sources"""
+        """Get comprehensive token data from all available sources including Solscan"""
         logger.info(f"🔍 Gathering comprehensive data for token: {token_address}")
         
         # Prepare tasks for parallel execution
@@ -155,6 +163,7 @@ class APIManager:
             tasks["birdeye_metadata"] = self.clients["birdeye"].get_token_metadata(token_address)
             tasks["birdeye_trades"] = self.clients["birdeye"].get_token_trades(token_address, 50)
         
+        # Solscan data collection
         if self.clients["solscan"]:
             tasks["solscan_info"] = self.clients["solscan"].get_token_info(token_address)
             tasks["solscan_holders"] = self.clients["solscan"].get_token_holders(token_address, 50)
@@ -179,6 +188,7 @@ class APIManager:
             "trading_data": {},
             "security_analysis": {},
             "market_data": {},
+            "network_data": {},  # For Solscan network info
             "processing_time": processing_time,
             "timestamp": int(time.time()),
             "errors": []
@@ -225,16 +235,17 @@ class APIManager:
         return compiled_data
     
     def _standardize_token_data(self, compiled_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Standardize token data from different sources"""
+        """Standardize token data from different sources including Solscan"""
         standardized = {
             "basic_info": {},
             "price_info": {},
             "holder_info": {},
             "security_info": {},
-            "trading_info": {}
+            "trading_info": {},
+            "network_info": {}  # For Solscan network data
         }
         
-        # Standardize basic info
+        # Standardize basic info (now includes Solscan data)
         for source, metadata in compiled_data["metadata"].items():
             if not metadata:
                 continue
@@ -245,6 +256,15 @@ class APIManager:
                 standardized["basic_info"]["symbol"] = metadata["symbol"]
             if "decimals" in metadata and not standardized["basic_info"].get("decimals"):
                 standardized["basic_info"]["decimals"] = metadata["decimals"]
+            
+            # Solscan-specific fields
+            if source == "solscan":
+                if "price" in metadata:
+                    standardized["price_info"]["solscan_price"] = metadata["price"]
+                if "volume_24h" in metadata:
+                    standardized["trading_info"]["solscan_volume_24h"] = metadata["volume_24h"]
+                if "holder_count" in metadata:
+                    standardized["holder_info"]["solscan_holder_count"] = metadata["holder_count"]
         
         # Standardize price info
         for source, price_data in compiled_data["price_data"].items():
@@ -257,7 +277,7 @@ class APIManager:
             elif "price" in price_data:  # Other formats
                 standardized["price_info"]["current_price"] = price_data["price"]
         
-        # Standardize holder info
+        # Standardize holder info (enhanced with Solscan data)
         total_holders = 0
         all_holders = []
         
@@ -267,6 +287,9 @@ class APIManager:
                 
             if "total" in holder_data:
                 total_holders = max(total_holders, holder_data["total"])
+            elif source == "solscan" and "total" in holder_data:
+                total_holders = max(total_holders, holder_data["total"])
+            
             if "holders" in holder_data:
                 all_holders.extend(holder_data["holders"])
         
@@ -329,7 +352,7 @@ class APIManager:
             return {"error": str(e)}
     
     async def get_market_analysis(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive market analysis"""
+        """Get comprehensive market analysis including Solscan data"""
         logger.info(f"📈 Running market analysis for {token_address}")
         
         market_data = {}
@@ -357,18 +380,23 @@ class APIManager:
             except Exception as e:
                 market_data["chainbase_error"] = str(e)
         
-        # Solscan additional data
+        # Solscan market and network data
         if self.clients["solscan"]:
             try:
-                solscan_market = await self.clients["solscan"].get_market_data(token_address)
-                market_data["solscan"] = solscan_market
+                solscan_token_info = await self.clients["solscan"].get_token_info(token_address)
+                solscan_network_stats = await self.clients["solscan"].get_network_stats()
+                
+                market_data["solscan"] = {
+                    "token_info": solscan_token_info,
+                    "network_stats": solscan_network_stats
+                }
             except Exception as e:
                 market_data["solscan_error"] = str(e)
         
         return market_data
     
     async def discover_trending_tokens(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Discover trending tokens from multiple sources"""
+        """Discover trending tokens from multiple sources including Solscan"""
         logger.info(f"🔥 Discovering trending tokens (limit: {limit})")
         
         trending_tokens = []
@@ -384,18 +412,6 @@ class APIManager:
                     trending_tokens.append(token)
             except Exception as e:
                 logger.warning(f"Error getting trending tokens from Birdeye: {str(e)}")
-        
-        # Get top tokens from Solscan
-        if self.clients["solscan"]:
-            try:
-                solscan_top = await self.clients["solscan"].get_top_tokens(
-                    sort_by="volume_24h", limit=limit
-                )
-                for token in solscan_top:
-                    token["source"] = "solscan"
-                    trending_tokens.append(token)
-            except Exception as e:
-                logger.warning(f"Error getting top tokens from Solscan: {str(e)}")
         
         # Get trending topics from DataImpulse
         if self.clients["dataimpulse"]:
@@ -452,6 +468,14 @@ class APIManager:
             except Exception as e:
                 whale_data["birdeye_error"] = str(e)
         
+        # Solscan holder analysis
+        if self.clients["solscan"]:
+            try:
+                solscan_holders = await self.clients["solscan"].get_token_holders(token_address, 100)
+                whale_data["solscan_holders"] = solscan_holders
+            except Exception as e:
+                whale_data["solscan_error"] = str(e)
+        
         # Analyze whale impact
         if whale_data:
             whale_data["analysis"] = self._analyze_whale_impact(whale_data)
@@ -459,7 +483,7 @@ class APIManager:
         return whale_data
     
     def _analyze_whale_impact(self, whale_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze whale impact on token"""
+        """Analyze whale impact on token including Solscan data"""
         analysis = {
             "whale_count": 0,
             "total_whale_volume": 0,
@@ -488,6 +512,19 @@ class APIManager:
                 if isinstance(volume, (int, float)):
                     analysis["total_whale_volume"] += volume
         
+        # Analyze Solscan holders
+        solscan_holders = whale_data.get("solscan_holders", {})
+        if solscan_holders and "holders" in solscan_holders:
+            # Define whales as holders with >1% of supply
+            whale_holders = [h for h in solscan_holders["holders"] if float(h.get("percentage", 0)) >= 1.0]
+            analysis["whale_count"] += len(whale_holders)
+            
+            for whale in whale_holders:
+                # Estimate volume based on percentage
+                percentage = float(whale.get("percentage", 0))
+                if percentage > 0:
+                    analysis["total_whale_volume"] += percentage * 10000  # Rough estimate
+        
         # Calculate averages and risk
         if analysis["whale_count"] > 0:
             analysis["average_whale_size"] = analysis["total_whale_volume"] / analysis["whale_count"]
@@ -503,7 +540,7 @@ class APIManager:
         return analysis
     
     async def search_tokens(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for tokens across multiple sources"""
+        """Search for tokens across multiple sources including Solscan"""
         logger.info(f"🔍 Searching for tokens: '{query}' (limit: {limit})")
         
         search_results = []
@@ -537,11 +574,17 @@ class APIManager:
             key = token.get("address") or token.get("mint") or f"{token.get('symbol')}_{token.get('name')}"
             if key not in unique_results:
                 unique_results[key] = token
+            else:
+                # Merge sources
+                existing = unique_results[key]
+                existing["sources"] = existing.get("sources", [existing.get("source")])
+                if token.get("source") not in existing["sources"]:
+                    existing["sources"].append(token.get("source"))
         
         return list(unique_results.values())[:limit]
     
     async def get_service_status(self) -> Dict[str, Any]:
-        """Get detailed status of all API services"""
+        """Get detailed status of all API services including Solscan"""
         health_data = await self.check_all_services_health()
         
         status = {
@@ -564,14 +607,14 @@ class APIManager:
         return status
     
     def _get_service_capabilities(self, service_name: str) -> List[str]:
-        """Get capabilities for each service"""
+        """Get capabilities for each service including Solscan"""
         capabilities = {
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
             "birdeye": ["price_data", "trading_history", "market_data", "trending_tokens"],
             "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
-            "solscan": ["on_chain_data", "transaction_details", "network_stats", "validator_info"]
+            "solscan": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"]
         }
         return capabilities.get(service_name, [])
 
@@ -582,30 +625,30 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services"""
+    """Initialize all API services including Solscan"""
     await api_manager.initialize_clients()
 
 
 async def cleanup_api_services():
-    """Cleanup all API services"""
+    """Cleanup all API services including Solscan"""
     await api_manager.cleanup_clients()
 
 
 async def get_token_analysis(token_address: str) -> Dict[str, Any]:
-    """Get comprehensive token analysis"""
+    """Get comprehensive token analysis including Solscan data"""
     return await api_manager.get_comprehensive_token_data(token_address)
 
 
 async def get_api_health_status() -> Dict[str, Any]:
-    """Get health status of all APIs"""
+    """Get health status of all APIs including Solscan"""
     return await api_manager.check_all_services_health()
 
 
 async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search for tokens across all sources"""
+    """Search for tokens across all sources including Solscan"""
     return await api_manager.search_tokens(query, limit)
 
 
 async def get_trending_analysis(limit: int = 20) -> List[Dict[str, Any]]:
-    """Get trending tokens analysis"""
+    """Get trending tokens analysis from all sources"""
     return await api_manager.discover_trending_tokens(limit)

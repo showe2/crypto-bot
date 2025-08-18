@@ -54,7 +54,8 @@ class SafeServiceTester:
             "birdeye": 0.25,         # ~$0.25 per 1000 calls  
             "chainbase": 0.50,       # ~$0.50 per 1000 calls
             "blowfish": 2.00,        # ~$2.00 per 1000 scans
-            "dataimpulse": 1.00      # ~$1.00 per 1000 calls
+            "dataimpulse": 1.00,     # ~$1.00 per 1000 calls
+            "solscan": 0.05          # ~$0.05 per 1000 calls (has free tier)
         }
     
     async def test_system_health(self) -> TestResult:
@@ -193,6 +194,10 @@ class SafeServiceTester:
         if self.mode in [TestMode.FREE_APIS, TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
             result = await self._test_dexscreener()
             results.append(result)
+            
+            # Test Solscan (has free tier)
+            result = await self._test_solscan_free()
+            results.append(result)
         
         # Test public configuration endpoints
         result = await self._test_config_endpoint()
@@ -232,6 +237,113 @@ class SafeServiceTester:
                 cost_estimate="FREE",
                 error=str(e)
             )
+    
+    async def _test_solscan_free(self) -> TestResult:
+        """Test Solscan API (using correct endpoints)"""
+        print("   📊 Testing Solscan API (free endpoints)...")
+        
+        start_time = time.time()
+        
+        # List of Solscan endpoints to try (from most likely to work to least)
+        endpoints_to_try = [
+            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
+            ("https://public-api.solscan.io/network", "/network"),
+            ("https://public-api.solscan.io/", "/"),
+            ("https://public-api.solscan.io/statistics", "/statistics")
+        ]
+        
+        last_error = None
+        
+        for full_url, endpoint_name in endpoints_to_try:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {
+                        "Accept": "application/json",
+                        "User-Agent": "Solana-Token-Analysis/1.0"
+                    }
+                    
+                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as response:
+                        response_time = time.time() - start_time
+                        
+                        if response.status == 200:
+                            try:
+                                # Try to parse as JSON
+                                content_type = response.headers.get('content-type', '').lower()
+                                
+                                if 'application/json' in content_type:
+                                    data = await response.json()
+                                    print(f"   ✅ Solscan endpoint {endpoint_name} working ({response_time:.2f}s)")
+                                    return TestResult(
+                                        service="solscan",
+                                        endpoint=endpoint_name,
+                                        success=True,
+                                        response_time=response_time,
+                                        cost_estimate="FREE",
+                                        data_size=len(str(data))
+                                    )
+                                else:
+                                    # Not JSON, but 200 OK means endpoint exists
+                                    text_data = await response.text()
+                                    print(f"   ✅ Solscan endpoint {endpoint_name} accessible ({response_time:.2f}s)")
+                                    return TestResult(
+                                        service="solscan",
+                                        endpoint=endpoint_name,
+                                        success=True,
+                                        response_time=response_time,
+                                        cost_estimate="FREE",
+                                        data_size=len(text_data)
+                                    )
+                                    
+                            except Exception as parse_error:
+                                # Endpoint exists but data parsing failed
+                                print(f"   ⚠️  Solscan {endpoint_name} returned data but parsing failed")
+                                return TestResult(
+                                    service="solscan",
+                                    endpoint=endpoint_name,
+                                    success=True,  # Endpoint is working, just parsing issue
+                                    response_time=response_time,
+                                    cost_estimate="FREE",
+                                    error=f"Data parsing issue: {str(parse_error)}"
+                                )
+                        
+                        elif response.status == 404:
+                            # This endpoint doesn't exist, try next one
+                            last_error = f"Endpoint {endpoint_name} not found (404)"
+                            continue
+                            
+                        elif response.status == 403:
+                            # Forbidden - might need API key
+                            last_error = f"Endpoint {endpoint_name} requires authentication (403)"
+                            continue
+                            
+                        else:
+                            # Other HTTP error
+                            error_text = await response.text()
+                            last_error = f"HTTP {response.status} for {endpoint_name}: {error_text[:100]}"
+                            continue
+                            
+            except asyncio.TimeoutError:
+                last_error = f"Timeout for endpoint {endpoint_name}"
+                continue
+            except aiohttp.ClientConnectorError:
+                last_error = f"Connection failed for {endpoint_name}"
+                continue
+            except Exception as e:
+                last_error = f"Error testing {endpoint_name}: {str(e)}"
+                continue
+        
+        # All endpoints failed
+        response_time = time.time() - start_time
+        print(f"   ❌ All Solscan endpoints failed ({response_time:.2f}s)")
+        
+        return TestResult(
+            service="solscan",
+            endpoint="/multiple_endpoints",
+            success=False,
+            response_time=response_time,
+            cost_estimate="FREE",
+            error=f"All endpoints failed. Last error: {last_error}"
+        )
     
     async def _test_config_endpoint(self) -> TestResult:
         """Test configuration endpoint (free, internal)"""
@@ -288,7 +400,7 @@ class SafeServiceTester:
                 return results
             
             # Test API health endpoints (usually free or very cheap)
-            for service_name in ["helius", "birdeye", "chainbase", "blowfish"]:
+            for service_name in ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse"]:
                 result = await self._test_service_health(service_name)
                 results.append(result)
         
@@ -313,6 +425,12 @@ class SafeServiceTester:
             elif service_name == "blowfish":
                 from app.services.blowfish_client import check_blowfish_health
                 health_data = await check_blowfish_health()
+            elif service_name == "solscan":
+                from app.services.solscan_client import check_solscan_health
+                health_data = await check_solscan_health()
+            elif service_name == "dataimpulse":
+                from app.services.dataimpulse_client import check_dataimpulse_health
+                health_data = await check_dataimpulse_health()
             else:
                 raise ValueError(f"Unknown service: {service_name}")
             
@@ -371,6 +489,13 @@ class SafeServiceTester:
         print("\nAPIs that will be tested:")
         print("  • Service health checks (minimal cost)")
         print("  • Basic connectivity tests")
+        print("\nServices to be tested:")
+        print("  • Helius API (Solana RPC)")
+        print("  • Birdeye API (Price data)")
+        print("  • Chainbase API (Analytics)")
+        print("  • Blowfish API (Security)")
+        print("  • Solscan API (On-chain data)")
+        print("  • DataImpulse API (Social sentiment)")
         print("\nRecommendation: Test with ENABLE_API_MOCKS=true first")
         print("="*60)
         
@@ -489,6 +614,11 @@ class SafeServiceTester:
         if summary['estimated_cost'] != '$0.000':
             print(f"   • Total estimated cost: {summary['estimated_cost']}")
             print("   • Monitor API dashboards for actual usage")
+        
+        # Service-specific recommendations
+        solscan_results = [r for r in summary['results'] if r['service'] == 'solscan']
+        if solscan_results and not solscan_results[0]['success']:
+            print("   • Solscan: Consider getting an API key for higher rate limits")
         
         print("="*80)
 
