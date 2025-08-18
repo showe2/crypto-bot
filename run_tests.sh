@@ -67,6 +67,9 @@ START_TIME=$(date +%s)
 INTERACTIVE_MODE=false
 SKIP_SERVICES=()
 
+# Available services
+ALL_SERVICES=("helius" "birdeye" "chainbase" "blowfish" "solscan" "dataimpulse")
+
 # ==============================================
 # UTILITY FUNCTIONS
 # ==============================================
@@ -137,27 +140,93 @@ check_dependencies() {
     fi
 }
 
-# Ask user which services to test
+# Interactive service selection (NEW FEATURE)
+prompt_for_service() {
+    local service="$1"
+    
+    # Check if service is in skip list (from command line)
+    for skip_service in "${SKIP_SERVICES[@]}"; do
+        if [ "$service" = "$skip_service" ]; then
+            log_info "Skipping $service (command line flag)"
+            return 1  # Skip
+        fi
+    done
+    
+    # If not in interactive mode, include by default
+    if [ "$INTERACTIVE_MODE" = false ]; then
+        return 0  # Include
+    fi
+    
+    # Interactive prompt for this service
+    echo -e "\n${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${WHITE}Service: ${service}${NC}"
+    
+    # Add service descriptions
+    case "$service" in
+        "helius")
+            echo -e "${BLUE}Description: Solana RPC and blockchain data${NC}"
+            ;;
+        "birdeye")
+            echo -e "${BLUE}Description: Price data and market analytics${NC}"
+            ;;
+        "chainbase")
+            echo -e "${BLUE}Description: Blockchain analytics and holder data${NC}"
+            ;;
+        "blowfish")
+            echo -e "${BLUE}Description: Security analysis and scam detection${NC}"
+            ;;
+        "solscan")
+            echo -e "${BLUE}Description: On-chain data and network statistics${NC}"
+            ;;
+        "dataimpulse")
+            echo -e "${BLUE}Description: Social media sentiment analysis${NC}"
+            ;;
+    esac
+    
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    
+    while true; do
+        echo -n -e "${YELLOW}Test ${service}? [Y/n/q]: ${NC}"
+        read -r -n 1 response
+        echo  # New line
+        
+        case "$response" in
+            ""|"y"|"Y")
+                log_info "Will test $service"
+                return 0  # Include
+                ;;
+            "n"|"N")
+                log_info "Skipping $service"
+                return 1  # Skip
+                ;;
+            "q"|"Q")
+                log_info "Quitting test runner"
+                exit 0
+                ;;
+            *)
+                echo -e "${RED}Please enter Y, n, or q${NC}"
+                ;;
+        esac
+    done
+}
+
+# Ask user which services to test (ENHANCED)
 ask_service_selection() {
     if [ "$INTERACTIVE_MODE" = false ]; then
         return 0
     fi
     
-    local services=("helius" "birdeye" "chainbase" "blowfish" "solscan" "dataimpulse")
-    
     log_header "SERVICE SELECTION"
-    echo "Choose which services to test. Press Enter to test all, or select specific services:"
+    echo "Choose which services to test. Press Enter to test all, or select individual services:"
     echo ""
     
-    for service in "${services[@]}"; do
-        echo -n "Test $service? (Y/n): "
-        read -r response
-        
-        if [[ "$response" =~ ^[Nn]$ ]]; then
-            SKIP_SERVICES+=("$service")
-            log_info "Skipping $service"
+    for service in "${ALL_SERVICES[@]}"; do
+        if prompt_for_service "$service"; then
+            # Service will be tested
+            continue
         else
-            log_info "Will test $service"
+            # Add to skip list
+            SKIP_SERVICES+=("$service")
         fi
     done
     
