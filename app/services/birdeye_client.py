@@ -10,6 +10,10 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
+# Debug settings loading
+logger.debug(f"Settings loaded - Birdeye API Key present: {bool(settings.BIRDEYE_API_KEY)}")
+logger.debug(f"Settings loaded - Birdeye Base URL: {settings.BIRDEYE_BASE_URL}")
+
 
 class BirdeyeAPIError(Exception):
     """Birdeye API specific errors"""
@@ -27,17 +31,19 @@ class BirdeyeClient:
         self._last_request_time = 0
         self.timeout = settings.API_TIMEOUT
         
-        # API endpoint variations to try
+        # Updated API endpoints based on current Birdeye API documentation
         self.api_endpoints = {
-            "price_v1": "/defi/price",
-            "price_v2": "/defi/token_overview", 
-            "price_v3": "/defi/tokens/{address}/price",
-            "overview": "/defi/token_overview",
             "multi_price": "/defi/multi_price"
         }
         
-        if not self.api_key:
-            logger.warning("Birdeye API key not configured")
+        # Log API key status (masked for security)
+        if self.api_key:
+            masked_key = f"{self.api_key[:8]}***{self.api_key[-4:]}" if len(self.api_key) > 12 else f"{self.api_key[:4]}***"
+            logger.info(f"Birdeye API key configured: {masked_key} (length: {len(self.api_key)})")
+        else:
+            logger.warning("Birdeye API key not configured - check BIRDEYE_API_KEY in .env file")
+        
+        logger.info(f"Birdeye base URL: {self.base_url}")
     
     async def __aenter__(self):
         """Async context manager entry"""
@@ -73,25 +79,36 @@ class BirdeyeClient:
         if not address or not isinstance(address, str):
             return False
         
-        # Solana addresses are base58 encoded, 32-44 characters
+        # Solana addresses are base58 encoded, typically 44 characters (32-44 range)
         if len(address) < 32 or len(address) > 44:
+            logger.debug(f"Address length invalid: {len(address)} (expected 32-44)")
             return False
         
-        # Check for valid base58 characters
+        # Check for valid base58 characters (Bitcoin alphabet)
         import re
         base58_pattern = re.compile(r'^[1-9A-HJ-NP-Za-km-z]+$')
-        return bool(base58_pattern.match(address))
+        if not base58_pattern.match(address):
+            logger.debug(f"Address contains invalid base58 characters")
+            return False
+            
+        # Additional check - most Solana addresses are exactly 44 characters
+        if len(address) == 44:
+            logger.debug(f"Address format valid: {address[:8]}...{address[-4:]} (length: {len(address)})")
+            return True
+        elif len(address) == 43:
+            logger.debug(f"Address format likely valid: {address[:8]}...{address[-4:]} (length: {len(address)})")
+            return True
+        else:
+            logger.debug(f"Address length unusual but might be valid: {len(address)}")
+            return True  # Allow it through, let the API decide
     
-    async def _request_with_fallback(self, endpoints_to_try: List[Dict], token_address: str) -> Dict[str, Any]:
+    async def _request_with_fallback(self, endpoints_to_try: List[Dict], token_address: str = None) -> Dict[str, Any]:
         """Try multiple API endpoint formats until one works"""
-        if not self.api_key:
-            raise BirdeyeAPIError("Birdeye API key not configured")
-        
         await self._ensure_session()
         await self._rate_limit()
         
-        # Validate address first
-        if not self._validate_solana_address(token_address):
+        # Validate address if provided
+        if token_address and not self._validate_solana_address(token_address):
             raise BirdeyeAPIError(f"Invalid Solana address format: {token_address}")
         
         last_error = None
@@ -103,15 +120,30 @@ class BirdeyeClient:
                 params = endpoint_config.get("params", {})
                 json_data = endpoint_config.get("json", None)
                 
-                # Replace address placeholder in URL
-                url = f"{self.base_url}{endpoint}".format(address=token_address)
+                # Replace address placeholder in URL if present
+                if token_address:
+                    url = f"{self.base_url}{endpoint}".format(address=token_address)
+                else:
+                    url = f"{self.base_url}{endpoint}"
                 
+                # Try different authentication methods for Birdeye
+                # Start with minimal headers first
                 headers = {
-                    "X-API-KEY": self.api_key,
-                    "Content-Type": "application/json"
+                    "Accept": "application/json",
+                    "User-Agent": "Solana-Token-Analysis/1.0"
                 }
                 
-                logger.debug(f"Trying Birdeye API endpoint {i+1}/{len(endpoints_to_try)}: {method} {url}")
+                # Add API key if available - try ONE format at a time
+                if self.api_key:
+                    # Birdeye typically uses X-API-KEY, but let's try the most common format
+                    headers["X-API-KEY"] = self.api_key
+                    logger.debug(f"Using API key: {self.api_key[:8]}*** (length: {len(self.api_key)})")
+                else:
+                    logger.debug("No API key configured, trying without authentication")
+                
+                logger.debug(f"Trying Birdeye endpoint {i+1}/{len(endpoints_to_try)}: {method} {endpoint}")
+                logger.debug(f"Full URL: {url}")
+                logger.debug(f"Params: {params}")
                 
                 async with self.session.request(
                     method=method,
@@ -121,11 +153,51 @@ class BirdeyeClient:
                     json=json_data
                 ) as response:
                     
-                    response_data = await response.json()
+                    logger.debug(f"Response status: {response.status}")
+                    logger.debug(f"Response headers: {dict(response.headers)}")
+                    
+                    # Check content type before parsing
+                    content_type = response.headers.get('content-type', '').lower()
+                    logger.debug(f"Content type: {content_type}")
                     
                     if response.status == 200:
-                        logger.debug(f"✅ Birdeye API endpoint {i+1} successful")
-                        return response_data
+                        if 'application/json' in content_type:
+                            try:
+                                response_data = await response.json()
+                                logger.info(f"✅ Birdeye endpoint {i+1} successful: {endpoint}")
+                                logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
+                                return response_data
+                            except Exception as parse_error:
+                                last_error = f"JSON parse error: {str(parse_error)}"
+                                logger.debug(f"❌ Endpoint {i+1} JSON parse failed: {last_error}")
+                                continue
+                        else:
+                            # Try to get text response for debugging
+                            try:
+                                text_response = await response.text()
+                                logger.debug(f"Non-JSON response content: {text_response[:300]}")
+                                last_error = f"Unexpected content type: {content_type}. Response: {text_response[:200]}"
+                            except:
+                                last_error = f"Unexpected content type: {content_type}"
+                            logger.debug(f"❌ Endpoint {i+1} wrong content type: {last_error}")
+                            continue
+                    elif response.status == 401:
+                        # Authentication failed
+                        try:
+                            error_text = await response.text()
+                            logger.error(f"401 Authentication failed on endpoint {i+1}")
+                            logger.error(f"Request URL: {url}")
+                            logger.error(f"Request headers: {dict(headers)}")
+                            logger.error(f"Response text: {error_text[:500]}")
+                            
+                            if self.api_key:
+                                last_error = f"Authentication failed (401): Invalid API key. Response: {error_text[:200]}"
+                            else:
+                                last_error = f"Authentication required (401): API key needed. Response: {error_text[:200]}"
+                        except:
+                            last_error = f"Authentication failed (401): {'Invalid API key' if self.api_key else 'API key required'}"
+                        logger.debug(f"❌ Endpoint {i+1} auth failed: {last_error}")
+                        continue
                     elif response.status == 429:
                         # Rate limited - wait and retry this endpoint
                         retry_after = int(response.headers.get('Retry-After', 2))
@@ -139,13 +211,18 @@ class BirdeyeClient:
                             params=params,
                             json=json_data
                         ) as retry_response:
-                            retry_data = await retry_response.json()
                             if retry_response.status == 200:
+                                retry_data = await retry_response.json()
                                 return retry_data
                             else:
-                                last_error = f"HTTP {retry_response.status}: {retry_data.get('message', 'Unknown error')}"
+                                last_error = f"Retry failed - HTTP {retry_response.status}"
                     else:
-                        last_error = f"HTTP {response.status}: {response_data.get('message', 'Unknown error')}"
+                        # Try to get response text for better error reporting
+                        try:
+                            error_text = await response.text()
+                            last_error = f"HTTP {response.status}: {error_text[:200] if error_text else 'No response content'}"
+                        except:
+                            last_error = f"HTTP {response.status}: Unable to read response"
                         logger.debug(f"❌ Endpoint {i+1} failed: {last_error}")
                         
             except Exception as e:
@@ -154,65 +231,50 @@ class BirdeyeClient:
                 continue
         
         # If all endpoints failed
-        raise BirdeyeAPIError(f"All API endpoints failed. Last error: {last_error}")
+        if "Authentication" in str(last_error) or "401" in str(last_error):
+            if not self.api_key:
+                raise BirdeyeAPIError("Birdeye API key not configured. Please set BIRDEYE_API_KEY in your .env file")
+            else:
+                raise BirdeyeAPIError(f"Birdeye API authentication failed. Check your API key. Last error: {last_error}")
+        else:
+            raise BirdeyeAPIError(f"All API endpoints failed. Last error: {last_error}")
     
     async def get_token_price(self, token_address: str, include_liquidity: bool = True) -> Dict[str, Any]:
-        """Get current token price and basic info with multiple endpoint fallbacks"""
+        """Get current token price and basic info with updated endpoints"""
         try:
-            # Define endpoint variations to try in order of preference
+            # Define updated endpoint variations based on current Birdeye API
             endpoints_to_try = [
-                # Try the most common current format first
+                # Try current API format with address
                 {
                     "endpoint": "/defi/token_overview",
                     "method": "GET",
                     "params": {
-                        "address": token_address,
-                        "include_liquidity": str(include_liquidity).lower()
+                        "address": token_address
                     }
                 },
-                # Try alternative parameter name
-                {
-                    "endpoint": "/defi/token_overview", 
-                    "method": "GET",
-                    "params": {
-                        "token_address": token_address,
-                        "include_liquidity": str(include_liquidity).lower()
-                    }
-                },
-                # Try the old price endpoint
+                # Try price endpoint with different parameter names
                 {
                     "endpoint": "/defi/price",
                     "method": "GET", 
                     "params": {
-                        "address": token_address,
-                        "include_liquidity": str(include_liquidity).lower()
+                        "address": token_address
                     }
                 },
-                # Try with mint parameter
+                # Try with list_address parameter (used by multi_price)
+                {
+                    "endpoint": "/defi/multi_price",
+                    "method": "GET",
+                    "params": {
+                        "list_address": token_address
+                    }
+                },
+                # Try with different parameter name
                 {
                     "endpoint": "/defi/price",
                     "method": "GET",
                     "params": {
-                        "mint": token_address,
-                        "include_liquidity": str(include_liquidity).lower()
+                        "token_address": token_address
                     }
-                },
-                # Try POST method
-                {
-                    "endpoint": "/defi/price",
-                    "method": "POST",
-                    "json": {
-                        "address": token_address,
-                        "include_liquidity": include_liquidity
-                    }
-                },
-                # Try path-based endpoint
-                {
-                    "endpoint": "/defi/tokens/{address}/price",
-                    "method": "GET",
-                    "params": {
-                        "include_liquidity": str(include_liquidity).lower()
-                    } if include_liquidity else {}
                 }
             ]
             
@@ -247,211 +309,110 @@ class BirdeyeClient:
             logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
             return None
     
-    async def get_token_metadata(self, token_address: str) -> Dict[str, Any]:
-        """Get token metadata from Birdeye with fallback endpoints"""
-        try:
-            endpoints_to_try = [
-                {
-                    "endpoint": "/defi/token_overview",
-                    "method": "GET",
-                    "params": {"address": token_address}
-                },
-                {
-                    "endpoint": "/defi/token_overview",
-                    "method": "GET", 
-                    "params": {"token_address": token_address}
-                },
-                {
-                    "endpoint": "/defi/tokens/{address}",
-                    "method": "GET"
-                }
-            ]
-            
-            response = await self._request_with_fallback(endpoints_to_try, token_address)
-            
-            if not response.get("data"):
-                return None
-            
-            data = response["data"]
-            metadata = {
-                "address": token_address,
-                "name": data.get("name"),
-                "symbol": data.get("symbol"),
-                "decimals": data.get("decimals"),
-                "logoURI": data.get("logoURI") or data.get("image"),
-                "mc": data.get("mc") or data.get("marketCap"),
-                "v24hUSD": data.get("v24hUSD") or data.get("volume24h"),
-                "v24hChangePercent": data.get("v24hChangePercent") or data.get("volume24hChangePercent"),
-                "liquidity": data.get("liquidity"),
-                "lastTradeUnixTime": data.get("lastTradeUnixTime"),
-                "lastTradeHumanTime": data.get("lastTradeHumanTime"),
-                "buy24h": data.get("buy24h"),
-                "sell24h": data.get("sell24h"),
-                "holder": data.get("holder") or data.get("holderCount"),
-                "supply": data.get("supply") or data.get("totalSupply"),
-                "extensions": data.get("extensions", {})
-            }
-            
-            return metadata
-            
-        except Exception as e:
-            logger.error(f"Error getting token metadata from Birdeye for {token_address}: {str(e)}")
-            return None
-    
-    async def search_tokens(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search tokens by keyword with fallback endpoints"""
-        try:
-            endpoints_to_try = [
-                {
-                    "endpoint": "/defi/search",
-                    "method": "GET",
-                    "params": {
-                        "keyword": keyword,
-                        "limit": min(limit, 50)
-                    }
-                },
-                {
-                    "endpoint": "/defi/search_token",
-                    "method": "GET",
-                    "params": {
-                        "q": keyword,
-                        "limit": min(limit, 50)
-                    }
-                },
-                {
-                    "endpoint": "/defi/tokenlist",
-                    "method": "GET",
-                    "params": {
-                        "search": keyword,
-                        "limit": min(limit, 50)
-                    }
-                }
-            ]
-            
-            response = await self._request_with_fallback(endpoints_to_try, keyword)
-            
-            if not response.get("data"):
-                return []
-            
-            data = response["data"]
-            
-            # Handle different response structures
-            tokens_list = data.get("tokens", data.get("results", data if isinstance(data, list) else []))
-            
-            tokens = []
-            for token in tokens_list:
-                token_info = {
-                    "address": token.get("address") or token.get("mint"),
-                    "name": token.get("name"),
-                    "symbol": token.get("symbol"),
-                    "decimals": token.get("decimals"),
-                    "logoURI": token.get("logoURI") or token.get("image"),
-                    "mc": token.get("mc") or token.get("marketCap"),
-                    "price": token.get("price") or token.get("priceUsd"),
-                    "v24hUSD": token.get("v24hUSD") or token.get("volume24h"),
-                    "liquidity": token.get("liquidity")
-                }
-                tokens.append(token_info)
-            
-            return tokens
-            
-        except Exception as e:
-            logger.warning(f"Token search failed on Birdeye for keyword '{keyword}': {str(e)}")
-            return []
-    
-    async def get_trending_tokens(self, sort_by: str = "v24hUSD", sort_type: str = "desc", 
-                                 offset: int = 0, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get trending tokens with fallback endpoints"""
-        try:
-            endpoints_to_try = [
-                {
-                    "endpoint": "/defi/tokenlist",
-                    "method": "GET",
-                    "params": {
-                        "sort_by": sort_by,
-                        "sort_type": sort_type,
-                        "offset": offset,
-                        "limit": min(limit, 50)
-                    }
-                },
-                {
-                    "endpoint": "/defi/trending",
-                    "method": "GET",
-                    "params": {
-                        "sort": sort_by,
-                        "order": sort_type,
-                        "limit": min(limit, 50)
-                    }
-                },
-                {
-                    "endpoint": "/defi/tokens/top",
-                    "method": "GET",
-                    "params": {
-                        "sortBy": sort_by,
-                        "limit": min(limit, 50)
-                    }
-                }
-            ]
-            
-            response = await self._request_with_fallback(endpoints_to_try, "")
-            
-            if not response.get("data"):
-                return []
-            
-            data = response["data"]
-            tokens_list = data.get("tokens", data.get("results", data if isinstance(data, list) else []))
-            
-            trending = []
-            for token in tokens_list:
-                token_info = {
-                    "address": token.get("address") or token.get("mint"),
-                    "name": token.get("name"),
-                    "symbol": token.get("symbol"),
-                    "decimals": token.get("decimals"),
-                    "logoURI": token.get("logoURI") or token.get("image"),
-                    "mc": token.get("mc") or token.get("marketCap"),
-                    "v24hUSD": token.get("v24hUSD") or token.get("volume24h"),
-                    "v24hChangePercent": token.get("v24hChangePercent"),
-                    "priceChange24hPercent": token.get("priceChange24hPercent"),
-                    "liquidity": token.get("liquidity"),
-                    "price": token.get("price") or token.get("priceUsd"),
-                    "holder": token.get("holder") or token.get("holderCount"),
-                    "supply": token.get("supply") or token.get("totalSupply")
-                }
-                trending.append(token_info)
-            
-            return trending
-            
-        except Exception as e:
-            logger.warning(f"Error getting trending tokens from Birdeye: {str(e)}")
-            return []
-    
     async def health_check(self) -> Dict[str, Any]:
-        """Check Birdeye API health"""
+        """Check Birdeye API health with multiple endpoint tests"""
         try:
+            # Log detailed API key information
+            logger.info("=== BIRDEYE HEALTH CHECK START ===")
+            logger.info(f"Base URL: {self.base_url}")
+            
+            if self.api_key:
+                logger.info(f"API Key configured: YES")
+                logger.info(f"API Key length: {len(self.api_key)}")
+                logger.info(f"API Key first 12 chars: {self.api_key[:12]}...")
+                logger.info(f"API Key last 4 chars: ...{self.api_key[-4:]}")
+                logger.info(f"API Key type: {type(self.api_key)}")
+                # Check for common issues
+                if ' ' in self.api_key:
+                    logger.warning("API Key contains spaces - this might be an issue")
+                if self.api_key.startswith('"') or self.api_key.startswith("'"):
+                    logger.warning("API Key starts with quotes - this might be an issue")
+            else:
+                logger.info("API Key configured: NO")
+                logger.info("BIRDEYE_API_KEY environment variable not set")
+            
             start_time = time.time()
             
-            # Test with a well-known token (Wrapped SOL)
+            # Test with a well-known token (Wrapped SOL) using simplest endpoint
             sol_address = "So11111111111111111111111111111111111112"
-            price_data = await self.get_token_price(sol_address, include_liquidity=False)
             
-            response_time = time.time() - start_time
+            # Updated endpoints based on current Birdeye API (2024/2025)
+            health_endpoints = [
+                # Try price endpoint with correct format  
+                {
+                    "endpoint": "/defi/price",
+                    "method": "GET",
+                    "params": {"address": sol_address}
+                },
+                # Try multi-price endpoint (often works)
+                {
+                    "endpoint": "/defi/multi_price", 
+                    "method": "GET",
+                    "params": {"list_address": sol_address}
+                }
+            ]
             
-            return {
-                "healthy": price_data is not None,
-                "api_key_configured": bool(self.api_key),
-                "base_url": self.base_url,
-                "response_time": response_time,
-                "test_token": sol_address,
-                "test_data": price_data,
-                "endpoints_available": len(self.api_endpoints)
-            }
+            try:
+                logger.info(f"Testing endpoints for token: {sol_address}")
+                response = await self._request_with_fallback(health_endpoints, sol_address)
+                response_time = time.time() - start_time
+                
+                logger.info("=== BIRDEYE HEALTH CHECK SUCCESS ===")
+                
+                # If we get here, at least one endpoint worked
+                return {
+                    "healthy": True,
+                    "api_key_configured": bool(self.api_key),
+                    "base_url": self.base_url,
+                    "response_time": response_time,
+                    "test_token": sol_address,
+                    "test_data_available": response is not None,
+                    "endpoints_tested": len(health_endpoints)
+                }
+                
+            except BirdeyeAPIError as api_error:
+                response_time = time.time() - start_time
+                error_msg = str(api_error)
+                
+                logger.error(f"=== BIRDEYE HEALTH CHECK FAILED ===")
+                logger.error(f"Error: {error_msg}")
+                
+                # Check if it's an API key issue
+                if "not configured" in error_msg:
+                    return {
+                        "healthy": False,
+                        "api_key_configured": False,
+                        "error": "Birdeye API key not configured. Set BIRDEYE_API_KEY in .env file",
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "recommendation": "Get API key from https://birdeye.so"
+                    }
+                elif "authentication failed" in error_msg.lower() or "invalid api key" in error_msg.lower():
+                    return {
+                        "healthy": False,
+                        "api_key_configured": True,
+                        "error": "Birdeye API key is invalid or expired",
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "recommendation": "Check your API key at https://birdeye.so"
+                    }
+                else:
+                    return {
+                        "healthy": False,
+                        "api_key_configured": bool(self.api_key),
+                        "error": error_msg,
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "test_token": sol_address
+                    }
             
         except Exception as e:
+            logger.error(f"=== BIRDEYE HEALTH CHECK EXCEPTION ===")
+            logger.error(f"Exception: {str(e)}")
             return {
                 "healthy": False,
                 "api_key_configured": bool(self.api_key),
-                "error": str(e),
+                "error": f"Health check failed: {str(e)}",
                 "base_url": self.base_url,
                 "test_token": "So11111111111111111111111111111111111112"
             }
