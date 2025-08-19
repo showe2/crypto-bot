@@ -86,7 +86,7 @@ class BirdeyeClient:
         
         # Check for valid base58 characters (Bitcoin alphabet)
         import re
-        base58_pattern = re.compile(r'^[1-9A-HJ-NP-Za-km-z]+$')
+        base58_pattern = re.compile(r"^[1-9A-HJ-NP-Za-km-z]+$")
         if not base58_pattern.match(address):
             logger.debug(f"Address contains invalid base58 characters")
             return False
@@ -102,157 +102,100 @@ class BirdeyeClient:
             logger.debug(f"Address length unusual but might be valid: {len(address)}")
             return True  # Allow it through, let the API decide
     
-    async def _request_with_fallback(self, endpoints_to_try: List[Dict], token_address: str = None) -> Dict[str, Any]:
-        """Try multiple API endpoint formats until one works"""
+    async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+        """Make HTTP request to Birdeye API"""
         await self._ensure_session()
         await self._rate_limit()
+
+        # Setup headers
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "Solana-Token-Analysis/1.0",
+            **kwargs.pop("headers", {})
+        }
         
-        # Validate address if provided
-        if token_address and not self._validate_solana_address(token_address):
-            raise BirdeyeAPIError(f"Invalid Solana address format: {token_address}")
-        
-        last_error = None
-        
-        for i, endpoint_config in enumerate(endpoints_to_try):
-            try:
-                method = endpoint_config.get("method", "GET")
-                endpoint = endpoint_config["endpoint"]
-                params = endpoint_config.get("params", {})
-                json_data = endpoint_config.get("json", None)
-                
-                # Replace address placeholder in URL if present
-                if token_address:
-                    url = f"{self.base_url}{endpoint}".format(address=token_address)
-                else:
-                    url = f"{self.base_url}{endpoint}"
-                
-                # Try different authentication methods for Birdeye
-                # Start with minimal headers first
-                headers = {
-                    "Accept": "application/json",
-                    "User-Agent": "Solana-Token-Analysis/1.0"
-                }
-                
-                # Add API key if available - try ONE format at a time
-                if self.api_key:
-                    # Birdeye typically uses X-API-KEY, but let's try the most common format
-                    headers["X-API-KEY"] = self.api_key
-                    logger.debug(f"Using API key: {self.api_key[:8]}*** (length: {len(self.api_key)})")
-                else:
-                    logger.debug("No API key configured, trying without authentication")
-                
-                logger.debug(f"Trying Birdeye endpoint {i+1}/{len(endpoints_to_try)}: {method} {endpoint}")
-                logger.debug(f"Full URL: {url}")
-                logger.debug(f"Params: {params}")
-                
-                async with self.session.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    params=params,
-                    json=json_data
-                ) as response:
-                    
-                    logger.debug(f"Response status: {response.status}")
-                    logger.debug(f"Response headers: {dict(response.headers)}")
-                    
-                    # Check content type before parsing
-                    content_type = response.headers.get('content-type', '').lower()
-                    logger.debug(f"Content type: {content_type}")
-                    
-                    if response.status == 200:
-                        if 'application/json' in content_type:
-                            try:
-                                response_data = await response.json()
-                                logger.info(f"✅ Birdeye endpoint {i+1} successful: {endpoint}")
-                                logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
-                                return response_data
-                            except Exception as parse_error:
-                                last_error = f"JSON parse error: {str(parse_error)}"
-                                logger.debug(f"❌ Endpoint {i+1} JSON parse failed: {last_error}")
-                                continue
-                        else:
-                            # Try to get text response for debugging
-                            try:
-                                text_response = await response.text()
-                                logger.debug(f"Non-JSON response content: {text_response[:300]}")
-                                last_error = f"Unexpected content type: {content_type}. Response: {text_response[:200]}"
-                            except:
-                                last_error = f"Unexpected content type: {content_type}"
-                            logger.debug(f"❌ Endpoint {i+1} wrong content type: {last_error}")
-                            continue
-                    elif response.status == 401:
-                        # Authentication failed
-                        try:
-                            error_text = await response.text()
-                            logger.error(f"401 Authentication failed on endpoint {i+1}")
-                            logger.error(f"Request URL: {url}")
-                            logger.error(f"Request headers: {dict(headers)}")
-                            logger.error(f"Response text: {error_text[:500]}")
-                            
-                            if self.api_key:
-                                last_error = f"Authentication failed (401): Invalid API key. Response: {error_text[:200]}"
-                            else:
-                                last_error = f"Authentication required (401): API key needed. Response: {error_text[:200]}"
-                        except:
-                            last_error = f"Authentication failed (401): {'Invalid API key' if self.api_key else 'API key required'}"
-                        logger.debug(f"❌ Endpoint {i+1} auth failed: {last_error}")
-                        continue
-                    elif response.status == 429:
-                        # Rate limited - wait and skip retry to avoid further rate limiting
-                        retry_after = int(response.headers.get('Retry-After', 2))
-                        logger.warning(f"Birdeye rate limited, endpoint {i+1} failed (would wait {retry_after}s)")
-                        
-                        # For testing, don't actually retry to avoid further rate limiting
-                        last_error = f"Rate limited (429): API calls exhausted. Retry after {retry_after}s"
-                        continue
-                    else:
-                        # Try to get response text for better error reporting
-                        try:
-                            error_text = await response.text()
-                            last_error = f"HTTP {response.status}: {error_text[:200] if error_text else 'No response content'}"
-                        except:
-                            last_error = f"HTTP {response.status}: Unable to read response"
-                        logger.debug(f"❌ Endpoint {i+1} failed: {last_error}")
-                        
-            except Exception as e:
-                last_error = f"Request failed: {str(e)}"
-                logger.debug(f"❌ Endpoint {i+1} exception: {last_error}")
-                continue
-        
-        # If all endpoints failed
-        if "Authentication" in str(last_error) or "401" in str(last_error):
-            if not self.api_key:
-                raise BirdeyeAPIError("Birdeye API key not configured. Please set BIRDEYE_API_KEY in your .env file")
-            else:
-                raise BirdeyeAPIError(f"Birdeye API authentication failed. Check your API key. Last error: {last_error}")
+        # Add API key if available
+        if self.api_key:
+            headers["X-API-KEY"] = self.api_key
+            logger.debug(f"Using API key: {self.api_key[:8]}*** (length: {len(self.api_key)})")
         else:
-            raise BirdeyeAPIError(f"All API endpoints failed. Last error: {last_error}")
+            logger.debug("No API key configured, trying without authentication")
+        
+        url = self.base_url+endpoint
+        params = kwargs.pop("params", {})
+        json_data = kwargs.pop("json", None)
+        
+        logger.debug(f"Birdeye {method} {endpoint}")
+        logger.debug(f"Full URL: {url}")
+        logger.debug(f"Params: {params}")
+        
+        try:
+            async with self.session.request(
+                method=method,
+                url=url,
+                headers=headers,
+                params=params,
+                json=json_data,
+                **kwargs
+            ) as response:
+                
+                logger.debug(f"Response status: {response.status}")
+                content_type = response.headers.get("content-type", "").lower()
+                logger.debug(f"Content type: {content_type}")
+                
+                if response.status == 200:
+                    if "application/json" in content_type:
+                        response_data = await response.json()
+                        logger.info(f"✅ Birdeye {method} {endpoint} successful")
+                        logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
+                        return response_data
+                    else:
+                        text_response = await response.text()
+                        logger.error(f"Unexpected content type: {content_type}")
+                        logger.debug(f"Response content: {text_response[:300]}")
+                        raise BirdeyeAPIError(f"Expected JSON, got {content_type}. Response: {text_response[:200]}")
+                        
+                elif response.status == 401:
+                    error_text = await response.text()
+                    logger.error(f"401 Authentication failed")
+                    logger.error(f"Request URL: {url}")
+                    logger.error(f"Response text: {error_text[:500]}")
+                    
+                    if self.api_key:
+                        raise BirdeyeAPIError(f"Authentication failed: Invalid API key. Response: {error_text[:200]}")
+                    else:
+                        raise BirdeyeAPIError(f"Authentication required: API key needed. Response: {error_text[:200]}")
+                        
+                elif response.status == 429:
+                    retry_after = int(response.headers.get("Retry-After", 2))
+                    logger.warning(f"Birdeye rate limited, waiting {retry_after}s")
+                    await asyncio.sleep(retry_after)
+                    # Retry once
+                    return await self._request(method, endpoint, **kwargs)
+                    
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Birdeye API error {response.status}: {error_text[:500]}")
+                    raise BirdeyeAPIError(f"HTTP {response.status}: {error_text[:200] if error_text else 'No response content'}")
+                    
+        except asyncio.TimeoutError:
+            raise BirdeyeAPIError("Birdeye API request timeout")
+        except aiohttp.ClientError as e:
+            raise BirdeyeAPIError(f"Birdeye client error: {str(e)}")
+        except BirdeyeAPIError:
+            raise
+        except Exception as e:
+            raise BirdeyeAPIError(f"Unexpected error: {str(e)}")
     
+
     async def get_token_price(self, token_address: str, include_liquidity: bool = True) -> Dict[str, Any]:
         """Get current token price and basic info with updated endpoints"""
         try:
-            # Define updated endpoint variations based on current Birdeye API
-            endpoints_to_try = [
-                # Try multi_price endpoint (most reliable format)
-                {
-                    "endpoint": "/defi/multi_price",
-                    "method": "GET",
-                    "params": {
-                        "list_address": token_address
-                    }
-                },
-                # Try price endpoint with address parameter
-                {
-                    "endpoint": "/defi/price",
-                    "method": "GET", 
-                    "params": {
-                        "address": token_address
-                    }
-                }
-            ]
+            endpoint = "/defi/price"
+            querystring = {"address": token_address}
             
-            response = await self._request_with_fallback(endpoints_to_try, token_address)
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+
             
             if not response.get("data") and not response.get("success"):
                 logger.warning(f"Birdeye API returned empty data for {token_address}")
@@ -282,72 +225,210 @@ class BirdeyeClient:
         except Exception as e:
             logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
             return None
+        
     
+    #UNAVAILABLE - REQUIRES PLAN UPGRADE
     async def get_token_metadata(self, token_address: str) -> Dict[str, Any]:
         """Get token metadata (simplified version to avoid API calls)"""
         try:
-            # For now, return basic metadata structure to avoid API calls
-            # This can be expanded when API endpoints are more stable
-            return {
+            endpoint = "/defi/v3/token/meta-data/single"
+            querystring = {"address": token_address}
+            
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data for {token_address}")
+                return None
+            
+            # Handle different response formats
+            data = response.get("data", response)
+
+            # Standardize the response format
+            metadata_info = {
                 "address": token_address,
-                "name": None,
-                "symbol": None,
-                "decimals": 9,
-                "note": "Metadata fetching disabled to avoid rate limits"
+                "symbol": data["symbol"],
+                "name": data["name"],
+                "extensions": data["extensions"]
             }
+            
+            return metadata_info
+            
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error getting token metadata for {token_address}: {str(e)}")
+            logger.error(f"Error getting token metadata from Birdeye for {token_address}: {str(e)}")
             return None
     
-    async def get_token_trades(self, token_address: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get recent token trades (simplified version)"""
+
+    async def get_token_trades(self, token_address: str, sort_type: str = "desc", limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent token trades"""
         try:
-            # Return empty list to avoid API calls in testing
-            logger.debug(f"Token trades disabled for {token_address} to avoid rate limits")
-            return []
+            endpoint = "/defi/txs/token"
+            querystring = {"address": token_address, "sort_type": sort_type, "limit": limit}
+            
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data for {token_address}")
+                return None
+
+            # Handle different response formats
+            data = response.get("data", response)
+            
+            return data
+            
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error getting token trades for {token_address}: {str(e)}")
-            return []
+            logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
+            return None
+        
     
-    async def get_trending_tokens(self, sort_by: str = "volume", limit: int = 20) -> List[Dict[str, Any]]:
-        """Get trending tokens (simplified version)"""
+    async def get_trending_tokens(self, sort_type: str = "asc", sort_by: str = "rank", limit: int = 20) -> List[Dict[str, Any]]:
+        """Get trending tokens"""
         try:
-            # Return empty list to avoid API calls in testing
-            logger.debug(f"Trending tokens disabled to avoid rate limits")
-            return []
+            endpoint = "/defi/token_trending"
+            querystring = {"sort_by": sort_by, "sort_type": sort_type, "limit": limit}
+            
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data")
+                return None
+
+            # Handle different response formats
+            data = response.get("data", response)
+            tokens = []
+            
+            # Standardize the response format
+            for token in data["tokens"]:
+                token_info = {
+                    "address": token["address"],
+                    "symbol": token["symbol"],
+                    "name": token["name"],
+                    "rank": token["rank"],
+                    "updateUnixTime": data.get("updateUnixTime"),
+                    "updateHumanTime": data.get("updateTime"),
+                    "liquidity": token["liquidity"],
+                    "price": token["price"],
+                    "price24hChangePercent": token["price24hChangePercent"],
+                    "volume24h": {"USD": token["volume24hUSD"], "ChangePercent": token["volume24hChangePercent"]},
+                    "fdv": token["fdv"],
+                    "marketcap": token["marketcap"],
+                    "isScaledUiToken": token["isScaledUiToken"],
+                    "multiplier": token["multiplier"]
+                }
+
+                tokens.append(token_info)
+
+            return tokens
+                
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error getting trending tokens: {str(e)}")
-            return []
+            logger.error(f"Error getting trending tokens from Birdeye: {str(e)}")
+            return None
     
-    async def search_tokens(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search tokens (simplified version)"""
+    #UNAVAILABLE - REQUIRES PLAN UPGRADE
+    async def search_tokens(self, query: str, sort_type: str = "desc", sort_by: str = "volume_24h_usd", limit: int = 20) -> List[Dict[str, Any]]:
+        """Search tokens"""
         try:
-            # Return empty list to avoid API calls in testing
-            logger.debug(f"Token search disabled for '{query}' to avoid rate limits")
-            return []
+            endpoint = "/defi/v3/search"
+            query.update({"sort_type": sort_type, "sort_by": sort_by, "limit": limit})
+            
+            response = await self._request("GET", endpoint=endpoint, params=query)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data")
+                return None
+
+            # Handle different response formats
+            data = response.get("data", response)
+            results = {}
+            
+            # Standardize the response format
+            for item in data["items"]:
+                item_type = item["type"]
+                if item_type not in results:
+                    results.update({item_type: []})
+
+                results[item_type].append(item["result"])
+
+            return results
+            
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error searching tokens for '{query}': {str(e)}")
-            return []
+            logger.error(f"Error searching for tokens from Birdeye: {str(e)}")
+            return None
     
-    async def get_price_history(self, token_address: str, timeframe: str = "7d") -> List[Dict[str, Any]]:
-        """Get price history (simplified version)"""
+    async def get_price_history(self, token_address: str, time_from: int, time_to: int, address_type: str = "token", timeframe: str = "1W") -> List[Dict[str, Any]]:
+        """Get price history"""
         try:
-            # Return empty list to avoid API calls in testing
-            logger.debug(f"Price history disabled for {token_address} to avoid rate limits")
-            return []
+            if time_from < 0 or time_from > 10000000000 or time_to < 0 or time_to > 10000000000:
+                raise Exception("Invalid timestamps - use values from 0 to 10000000000")
+
+            endpoint = "/defi/history_price"
+            querystring = {"address": token_address, "address_type": address_type, "type": timeframe, "time_from": time_from, "time_to": time_to}
+            
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data for {token_address}")
+                return None
+
+            # Handle different response formats
+            data = response.get("data", response)
+            history = {token_address: []}
+
+            # Standardize the response format
+            for point in data["items"]:
+                point_info = {
+                    "unixTime": point["unixTime"],
+                    "value": point["value"]
+                }
+
+                history[token_address].append(point_info)
+            
+            return history
+            
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error getting price history for {token_address}: {str(e)}")
-            return []
+            logger.error(f"Error getting token price history from Birdeye for {token_address}: {str(e)}")
+            return None
     
-    async def get_top_traders(self, token_address: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Get top traders (simplified version)"""
+    async def get_top_traders(self, token_address: str, time_frame: str = "24h", sort_type: str = "desc", sort_by: str = "volume", limit: int = 5) -> List[Dict[str, Any]]:
+        """Get top traders"""
         try:
-            # Return empty list to avoid API calls in testing
-            logger.debug(f"Top traders disabled for {token_address} to avoid rate limits")
-            return []
+            if limit < 0 or limit > 10:
+                raise Exception("Invalid limit - use values from 0 to 10")
+
+            endpoint = "/defi/v2/tokens/top_traders"
+            querystring = {"address": token_address, "time_frame": time_frame, "sort_type": sort_type, "sort_by": sort_by, "limit": limit}
+            
+            response = await self._request("GET", endpoint=endpoint, params=querystring)
+            
+            if not response.get("data") and not response.get("success"):
+                logger.warning(f"Birdeye API returned empty data for {token_address}")
+                return None
+
+            # Handle different response formats
+            data = response.get("data", response)
+            
+            return data["items"]
+            
+        except BirdeyeAPIError:
+            # Re-raise Birdeye specific errors
+            raise
         except Exception as e:
-            logger.warning(f"Error getting top traders for {token_address}: {str(e)}")
-            return []
+            logger.error(f"Error getting top traders from Birdeye for {token_address}: {str(e)}")
+            return None
     
     async def health_check(self) -> Dict[str, Any]:
         """Check Birdeye API health with simplified approach"""

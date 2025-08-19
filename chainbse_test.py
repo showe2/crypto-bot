@@ -11,7 +11,7 @@ async def main():
         holders = await client.get_token_holders(
             "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
             "ethereum",
-            limit=5
+            limit=1
         )
         print(metadata, "\n\n\n", holders)
 

@@ -289,6 +289,81 @@ class ChainbaseClient:
             return 0.0
         
         return (2 * cumsum) / (n * total) - (n + 1) / n
+    
+    async def health_check(self) -> Dict[str, Any]:
+        """Check Chainbase API service health and connectivity"""
+        health_status = {
+            "healthy": True,
+            "api_key_configured": bool(self.api_key),
+            "error": None,
+            "base_url": self.base_url,
+            "response_time": None,
+        }
+        
+        if not self.api_key:
+            health_status.update({
+                "healthy": False,
+                "error": "API key not configured"
+            })
+            logger.warning("Chainbase health check failed: API key not configured")
+            return health_status
+        
+        start_time = time.time()
+        
+        try:
+            # Use a lightweight endpoint to test connectivity
+            # Try getting metadata for a well-known token (e.g., USDC on Ethereum)
+            # This is better than a dedicated health endpoint since Chainbase may not have one
+            test_endpoint = "/token/metadata"
+            test_params = {
+                "chain_id": "1",  # Ethereum
+                "contract_address": "0xa0b86a33e6eb6ca9c56b91a17b6a9f3f40ad6b0e"  # USDC on Ethereum
+            }
+            
+            response = await self._request("GET", test_endpoint, params=test_params)
+            response_time = (time.time() - start_time) * 1000  # Convert to ms
+            
+            # Check if we got a valid response structure
+            if response and isinstance(response, dict):
+                if response.get('code') == 0 or response.get('data') is not None:
+                    health_status.update({
+                        "response_time": round(response_time, 2)
+                    })
+                    logger.info(f"✅ Chainbase health check passed ({response_time:.2f}ms)")
+                else:
+                    health_status.update({
+                        "healthy": False,
+                        "response_time": round(response_time, 2),
+                        "error": f"API returned unexpected response: {response.get('message', 'Unknown error')}"
+                    })
+                    logger.warning(f"⚠️ Chainbase health check degraded: {health_status['error']}")
+            else:
+                health_status.update({
+                    "healthy": False,
+                    "response_time": round(response_time, 2),
+                    "error": "Invalid response format"
+                })
+                logger.error("❌ Chainbase health check failed: Invalid response format")
+                
+        except ChainbaseAPIError as e:
+            response_time = (time.time() - start_time) * 1000
+            health_status.update({
+                "healthy": False,
+                "response_time": round(response_time, 2),
+                "error": str(e)
+            })
+            logger.error(f"❌ Chainbase health check failed: {str(e)}")
+            
+        except Exception as e:
+            response_time = (time.time() - start_time) * 1000
+            health_status.update({
+                "healthy": False,
+                "response_time": round(response_time, 2),
+                "error": f"Unexpected error: {str(e)}"
+            })
+            logger.error(f"❌ Chainbase health check failed with unexpected error: {str(e)}")
+        
+        return health_status
    
    
 # Convenience functions
