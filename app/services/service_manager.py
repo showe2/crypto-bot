@@ -23,7 +23,7 @@ class APIManager:
             "blowfish": None,
             "dataimpulse": None,
             "solscan": None,
-            "goplus": None  # Add GOplus to the clients
+            "goplus": None
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
@@ -38,7 +38,7 @@ class APIManager:
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
                 "solscan": SolscanClient(),
-                "goplus": GOplusClient()  # Initialize GOplus client
+                "goplus": GOplusClient()
             }
             logger.info("✅ All API clients initialized (including GOplus)")
         except Exception as e:
@@ -65,7 +65,7 @@ class APIManager:
         
         logger.info("🔍 Checking health of all API services (including GOplus)...")
         
-        # Health check functions - now includes GOplus
+        # Health check functions
         health_checks = {
             "helius": check_helius_health(),
             "chainbase": check_chainbase_health(),
@@ -73,7 +73,7 @@ class APIManager:
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
             "solscan": check_solscan_health(),
-            "goplus": check_goplus_health()  # Add GOplus health check
+            "goplus": check_goplus_health()
         }
         
         # Run all health checks concurrently
@@ -133,15 +133,10 @@ class APIManager:
             goplus_status = health_status["goplus"]
             if not goplus_status.get("healthy"):
                 if goplus_status.get("services"):
-                    # GOplus has multiple API keys
                     services_info = goplus_status["services"]
-                    unconfigured_goplus = [
-                        service for service, info in services_info.items() 
-                        if not info.get("configured")
-                    ]
-                    if unconfigured_goplus:
+                    if not services_info.get("configured"):
                         overall_health["recommendations"].append(
-                            f"GOplus: Configure API keys for {', '.join(unconfigured_goplus)} services"
+                            f"GOplus: Configure API keys for {', '.join(services_info)} services"
                         )
                 else:
                     overall_health["recommendations"].append(
