@@ -53,13 +53,9 @@ class Settings(BaseSettings):
     # RugCheck API
     RUGCHECK_API_KEY: Optional[str] = None
 
-    # GOplus API - Updated to use APP Key + APP Secret pairs
-    GOPLUS_TRANSACTION_APP_KEY: Optional[str] = None
-    GOPLUS_TRANSACTION_APP_SECRET: Optional[str] = None
-    GOPLUS_RUGPULL_APP_KEY: Optional[str] = None
-    GOPLUS_RUGPULL_APP_SECRET: Optional[str] = None
-    GOPLUS_SECURITY_APP_KEY: Optional[str] = None
-    GOPLUS_SECURITY_APP_SECRET: Optional[str] = None
+    # GOplus API - Simplified to single APP Key + APP Secret pair
+    GOPLUS_APP_KEY: Optional[str] = None
+    GOPLUS_APP_SECRET: Optional[str] = None
     GOPLUS_BASE_URL: str = "https://api.gopluslabs.io"
 
     # ==============================================
@@ -230,16 +226,10 @@ class Settings(BaseSettings):
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
             'BLOWFISH_API_KEY', 'SOLSCAN_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
-            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY'
+            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY',
+            # Simplified GOplus keys
+            'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET'
         ]
-        
-        # Add GOplus APP keys
-        goplus_keys = [
-            'GOPLUS_TRANSACTION_APP_KEY', 'GOPLUS_TRANSACTION_APP_SECRET',
-            'GOPLUS_RUGPULL_APP_KEY', 'GOPLUS_RUGPULL_APP_SECRET',
-            'GOPLUS_SECURITY_APP_KEY', 'GOPLUS_SECURITY_APP_SECRET'
-        ]
-        api_keys.extend(goplus_keys)
         
         for key in api_keys:
             value = getattr(self, key)
@@ -250,41 +240,228 @@ class Settings(BaseSettings):
         return keys_status
 
     def get_goplus_keys_status(self) -> dict:
-        """Get GOplus specific APP keys status"""
-        goplus_services = {
-            'transaction': {
-                'app_key': self.GOPLUS_TRANSACTION_APP_KEY,
-                'app_secret': self.GOPLUS_TRANSACTION_APP_SECRET
-            },
-            'rugpull': {
-                'app_key': self.GOPLUS_RUGPULL_APP_KEY,
-                'app_secret': self.GOPLUS_RUGPULL_APP_SECRET
-            },
-            'security': {
-                'app_key': self.GOPLUS_SECURITY_APP_KEY,
-                'app_secret': self.GOPLUS_SECURITY_APP_SECRET
-            }
-        }
+        """Get GOplus API keys status (simplified)"""
+        app_key = self.GOPLUS_APP_KEY
+        app_secret = self.GOPLUS_APP_SECRET
         
-        status = {}
-        for service, keys in goplus_services.items():
-            has_both = bool(keys['app_key'] and keys['app_secret'])
-            status[service] = {
-                'configured': has_both,
-                'app_key_present': bool(keys['app_key']),
-                'app_secret_present': bool(keys['app_secret']),
-                'masked_app_key': f"{keys['app_key'][:8]}***" if keys['app_key'] else None
-            }
-        
-        configured_count = sum(1 for info in status.values() if info['configured'])
+        both_configured = bool(app_key and app_secret)
         
         return {
-            'services': status,
-            'configured_count': configured_count,
-            'total_services': len(goplus_services),
+            'app_key_present': bool(app_key),
+            'app_secret_present': bool(app_secret),
+            'both_configured': both_configured,
+            'masked_app_key': f"{app_key[:8]}***" if app_key else None,
             'base_url': self.GOPLUS_BASE_URL,
-            'all_configured': configured_count == len(goplus_services)
+            'authentication_method': 'Bearer token (from APP_KEY + APP_SECRET)',
+            'services_available': [
+                'token_security',
+                'rugpull_detection', 
+                'supported_chains'
+            ] if both_configured else []
         }
+
+    def get_api_services_summary(self) -> dict:
+        """Get summary of all API services including GOplus"""
+        all_keys = self.get_all_api_keys_status()
+        goplus_status = self.get_goplus_keys_status()
+        
+        # Count configured keys
+        standard_keys = [k for k in all_keys.keys() if not k.startswith('GOPLUS_')]
+        configured_standard = sum(1 for k in standard_keys if all_keys[k]['configured'])
+        
+        # GOplus counts as 1 service with 2 required keys
+        goplus_configured = 1 if goplus_status['both_configured'] else 0
+        
+        total_services = len(standard_keys) + 1  # +1 for GOplus
+        total_configured = configured_standard + goplus_configured
+        
+        return {
+            'total_services': total_services,
+            'configured_services': total_configured,
+            'configuration_percentage': round((total_configured / total_services) * 100, 1),
+            'standard_apis': {
+                'total': len(standard_keys),
+                'configured': configured_standard
+            },
+            'goplus_api': {
+                'configured': goplus_configured == 1,
+                'services_available': len(goplus_status['services_available'])
+            },
+            'missing_services': [
+                k.replace('_API_KEY', '').lower() 
+                for k in standard_keys 
+                if not all_keys[k]['configured']
+            ] + (['goplus'] if not goplus_status['both_configured'] else [])
+        }
+
+    def get_service_endpoints_config(self) -> dict:
+        """Get configuration for all service endpoints"""
+        return {
+            'blockchain_services': {
+                'helius': {
+                    'base_url': self.HELIUS_RPC_URL,
+                    'configured': bool(self.HELIUS_API_KEY),
+                    'type': 'RPC + API'
+                },
+                'chainbase': {
+                    'base_url': self.CHAINBASE_BASE_URL,
+                    'configured': bool(self.CHAINBASE_API_KEY),
+                    'type': 'Analytics API'
+                },
+                'birdeye': {
+                    'base_url': self.BIRDEYE_BASE_URL,
+                    'configured': bool(self.BIRDEYE_API_KEY),
+                    'type': 'Price API'
+                },
+                'solscan': {
+                    'base_url': self.SOLSCAN_BASE_URL,
+                    'configured': bool(self.SOLSCAN_API_KEY),
+                    'type': 'On-chain API'
+                }
+            },
+            'security_services': {
+                'blowfish': {
+                    'base_url': self.BLOWFISH_BASE_URL,
+                    'configured': bool(self.BLOWFISH_API_KEY),
+                    'type': 'Security Analysis'
+                },
+                'goplus': {
+                    'base_url': self.GOPLUS_BASE_URL,
+                    'configured': bool(self.GOPLUS_APP_KEY and self.GOPLUS_APP_SECRET),
+                    'type': 'Security + Rugpull Detection',
+                    'authentication': 'Bearer Token',
+                    'services': ['token_security', 'rugpull_detection']
+                }
+            },
+            'social_services': {
+                'dataimpulse': {
+                    'base_url': self.DATAIMPULSE_BASE_URL,
+                    'configured': bool(self.DATAIMPULSE_API_KEY),
+                    'type': 'Social Sentiment'
+                }
+            },
+            'ai_services': {
+                'mistral': {
+                    'base_url': self.MISTRAL_API_URL,
+                    'configured': bool(self.MISTRAL_API_KEY),
+                    'model': self.MISTRAL_MODEL
+                },
+                'llama': {
+                    'base_url': self.LLAMA_API_URL,
+                    'configured': bool(self.LLAMA_API_KEY),
+                    'model': self.LLAMA_MODEL
+                }
+            },
+            'free_services': {
+                'dexscreener': {
+                    'base_url': self.DEXSCREENER_BASE_URL,
+                    'configured': True,  # No API key required
+                    'type': 'Free DEX Data'
+                },
+                'jupiter': {
+                    'base_url': self.JUPITER_API_URL,
+                    'configured': True,  # No API key required
+                    'type': 'DEX Aggregator'
+                }
+            }
+        }
+
+    def get_goplus_configuration_guide(self) -> dict:
+        """Get configuration guide for GOplus"""
+        current_status = self.get_goplus_keys_status()
+        
+        guide = {
+            'current_status': current_status,
+            'required_env_vars': {
+                'GOPLUS_APP_KEY': {
+                    'description': 'Your GOplus application key',
+                    'example': 'your_app_key_here',
+                    'required': True,
+                    'configured': current_status['app_key_present']
+                },
+                'GOPLUS_APP_SECRET': {
+                    'description': 'Your GOplus application secret',
+                    'example': 'your_app_secret_here',
+                    'required': True,
+                    'configured': current_status['app_secret_present']
+                },
+                'GOPLUS_BASE_URL': {
+                    'description': 'GOplus API base URL',
+                    'example': 'https://api.gopluslabs.io',
+                    'required': False,
+                    'configured': True,
+                    'current_value': self.GOPLUS_BASE_URL
+                }
+            },
+            'setup_steps': [
+                '1. Visit https://gopluslabs.io/',
+                '2. Create an account or log in',
+                '3. Navigate to API section',
+                '4. Generate APP_KEY and APP_SECRET',
+                '5. Add to your .env file:',
+                '   GOPLUS_APP_KEY=your_app_key_here',
+                '   GOPLUS_APP_SECRET=your_app_secret_here',
+                '6. Restart your application'
+            ],
+            'available_endpoints': [
+                '/api/v1/token_security/{chain_id} - Token security analysis',
+                '/api/v1/rugpull_detecting/{chain_id} - Rugpull detection',
+                '/api/v1/supported_chains - Get supported blockchains'
+            ],
+            'supported_chains': [
+                {'name': 'Ethereum', 'chain_id': '1'},
+                {'name': 'BSC', 'chain_id': '56'},
+                {'name': 'Polygon', 'chain_id': '137'},
+                {'name': 'Solana', 'chain_id': '101'}
+            ],
+            'authentication_flow': [
+                '1. POST /api/v1/token with APP_KEY + APP_SECRET',
+                '2. Receive bearer token',
+                '3. Use token in Authorization header for all requests',
+                '4. Token auto-refreshes when expired'
+            ]
+        }
+        
+        return guide
+
+    def validate_goplus_configuration(self) -> dict:
+        """Validate GOplus configuration"""
+        validation_result = {
+            'valid': False,
+            'errors': [],
+            'warnings': [],
+            'recommendations': []
+        }
+        
+        # Check required fields
+        if not self.GOPLUS_APP_KEY:
+            validation_result['errors'].append('GOPLUS_APP_KEY is required')
+        elif len(self.GOPLUS_APP_KEY) < 8:
+            validation_result['warnings'].append('GOPLUS_APP_KEY seems too short')
+        
+        if not self.GOPLUS_APP_SECRET:
+            validation_result['errors'].append('GOPLUS_APP_SECRET is required')
+        elif len(self.GOPLUS_APP_SECRET) < 16:
+            validation_result['warnings'].append('GOPLUS_APP_SECRET seems too short')
+        
+        # Check base URL
+        if not self.GOPLUS_BASE_URL.startswith('https://'):
+            validation_result['warnings'].append('GOPLUS_BASE_URL should use HTTPS')
+        
+        if not self.GOPLUS_BASE_URL.endswith('gopluslabs.io'):
+            validation_result['warnings'].append('GOPLUS_BASE_URL should point to gopluslabs.io')
+        
+        # Overall validation
+        validation_result['valid'] = len(validation_result['errors']) == 0
+        
+        if validation_result['valid']:
+            validation_result['recommendations'].append('Configuration looks good!')
+            validation_result['recommendations'].append('Test with: python tests/services/goplus_simple_test.py')
+        else:
+            validation_result['recommendations'].append('Fix configuration errors first')
+            validation_result['recommendations'].append('Get API keys from https://gopluslabs.io/')
+        
+        return validation_result
 
 
 @lru_cache()
