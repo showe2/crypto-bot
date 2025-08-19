@@ -141,12 +141,12 @@ class GOplusClient:
                 if response.status == 200:
                     if 'application/json' in content_type:
                         response_data = await response.json()
-                        print(response_data)
                         
                         # Check for GOplus API-level errors
                         if isinstance(response_data, dict):
                             error_code = response_data.get('code')
-                            if error_code != 1:  # 1 means success in GOplus
+                            if error_code != 1:
+                                print(response_data)
                                 error_msg = response_data.get('message', 'Unknown API error')
                                 logger.error(f"GOplus API error (code {error_code}): {error_msg}")
                                 
@@ -163,7 +163,6 @@ class GOplusClient:
                         
                         return response_data
                     else:
-                        response_text = await response.text()
                         logger.error(f"Unexpected content type from GOplus: {content_type}")
                         raise GOplusAPIError(f"Expected JSON, got {content_type}")
                 
@@ -205,7 +204,7 @@ class GOplusClient:
                 "sol": "101"
             }
             
-            chain_id = chain_mapping.get(chain.lower(), "1")  # Default to Ethereum
+            chain_id = chain_mapping.get(chain.lower(), "1")
             
             # Use the correct API endpoint format
             endpoint = f"/api/v1/token_security/{chain_id}"
@@ -324,23 +323,12 @@ class GOplusClient:
             response = await self._request("GET", endpoint, params=params)
             
             if response and response.get("result"):
-                token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
+                token_results = response["result"]
                 if token_results:
-                    return {
-                        "token_address": token_address,
-                        "chain": chain,
-                        "rugpull_risk": token_results.get("rugpull_risk", "unknown"),
-                        "risk_score": token_results.get("risk_score", 0),
-                        "risk_factors": {
-                            "liquidity_locked": token_results.get("liquidity_locked"),
-                            "lock_ratio": token_results.get("lock_ratio"),
-                            "ownership_renounced": token_results.get("ownership_renounced"),
-                            "creator_balance": token_results.get("creator_balance"),
-                            "creator_percent": token_results.get("creator_percent"),
-                        },
-                        "warnings": token_results.get("warnings", []),
-                        "last_updated": token_results.get("last_updated")
-                    }
+                    for param in token_results:
+                        token_results[param] = True if token_results[param] == 1 else False
+                        
+                    return token_results
             
             return None
             
@@ -357,6 +345,7 @@ class GOplusClient:
         try:
             endpoint = "/api/v1/supported_chains"
             response = await self._request("GET", endpoint)
+            # print(response)
             
             if response and response.get("result"):
                 return response["result"]

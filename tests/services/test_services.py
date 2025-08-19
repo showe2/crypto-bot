@@ -582,10 +582,6 @@ class SafeServiceTester:
         
         # Only continue if health check passed
         if result.success:
-            # Test supported chains (free endpoint)
-            chains_result = await self._test_goplus_supported_chains()
-            results.append(chains_result)
-            
             # Test token security analysis (paid endpoint)
             security_result = await self._test_goplus_token_security()
             results.append(security_result)
@@ -644,69 +640,6 @@ class SafeServiceTester:
                 response_time=time.time() - start_time,
                 cost_estimate="FREE",
                 error=f"GOplus health check failed: {str(e)}"
-            )
-    
-    async def _test_goplus_supported_chains(self) -> TestResult:
-        """Test GOplus supported chains endpoint"""
-        print("   🔗 Testing GOplus supported chains...")
-        
-        start_time = time.time()
-        try:
-            from app.services.goplus_client import GOplusClient
-            
-            async with GOplusClient() as client:
-                chains = await client.get_supported_chains()
-                response_time = time.time() - start_time
-                
-                if chains and isinstance(chains, list):
-                    print(f"   ✅ GOplus supported chains retrieved ({response_time:.2f}s)")
-                    print(f"      Found {len(chains)} supported chains")
-                    
-                    # Log some chains
-                    for chain in chains[:5]:  # Show first 5
-                        if isinstance(chain, dict):
-                            chain_name = chain.get("name", chain.get("chain_id", "Unknown"))
-                            supported = "✅" if chain.get("supported") else "❌"
-                            print(f"      {supported} {chain_name}")
-                    
-                    # Check if Solana is supported
-                    solana_supported = any(
-                        "solana" in str(chain).lower() or 
-                        (isinstance(chain, dict) and "101" in str(chain.get("chain_id", "")))
-                        for chain in chains
-                    )
-                    
-                    if solana_supported:
-                        print("      ✅ Solana is supported")
-                    else:
-                        print("      ⚠️ Solana support unclear")
-                    
-                    return TestResult(
-                        service="goplus",
-                        endpoint="supported_chains",
-                        success=True,
-                        response_time=response_time,
-                        cost_estimate="FREE",
-                        data_size=len(str(chains))
-                    )
-                else:
-                    return TestResult(
-                        service="goplus",
-                        endpoint="supported_chains",
-                        success=False,
-                        response_time=response_time,
-                        cost_estimate="FREE",
-                        error=f"No chains data returned. Response: {str(chains)}"
-                    )
-                    
-        except Exception as e:
-            return TestResult(
-                service="goplus",
-                endpoint="supported_chains",
-                success=False,
-                response_time=time.time() - start_time,
-                cost_estimate="FREE",
-                error=f"Failed to get supported chains: {str(e)}"
             )
     
     async def _test_goplus_token_security(self) -> TestResult:

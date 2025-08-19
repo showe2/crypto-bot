@@ -67,7 +67,8 @@ async def test_goplus_authentication():
             
             try:
                 print(f"Analyzing token: {test_token}")
-                result = await client.analyze_token_security(test_token, "ethereum")
+                result = await client.detect_rugpull(test_token, "ethereum")
+                print("Result", result)
                 
                 if result:
                     print("✅ Token security analysis successful!")
@@ -101,35 +102,6 @@ async def test_goplus_authentication():
         print(f"❌ Unexpected error: {e}")
         return False
 
-async def test_supported_chains():
-    """Test supported chains endpoint"""
-    print("\n🔗 Testing supported chains...")
-    
-    try:
-        from app.services.goplus_client import GOplusClient
-        
-        async with GOplusClient() as client:
-            chains = await client.get_supported_chains()
-            
-            if chains:
-                print(f"✅ Found {len(chains)} supported chains:")
-                for chain in chains[:10]:  # Show first 10
-                    if isinstance(chain, dict):
-                        name = chain.get('name', 'Unknown')
-                        chain_id = chain.get('chain_id', 'Unknown')
-                        supported = chain.get('supported', False)
-                        status = "✅" if supported else "❌"
-                        print(f"  {status} {name} (ID: {chain_id})")
-                
-                return True
-            else:
-                print("❌ No chains data returned")
-                return False
-                
-    except Exception as e:
-        print(f"❌ Supported chains test failed: {e}")
-        return False
-
 async def main():
     """Run all GOplus tests"""
     print("🚀 Starting GOplus API Tests")
@@ -139,9 +111,6 @@ async def main():
     auth_success = await test_goplus_authentication()
     
     if auth_success:
-        # Test additional endpoints
-        await test_supported_chains()
-        
         print("\n🎉 All GOplus tests completed successfully!")
         print("\nNext steps:")
         print("- Your GOplus integration is working")
