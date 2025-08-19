@@ -805,16 +805,6 @@ class SafeServiceTester:
                 if rugpull_result and isinstance(rugpull_result, dict):
                     print(f"   ✅ GOplus rugpull detection completed ({response_time:.2f}s)")
                     
-                    # Log key findings
-                    rugpull_risk = rugpull_result.get("rugpull_risk", "unknown")
-                    risk_score = rugpull_result.get("risk_score", 0)
-                    risk_factors = rugpull_result.get("risk_factors", {})
-                    
-                    print(f"      Rugpull Risk: {rugpull_risk}")
-                    print(f"      Risk Score: {risk_score}")
-                    print(f"      Liquidity Locked: {risk_factors.get('liquidity_locked', 'unknown')}")
-                    print(f"      Ownership Renounced: {risk_factors.get('ownership_renounced', 'unknown')}")
-                    
                     return TestResult(
                         service="goplus",
                         endpoint="rugpull_detection",
