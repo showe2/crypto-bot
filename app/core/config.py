@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     # RugCheck API
     RUGCHECK_API_KEY: Optional[str] = None
 
+    # GOplus API - 3 different API keys for different services
+    GOPLUS_TRANSACTION_API_KEY: Optional[str] = None
+    GOPLUS_RUGPULL_API_KEY: Optional[str] = None
+    GOPLUS_SECURITY_API_KEY: Optional[str] = None
+    GOPLUS_BASE_URL: str = "https://api.gopluslabs.io"
+
     # ==============================================
     # SOCIAL NETWORKS
     # ==============================================
@@ -221,7 +227,8 @@ class Settings(BaseSettings):
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
             'BLOWFISH_API_KEY', 'SOLSCAN_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
-            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY'
+            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY',
+            'GOPLUS_TRANSACTION_API_KEY', 'GOPLUS_RUGPULL_API_KEY', 'GOPLUS_SECURITY_API_KEY'
         ]
         for key in api_keys:
             value = getattr(self, key)
@@ -230,6 +237,28 @@ class Settings(BaseSettings):
                 'masked_value': f"{value[:8]}***" if value else None
             }
         return keys_status
+
+    def get_goplus_keys_status(self) -> dict:
+        """Get GOplus specific API keys status"""
+        goplus_keys = {
+            'transaction': self.GOPLUS_TRANSACTION_API_KEY,
+            'rugpull': self.GOPLUS_RUGPULL_API_KEY,
+            'security': self.GOPLUS_SECURITY_API_KEY
+        }
+        
+        status = {}
+        for service, key in goplus_keys.items():
+            status[service] = {
+                'configured': bool(key),
+                'masked_value': f"{key[:8]}***" if key else None
+            }
+        
+        return {
+            'services': status,
+            'configured_count': sum(1 for key in goplus_keys.values() if key),
+            'total_services': len(goplus_keys),
+            'base_url': self.GOPLUS_BASE_URL
+        }
 
 
 @lru_cache()

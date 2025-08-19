@@ -20,7 +20,7 @@ router = APIRouter(prefix="/api", tags=["API Services"])
 @router.get("/health", summary="API Services Health Check")
 async def api_services_health():
     """
-    Check health status of all external API services
+    Check health status of all external API services including GOplus
     """
     try:
         health_status = await get_api_health_status()
@@ -44,7 +44,7 @@ async def analyze_token(
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Perform comprehensive token analysis using all available data sources
+    Perform comprehensive token analysis using all available data sources including GOplus
     
     This endpoint aggregates data from multiple APIs:
     - Helius: On-chain data and metadata
@@ -53,6 +53,7 @@ async def analyze_token(
     - Blowfish: Security analysis and risk assessment
     - DataImpulse: Social sentiment analysis
     - Solscan: Additional on-chain metrics
+    - GOplus: Transaction simulation, rugpull detection, and token security
     """
     start_time = time.time()
     
@@ -102,7 +103,8 @@ async def analyze_token(
                 "token_mint": request.mint,
                 "processing_time": processing_time,
                 "data_sources": len(comprehensive_data.get("data_sources", [])),
-                "priority": request.priority
+                "priority": request.priority,
+                "goplus_included": "goplus" in comprehensive_data.get("data_sources", [])
             }
         )
         
@@ -115,6 +117,161 @@ async def analyze_token(
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
 
 
+@router.post("/analyze/security/goplus", summary="GOplus Security Analysis")
+async def analyze_token_security_goplus(
+    token_address: str,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Perform comprehensive security analysis using GOplus services
+    
+    Uses GOplus APIs for:
+    - Token security analysis
+    - Rugpull detection
+    - Transaction simulation capabilities
+    """
+    try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
+        # Check cache
+        cache_key = f"goplus_security:{token_address}"
+        cached_results = await cache.get(cache_key, namespace="security")
+        
+        if cached_results:
+            logger.info(f"📋 Returning cached GOplus security analysis for {token_address}")
+            return cached_results
+        
+        # Perform GOplus analysis
+        logger.info(f"🔒 Running GOplus security analysis for {token_address}")
+        
+        security_data = await api_manager.get_goplus_analysis(token_address)
+        
+        if not security_data or "error" in security_data:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Failed to analyze token security with GOplus: {security_data.get('error', 'Unknown error')}"
+            )
+        
+        # Cache for 1 hour (security data doesn't change frequently)
+        await cache.set(cache_key, security_data, ttl=3600, namespace="security")
+        
+        return security_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ GOplus security analysis failed for {token_address}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"GOplus security analysis failed: {str(e)}")
+
+
+@router.post("/simulate/transaction", summary="Transaction Simulation with GOplus")
+async def simulate_transaction(
+    transaction_data: Dict[str, Any],
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Simulate a transaction before execution using GOplus
+    
+    Provides:
+    - Gas estimation
+    - Balance changes prediction
+    - Risk assessment
+    - Security warnings
+    """
+    try:
+        logger.info("🎯 Simulating transaction with GOplus")
+        
+        simulation_result = await api_manager.simulate_transaction_goplus(transaction_data)
+        
+        if not simulation_result or "error" in simulation_result:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Failed to simulate transaction: {simulation_result.get('error', 'Unknown error')}"
+            )
+        
+        return simulation_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Transaction simulation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Transaction simulation failed: {str(e)}")
+
+
+@router.post("/detect/rugpull", summary="Rugpull Detection with GOplus")
+async def detect_rugpull(
+    token_address: str,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Detect rugpull risks using GOplus analysis
+    
+    Analyzes:
+    - Liquidity lock status
+    - Ownership concentration
+    - Suspicious trading patterns
+    - Historical risk indicators
+    """
+    try:
+        # Get cache dependency
+        from app.core.dependencies import get_cache_dependency
+        cache = await get_cache_dependency()
+        
+        # Check cache
+        cache_key = f"goplus_rugpull:{token_address}"
+        cached_results = await cache.get(cache_key, namespace="rugpull")
+        
+        if cached_results:
+            logger.info(f"📋 Returning cached rugpull analysis for {token_address}")
+            return cached_results
+        
+        # Perform rugpull detection
+        logger.info(f"🚨 Detecting rugpull risk for {token_address} with GOplus")
+        
+        rugpull_data = await api_manager.detect_rugpull_goplus(token_address)
+        
+        if not rugpull_data or "error" in rugpull_data:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Failed to detect rugpull risk: {rugpull_data.get('error', 'Unknown error')}"
+            )
+        
+        # Cache for 30 minutes (rugpull risk can change)
+        await cache.set(cache_key, rugpull_data, ttl=1800, namespace="rugpull")
+        
+        return rugpull_data
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Rugpull detection failed for {token_address}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Rugpull detection failed: {str(e)}")
+
+
+@router.get("/goplus/health", summary="GOplus Services Health Check")
+async def goplus_health_check():
+    """
+    Check health status of GOplus services
+    """
+    try:
+        from app.services.goplus_client import check_goplus_health
+        
+        health_status = await check_goplus_health()
+        
+        # Determine HTTP status code based on health
+        status_code = 200 if health_status.get("healthy") else 503
+        
+        return JSONResponse(
+            content=health_status,
+            status_code=status_code
+        )
+    except Exception as e:
+        logger.error(f"Error checking GOplus health: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/search/tokens", summary="Search Tokens Across Multiple Sources")
 async def search_tokens(
     query: str = Query(..., description="Search query (token name, symbol, or address)"),
@@ -122,12 +279,13 @@ async def search_tokens(
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Search for tokens across multiple data sources
+    Search for tokens across multiple data sources including GOplus verification
     
     Searches through:
     - Birdeye token database
     - Chainbase token registry
     - Solscan token list
+    - GOplus security database (when available)
     """
     try:
         # Get cache dependency
@@ -159,7 +317,8 @@ async def search_tokens(
             "query": query,
             "results": search_results,
             "total_results": len(search_results),
-            "cached": False
+            "cached": False,
+            "enhanced_with_goplus": "goplus" in [r.get("source") for r in search_results if isinstance(r, dict)]
         }
         
     except Exception as e:
@@ -174,12 +333,13 @@ async def get_trending_tokens(
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Get trending tokens from multiple sources
+    Get trending tokens from multiple sources with enhanced security data
     
     Aggregates trending data from:
     - Birdeye trending tokens
     - Solscan top tokens
     - DataImpulse social trending
+    - GOplus security verification (when available)
     """
     try:
         # Get cache dependency
@@ -223,7 +383,8 @@ async def get_trending_tokens(
             "trending_tokens": trending_tokens,
             "total_results": len(trending_tokens),
             "sort_by": sort_by,
-            "cached": False
+            "cached": False,
+            "security_enhanced": True  # Indicates GOplus integration
         }
         
     except Exception as e:
@@ -283,111 +444,19 @@ async def analyze_social_sentiment(
         raise HTTPException(status_code=500, detail=f"Social analysis failed: {str(e)}")
 
 
-@router.post("/analyze/security", summary="Security Analysis")
-async def analyze_token_security(
-    token_address: str,
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Perform security analysis on a token using Blowfish
-    
-    Analyzes:
-    - Smart contract vulnerabilities
-    - Honeypot detection
-    - Rugpull risk assessment
-    - Holder concentration risks
-    - Liquidity analysis
-    """
-    try:
-        # Get cache dependency
-        from app.core.dependencies import get_cache_dependency
-        cache = await get_cache_dependency()
-        
-        # Check cache
-        cache_key = f"security_analysis:{token_address}"
-        cached_results = await cache.get(cache_key, namespace="security")
-        
-        if cached_results:
-            logger.info(f"📋 Returning cached security analysis for {token_address}")
-            return cached_results
-        
-        # Perform security analysis
-        logger.info(f"🔒 Analyzing token security for {token_address}")
-        
-        security_data = await api_manager.get_security_analysis(token_address)
-        
-        if not security_data or "error" in security_data:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Failed to analyze token security: {security_data.get('error', 'Unknown error')}"
-            )
-        
-        # Cache for 1 hour (security data doesn't change frequently)
-        await cache.set(cache_key, security_data, ttl=3600, namespace="security")
-        
-        return security_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Security analysis failed for {token_address}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Security analysis failed: {str(e)}")
-
-
-@router.get("/whale-activity/{token_address}", summary="Whale Activity Analysis")
-async def get_whale_activity(
-    token_address: str,
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Analyze whale activity for a specific token
-    
-    Provides:
-    - Large holder movements
-    - Whale trading patterns
-    - Impact analysis on price
-    - Risk assessment
-    """
-    try:
-        # Get cache dependency
-        from app.core.dependencies import get_cache_dependency
-        cache = await get_cache_dependency()
-        
-        # Check cache
-        cache_key = f"whale_activity:{token_address}"
-        cached_results = await cache.get(cache_key, namespace="whale")
-        
-        if cached_results:
-            logger.info(f"📋 Returning cached whale analysis for {token_address}")
-            return cached_results
-        
-        # Analyze whale activity
-        logger.info(f"🐋 Analyzing whale activity for {token_address}")
-        
-        whale_data = await api_manager.analyze_whale_activity(token_address)
-        
-        # Cache for 15 minutes (whale activity changes frequently)
-        await cache.set(cache_key, whale_data, ttl=900, namespace="whale")
-        
-        return whale_data
-        
-    except Exception as e:
-        logger.error(f"❌ Whale activity analysis failed for {token_address}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Whale analysis failed: {str(e)}")
-
-
 @router.get("/market-overview", summary="Market Overview")
 async def get_market_overview(
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Get overall Solana market overview
+    Get overall Solana market overview with enhanced security insights
     
     Provides:
     - Network statistics
     - Top performing tokens
     - Market trends
     - Volume analysis
+    - Security landscape overview (via GOplus integration)
     """
     try:
         # Get cache dependency
@@ -433,7 +502,9 @@ async def get_market_overview(
             "market_summary": {
                 "active_tokens": len(trending_tokens),
                 "network_healthy": bool(network_stats),
-                "data_freshness": int(time.time())
+                "data_freshness": int(time.time()),
+                "security_services_available": bool(api_manager.clients.get("goplus")),
+                "enhanced_analysis": True
             }
         }
         
@@ -448,7 +519,7 @@ async def get_market_overview(
 
 
 def _transform_comprehensive_data(comprehensive_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Transform comprehensive API data to TokenAnalysisResponse format"""
+    """Transform comprehensive API data to TokenAnalysisResponse format with GOplus integration"""
     
     # Extract standardized data
     standardized = comprehensive_data.get("standardized", {})
@@ -481,12 +552,30 @@ def _transform_comprehensive_data(comprehensive_data: Dict[str, Any]) -> Dict[st
             price_change_24h=Decimal(str(price_info.get("price_change_24h", 0))) if price_info.get("price_change_24h") else None
         )
     
+    # Enhanced analysis with GOplus data
+    goplus_summary = standardized.get("goplus_summary", {})
+    if goplus_summary:
+        # Add GOplus-specific analysis to the response
+        response_data["goplus_analysis"] = {
+            "risk_assessment": {
+                "overall_risk_score": goplus_summary.get("risk_score", 0),
+                "risk_level": goplus_summary.get("risk_level", "unknown"),
+                "is_safe": goplus_summary.get("is_safe"),
+                "confidence": goplus_summary.get("confidence", 0)
+            },
+            "security_details": goplus_summary.get("security_details", {}),
+            "rugpull_risk": goplus_summary.get("rugpull_risk", {}),
+            "services_used": goplus_summary.get("services_used", []),
+            "major_risks": goplus_summary.get("major_risks", [])
+        }
+    
     # Mock AI analysis results for now (until AI integration is complete)
     if comprehensive_data.get("data_sources"):
         response_data["analysis"] = {
             "data_sources": comprehensive_data["data_sources"],
             "processing_time": comprehensive_data.get("processing_time", 0),
-            "standardized_data": standardized
+            "standardized_data": standardized,
+            "goplus_enhanced": "goplus" in comprehensive_data.get("data_sources", [])
         }
     
     return response_data

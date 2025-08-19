@@ -9,10 +9,11 @@ from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
 from app.services.blowfish_client import BlowfishClient, check_blowfish_health
 from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
 from app.services.solscan_client import SolscanClient, check_solscan_health
+from app.services.goplus_client import GOplusClient, check_goplus_health
 
 
 class APIManager:
-    """Unified API manager for all external services"""
+    """Unified API manager for all external services including GOplus"""
     
     def __init__(self):
         self.clients = {
@@ -21,13 +22,14 @@ class APIManager:
             "birdeye": None,
             "blowfish": None,
             "dataimpulse": None,
-            "solscan": None  # Ensure Solscan is included
+            "solscan": None,
+            "goplus": None  # Add GOplus to the clients
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
     
     async def initialize_clients(self):
-        """Initialize all API clients"""
+        """Initialize all API clients including GOplus"""
         try:
             self.clients = {
                 "helius": HeliusClient(),
@@ -35,9 +37,10 @@ class APIManager:
                 "birdeye": BirdeyeClient(),
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
-                "solscan": SolscanClient()  # Initialize Solscan client
+                "solscan": SolscanClient(),
+                "goplus": GOplusClient()  # Initialize GOplus client
             }
-            logger.info("✅ All API clients initialized (including Solscan)")
+            logger.info("✅ All API clients initialized (including GOplus)")
         except Exception as e:
             logger.error(f"❌ Error initializing API clients: {str(e)}")
             raise
@@ -53,23 +56,24 @@ class APIManager:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
     async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services including Solscan"""
+        """Check health of all API services including GOplus"""
         current_time = time.time()
         
         # Check cache
         if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
             return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services (including Solscan)...")
+        logger.info("🔍 Checking health of all API services (including GOplus)...")
         
-        # Health check functions - now includes Solscan
+        # Health check functions - now includes GOplus
         health_checks = {
             "helius": check_helius_health(),
             "chainbase": check_chainbase_health(),
             "birdeye": check_birdeye_health(),
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
-            "solscan": check_solscan_health()  # Add Solscan health check
+            "solscan": check_solscan_health(),
+            "goplus": check_goplus_health()  # Add GOplus health check
         }
         
         # Run all health checks concurrently
@@ -124,13 +128,25 @@ class APIManager:
                 f"Check service status for: {', '.join(unhealthy)}"
             )
         
-        # Solscan-specific recommendations
-        if "solscan" in health_status:
-            solscan_status = health_status["solscan"]
-            if not solscan_status.get("healthy") and not solscan_status.get("api_key_configured"):
-                overall_health["recommendations"].append(
-                    "Solscan: Consider getting an API key for higher rate limits and more features"
-                )
+        # GOplus-specific recommendations
+        if "goplus" in health_status:
+            goplus_status = health_status["goplus"]
+            if not goplus_status.get("healthy"):
+                if goplus_status.get("services"):
+                    # GOplus has multiple API keys
+                    services_info = goplus_status["services"]
+                    unconfigured_goplus = [
+                        service for service, info in services_info.items() 
+                        if not info.get("configured")
+                    ]
+                    if unconfigured_goplus:
+                        overall_health["recommendations"].append(
+                            f"GOplus: Configure API keys for {', '.join(unconfigured_goplus)} services"
+                        )
+                else:
+                    overall_health["recommendations"].append(
+                        "GOplus: Get API keys from https://gopluslabs.io/"
+                    )
         
         # Cache results
         self._health_cache = {
@@ -142,7 +158,7 @@ class APIManager:
         return overall_health
     
     async def get_comprehensive_token_data(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token data from all available sources including Solscan"""
+        """Get comprehensive token data from all available sources including GOplus"""
         logger.info(f"🔍 Gathering comprehensive data for token: {token_address}")
         
         # Prepare tasks for parallel execution
@@ -173,6 +189,13 @@ class APIManager:
             tasks["blowfish_scan"] = self.clients["blowfish"].scan_token(token_address)
             tasks["blowfish_risks"] = self.clients["blowfish"].get_risk_indicators(token_address)
         
+        # GOplus comprehensive analysis
+        if self.clients["goplus"]:
+            tasks["goplus_comprehensive"] = self.clients["goplus"].comprehensive_analysis(token_address)
+            # Individual GOplus services for more detailed data
+            tasks["goplus_security"] = self.clients["goplus"].analyze_token_security(token_address)
+            tasks["goplus_rugpull"] = self.clients["goplus"].detect_rugpull(token_address)
+        
         # Execute all tasks concurrently
         start_time = time.time()
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -188,7 +211,8 @@ class APIManager:
             "trading_data": {},
             "security_analysis": {},
             "market_data": {},
-            "network_data": {},  # For Solscan network info
+            "network_data": {},
+            "goplus_analysis": {},  # Dedicated section for GOplus data
             "processing_time": processing_time,
             "timestamp": int(time.time()),
             "errors": []
@@ -225,24 +249,28 @@ class APIManager:
                 compiled_data["security_analysis"][source] = result
             elif data_type in ["market"]:
                 compiled_data["market_data"][source] = result
+            elif source == "goplus":
+                # Special handling for GOplus data
+                compiled_data["goplus_analysis"][data_type] = result
             elif data_type == "supply":
                 compiled_data["metadata"][f"{source}_supply"] = result
         
-        # Merge and standardize data
+        # Merge and standardize data (now includes GOplus)
         compiled_data["standardized"] = self._standardize_token_data(compiled_data)
         
         logger.info(f"✅ Comprehensive data compiled for {token_address} from {len(compiled_data['data_sources'])} sources in {processing_time:.2f}s")
         return compiled_data
     
     def _standardize_token_data(self, compiled_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Standardize token data from different sources including Solscan"""
+        """Standardize token data from different sources including GOplus"""
         standardized = {
             "basic_info": {},
             "price_info": {},
             "holder_info": {},
             "security_info": {},
             "trading_info": {},
-            "network_info": {}  # For Solscan network data
+            "network_info": {},
+            "goplus_summary": {}  # Summary of GOplus analysis
         }
         
         # Standardize basic info (now includes Solscan data)
@@ -298,7 +326,7 @@ class APIManager:
             "top_holders": all_holders[:20] if all_holders else []
         }
         
-        # Standardize security info
+        # Standardize security info (now includes GOplus)
         security_scores = []
         security_flags = []
         
@@ -313,308 +341,112 @@ class APIManager:
             if "is_scam" in security_data and security_data["is_scam"]:
                 security_flags.append("potential_scam")
         
+        # Process GOplus analysis
+        goplus_data = compiled_data.get("goplus_analysis", {})
+        if goplus_data:
+            # Extract GOplus comprehensive analysis
+            comprehensive = goplus_data.get("comprehensive")
+            if comprehensive and comprehensive.get("overall_assessment"):
+                assessment = comprehensive["overall_assessment"]
+                standardized["goplus_summary"] = {
+                    "risk_score": assessment.get("risk_score", 0),
+                    "risk_level": assessment.get("risk_level", "unknown"),
+                    "is_safe": assessment.get("is_safe"),
+                    "major_risks": assessment.get("major_risks", []),
+                    "confidence": assessment.get("confidence", 0),
+                    "services_used": comprehensive.get("services_used", [])
+                }
+                
+                # Add GOplus risk score to overall security assessment
+                if assessment.get("risk_score"):
+                    security_scores.append(assessment["risk_score"])
+            
+            # Extract specific GOplus security data
+            security_analysis = goplus_data.get("security")
+            if security_analysis:
+                goplus_security = {
+                    "is_honeypot": security_analysis.get("is_honeypot", False),
+                    "is_malicious": security_analysis.get("is_malicious", False),
+                    "security_score": security_analysis.get("security_score", 0),
+                    "contract_verified": security_analysis.get("contract_security", {}).get("is_verified", False),
+                    "trading_taxes": {
+                        "buy_tax": security_analysis.get("trading_security", {}).get("buy_tax"),
+                        "sell_tax": security_analysis.get("trading_security", {}).get("sell_tax")
+                    }
+                }
+                standardized["goplus_summary"]["security_details"] = goplus_security
+            
+            # Extract GOplus rugpull data
+            rugpull_analysis = goplus_data.get("rugpull")
+            if rugpull_analysis:
+                standardized["goplus_summary"]["rugpull_risk"] = {
+                    "risk_level": rugpull_analysis.get("rugpull_risk", "unknown"),
+                    "risk_score": rugpull_analysis.get("risk_score", 0),
+                    "liquidity_locked": rugpull_analysis.get("risk_factors", {}).get("liquidity_locked"),
+                    "ownership_renounced": rugpull_analysis.get("risk_factors", {}).get("ownership_renounced")
+                }
+        
         standardized["security_info"] = {
             "average_risk_score": sum(security_scores) / len(security_scores) if security_scores else 0,
             "security_flags": list(set(security_flags)),
-            "is_high_risk": any(score > 70 for score in security_scores) if security_scores else False
+            "is_high_risk": any(score > 70 for score in security_scores) if security_scores else False,
+            "goplus_enhanced": bool(goplus_data)
         }
         
         return standardized
     
-    async def get_social_sentiment(self, token_symbol: str, token_name: str = None) -> Dict[str, Any]:
-        """Get social sentiment analysis for a token"""
-        if not self.clients["dataimpulse"]:
-            return {"error": "DataImpulse client not available"}
+    async def get_goplus_analysis(self, token_address: str) -> Dict[str, Any]:
+        """Get comprehensive GOplus analysis for a token"""
+        if not self.clients["goplus"]:
+            return {"error": "GOplus client not available"}
         
-        logger.info(f"📱 Analyzing social sentiment for {token_symbol}")
-        
-        try:
-            sentiment_data = await self.clients["dataimpulse"].analyze_token_buzz(
-                token_symbol, token_name, "24h"
-            )
-            return sentiment_data
-        except Exception as e:
-            logger.error(f"Error getting social sentiment for {token_symbol}: {str(e)}")
-            return {"error": str(e)}
-    
-    async def get_security_analysis(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive security analysis"""
-        if not self.clients["blowfish"]:
-            return {"error": "Blowfish client not available"}
-        
-        logger.info(f"🔒 Running security analysis for {token_address}")
+        logger.info(f"🔒 Running GOplus analysis for {token_address}")
         
         try:
-            security_report = await self.clients["blowfish"].get_security_report(token_address)
-            return security_report
+            comprehensive_analysis = await self.clients["goplus"].comprehensive_analysis(token_address)
+            return comprehensive_analysis
         except Exception as e:
-            logger.error(f"Error getting security analysis for {token_address}: {str(e)}")
+            logger.error(f"Error getting GOplus analysis for {token_address}: {str(e)}")
             return {"error": str(e)}
     
-    async def get_market_analysis(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive market analysis including Solscan data"""
-        logger.info(f"📈 Running market analysis for {token_address}")
+    async def simulate_transaction_goplus(self, transaction_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Simulate transaction using GOplus"""
+        if not self.clients["goplus"]:
+            return {"error": "GOplus client not available"}
         
-        market_data = {}
+        logger.info("🎯 Simulating transaction with GOplus")
         
-        # Birdeye price and trading data
-        if self.clients["birdeye"]:
-            try:
-                price_data = await self.clients["birdeye"].get_token_price(token_address)
-                metadata = await self.clients["birdeye"].get_token_metadata(token_address)
-                price_history = await self.clients["birdeye"].get_price_history(token_address, "7d")
-                
-                market_data["birdeye"] = {
-                    "current_price": price_data,
-                    "metadata": metadata,
-                    "price_history": price_history
-                }
-            except Exception as e:
-                market_data["birdeye_error"] = str(e)
-        
-        # Chainbase market data
-        if self.clients["chainbase"]:
-            try:
-                chainbase_market = await self.clients["chainbase"].get_market_data(token_address)
-                market_data["chainbase"] = chainbase_market
-            except Exception as e:
-                market_data["chainbase_error"] = str(e)
-        
-        # Solscan market and network data
-        if self.clients["solscan"]:
-            try:
-                solscan_token_info = await self.clients["solscan"].get_token_info(token_address)
-                solscan_network_stats = await self.clients["solscan"].get_network_stats()
-                
-                market_data["solscan"] = {
-                    "token_info": solscan_token_info,
-                    "network_stats": solscan_network_stats
-                }
-            except Exception as e:
-                market_data["solscan_error"] = str(e)
-        
-        return market_data
+        try:
+            simulation_result = await self.clients["goplus"].simulate_transaction(transaction_data)
+            return simulation_result
+        except Exception as e:
+            logger.error(f"Error simulating transaction with GOplus: {str(e)}")
+            return {"error": str(e)}
     
-    async def discover_trending_tokens(self, limit: int = 20) -> List[Dict[str, Any]]:
-        """Discover trending tokens from multiple sources including Solscan"""
-        logger.info(f"🔥 Discovering trending tokens (limit: {limit})")
+    async def detect_rugpull_goplus(self, token_address: str) -> Dict[str, Any]:
+        """Detect rugpull using GOplus"""
+        if not self.clients["goplus"]:
+            return {"error": "GOplus client not available"}
         
-        trending_tokens = []
+        logger.info(f"🚨 Detecting rugpull risk for {token_address} with GOplus")
         
-        # Get trending from Birdeye
-        if self.clients["birdeye"]:
-            try:
-                birdeye_trending = await self.clients["birdeye"].get_trending_tokens(
-                    sort_by="v24hUSD", limit=limit
-                )
-                for token in birdeye_trending:
-                    token["source"] = "birdeye"
-                    trending_tokens.append(token)
-            except Exception as e:
-                logger.warning(f"Error getting trending tokens from Birdeye: {str(e)}")
-        
-        # Get trending topics from DataImpulse
-        if self.clients["dataimpulse"]:
-            try:
-                trending_topics = await self.clients["dataimpulse"].get_trending_topics(
-                    platform="all", time_range="24h"
-                )
-                for topic in trending_topics[:limit//2]:  # Limit social trending
-                    if topic.get("related_tokens"):
-                        for token_symbol in topic["related_tokens"]:
-                            trending_tokens.append({
-                                "symbol": token_symbol,
-                                "source": "social_trending",
-                                "mention_count": topic.get("mention_count"),
-                                "sentiment_score": topic.get("sentiment_score")
-                            })
-            except Exception as e:
-                logger.warning(f"Error getting trending topics from DataImpulse: {str(e)}")
-        
-        # Remove duplicates and sort by relevance
-        unique_tokens = {}
-        for token in trending_tokens:
-            key = token.get("address") or token.get("symbol", "unknown")
-            if key not in unique_tokens:
-                unique_tokens[key] = token
-            else:
-                # Merge data from multiple sources
-                existing = unique_tokens[key]
-                existing["sources"] = existing.get("sources", [existing.get("source")])
-                if token.get("source") not in existing["sources"]:
-                    existing["sources"].append(token.get("source"))
-        
-        return list(unique_tokens.values())[:limit]
-    
-    async def analyze_whale_activity(self, token_address: str) -> Dict[str, Any]:
-        """Analyze whale activity for a token"""
-        logger.info(f"🐋 Analyzing whale activity for {token_address}")
-        
-        whale_data = {}
-        
-        # Chainbase whale activity
-        if self.clients["chainbase"]:
-            try:
-                whale_activity = await self.clients["chainbase"].get_whale_activity(token_address)
-                whale_data["chainbase"] = whale_activity
-            except Exception as e:
-                whale_data["chainbase_error"] = str(e)
-        
-        # Birdeye top traders
-        if self.clients["birdeye"]:
-            try:
-                top_traders = await self.clients["birdeye"].get_top_traders(token_address)
-                whale_data["birdeye_traders"] = top_traders
-            except Exception as e:
-                whale_data["birdeye_error"] = str(e)
-        
-        # Solscan holder analysis
-        if self.clients["solscan"]:
-            try:
-                solscan_holders = await self.clients["solscan"].get_token_holders(token_address, 100)
-                whale_data["solscan_holders"] = solscan_holders
-            except Exception as e:
-                whale_data["solscan_error"] = str(e)
-        
-        # Analyze whale impact
-        if whale_data:
-            whale_data["analysis"] = self._analyze_whale_impact(whale_data)
-        
-        return whale_data
-    
-    def _analyze_whale_impact(self, whale_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze whale impact on token including Solscan data"""
-        analysis = {
-            "whale_count": 0,
-            "total_whale_volume": 0,
-            "average_whale_size": 0,
-            "whale_sentiment": "neutral",
-            "risk_level": "low"
-        }
-        
-        # Analyze Chainbase whale activity
-        chainbase_whales = whale_data.get("chainbase", [])
-        if chainbase_whales:
-            analysis["whale_count"] += len(chainbase_whales)
-            for whale in chainbase_whales:
-                volume = whale.get("amount_usd", 0)
-                if isinstance(volume, (int, float)):
-                    analysis["total_whale_volume"] += volume
-        
-        # Analyze Birdeye top traders
-        birdeye_traders = whale_data.get("birdeye_traders", [])
-        if birdeye_traders:
-            large_traders = [t for t in birdeye_traders if t.get("totalVolumeInUSD", 0) > 50000]
-            analysis["whale_count"] += len(large_traders)
-            
-            for trader in large_traders:
-                volume = trader.get("totalVolumeInUSD", 0)
-                if isinstance(volume, (int, float)):
-                    analysis["total_whale_volume"] += volume
-        
-        # Analyze Solscan holders
-        solscan_holders = whale_data.get("solscan_holders", {})
-        if solscan_holders and "holders" in solscan_holders:
-            # Define whales as holders with >1% of supply
-            whale_holders = [h for h in solscan_holders["holders"] if float(h.get("percentage", 0)) >= 1.0]
-            analysis["whale_count"] += len(whale_holders)
-            
-            for whale in whale_holders:
-                # Estimate volume based on percentage
-                percentage = float(whale.get("percentage", 0))
-                if percentage > 0:
-                    analysis["total_whale_volume"] += percentage * 10000  # Rough estimate
-        
-        # Calculate averages and risk
-        if analysis["whale_count"] > 0:
-            analysis["average_whale_size"] = analysis["total_whale_volume"] / analysis["whale_count"]
-            
-            # Determine risk level based on whale activity
-            if analysis["whale_count"] > 10 and analysis["average_whale_size"] > 100000:
-                analysis["risk_level"] = "high"
-                analysis["whale_sentiment"] = "very_active"
-            elif analysis["whale_count"] > 5:
-                analysis["risk_level"] = "medium"
-                analysis["whale_sentiment"] = "active"
-        
-        return analysis
-    
-    async def search_tokens(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for tokens across multiple sources including Solscan"""
-        logger.info(f"🔍 Searching for tokens: '{query}' (limit: {limit})")
-        
-        search_results = []
-        
-        # Search tasks
-        search_tasks = {}
-        
-        if self.clients["birdeye"]:
-            search_tasks["birdeye"] = self.clients["birdeye"].search_tokens(query, limit)
-        
-        if self.clients["chainbase"]:
-            search_tasks["chainbase"] = self.clients["chainbase"].search_tokens(query, limit)
-        
-        if self.clients["solscan"]:
-            search_tasks["solscan"] = self.clients["solscan"].search_tokens(query)
-        
-        # Execute searches
-        if search_tasks:
-            results = await asyncio.gather(*search_tasks.values(), return_exceptions=True)
-            
-            for i, (source, task) in enumerate(search_tasks.items()):
-                result = results[i]
-                if not isinstance(result, Exception) and result:
-                    for token in result:
-                        token["source"] = source
-                        search_results.append(token)
-        
-        # Remove duplicates and rank results
-        unique_results = {}
-        for token in search_results:
-            key = token.get("address") or token.get("mint") or f"{token.get('symbol')}_{token.get('name')}"
-            if key not in unique_results:
-                unique_results[key] = token
-            else:
-                # Merge sources
-                existing = unique_results[key]
-                existing["sources"] = existing.get("sources", [existing.get("source")])
-                if token.get("source") not in existing["sources"]:
-                    existing["sources"].append(token.get("source"))
-        
-        return list(unique_results.values())[:limit]
-    
-    async def get_service_status(self) -> Dict[str, Any]:
-        """Get detailed status of all API services including Solscan"""
-        health_data = await self.check_all_services_health()
-        
-        status = {
-            "overall_status": health_data["overall_healthy"],
-            "services": {},
-            "summary": health_data["summary"],
-            "recommendations": health_data["recommendations"],
-            "last_checked": health_data["timestamp"]
-        }
-        
-        for service_name, health_info in health_data["services"].items():
-            status["services"][service_name] = {
-                "status": "operational" if health_info.get("healthy") else "down",
-                "configured": health_info.get("api_key_configured", False),
-                "response_time": health_info.get("response_time"),
-                "error": health_info.get("error"),
-                "capabilities": self._get_service_capabilities(service_name)
-            }
-        
-        return status
+        try:
+            rugpull_analysis = await self.clients["goplus"].detect_rugpull(token_address)
+            return rugpull_analysis
+        except Exception as e:
+            logger.error(f"Error detecting rugpull for {token_address} with GOplus: {str(e)}")
+            return {"error": str(e)}
     
     def _get_service_capabilities(self, service_name: str) -> List[str]:
-        """Get capabilities for each service including Solscan"""
+        """Get capabilities for each service including GOplus"""
         capabilities = {
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
             "birdeye": ["price_data", "trading_history", "market_data", "trending_tokens"],
             "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
-            "solscan": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"]
+            "solscan": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"],
+            "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"]
         }
         return capabilities.get(service_name, [])
 
@@ -625,30 +457,46 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services including Solscan"""
+    """Initialize all API services including GOplus"""
     await api_manager.initialize_clients()
 
 
 async def cleanup_api_services():
-    """Cleanup all API services including Solscan"""
+    """Cleanup all API services including GOplus"""
     await api_manager.cleanup_clients()
 
 
 async def get_token_analysis(token_address: str) -> Dict[str, Any]:
-    """Get comprehensive token analysis including Solscan data"""
+    """Get comprehensive token analysis including GOplus data"""
     return await api_manager.get_comprehensive_token_data(token_address)
 
 
 async def get_api_health_status() -> Dict[str, Any]:
-    """Get health status of all APIs including Solscan"""
+    """Get health status of all APIs including GOplus"""
     return await api_manager.check_all_services_health()
 
 
 async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search for tokens across all sources including Solscan"""
+    """Search for tokens across all sources including GOplus verification"""
     return await api_manager.search_tokens(query, limit)
 
 
 async def get_trending_analysis(limit: int = 20) -> List[Dict[str, Any]]:
     """Get trending tokens analysis from all sources"""
     return await api_manager.discover_trending_tokens(limit)
+
+
+# GOplus-specific convenience functions
+async def get_goplus_comprehensive_analysis(token_address: str) -> Dict[str, Any]:
+    """Get comprehensive GOplus analysis for a token"""
+    return await api_manager.get_goplus_analysis(token_address)
+
+
+async def simulate_transaction_with_goplus(transaction_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Simulate transaction using GOplus"""
+    return await api_manager.simulate_transaction_goplus(transaction_data)
+
+
+async def detect_rugpull_with_goplus(token_address: str) -> Dict[str, Any]:
+    """Detect rugpull using GOplus"""
+    return await api_manager.detect_rugpull_goplus(token_address)
