@@ -1,8 +1,6 @@
 import asyncio
 import aiohttp
 import time
-import hmac
-import hashlib
 from typing import Dict, Any, List, Optional
 from loguru import logger
 
@@ -35,6 +33,10 @@ class GOplusClient:
         self._rate_limit_delay = 0.3  # 300ms between requests
         self._last_request_time = 0
         self.timeout = settings.API_TIMEOUT
+        
+        # Token cache
+        self._access_tokens = {}  # Cache tokens by service
+        self._token_expiry = {}   # Track token expiry times
         
         # Log API key status
         self._log_api_key_status()
@@ -83,186 +85,146 @@ class GOplusClient:
         
         self._last_request_time = time.time()
     
-    def _generate_signature(self, app_secret: str, method: str, endpoint: str, params: Dict[str, Any] = None, body: str = None) -> Dict[str, str]:
-        """Generate GOplus API signature"""
-        timestamp = str(int(time.time()))
+    async def _get_access_token(self, app_key: str, app_secret: str, service_name: str) -> str:
+        """Get access token using app_key and app_secret"""
         
-        # Create signature string
-        # Common pattern: METHOD + endpoint + params + timestamp + body
-        signature_parts = [method.upper(), endpoint]
+        # Check if we have a valid cached token
+        current_time = time.time()
+        if (service_name in self._access_tokens and 
+            service_name in self._token_expiry and 
+            current_time < self._token_expiry[service_name]):
+            return self._access_tokens[service_name]
         
-        # Add sorted query parameters
-        if params:
-            param_string = "&".join([f"{k}={v}" for k, v in sorted(params.items())])
-            signature_parts.append(param_string)
+        await self._ensure_session()
         
-        signature_parts.append(timestamp)
+        # Get new access token
+        token_url = f"{self.base_url}/api/v1/token"
         
-        # Add body if present
-        if body:
-            signature_parts.append(body)
-        
-        # Create signature string
-        signature_string = "|".join(signature_parts)
-        
-        # Generate HMAC-SHA256 signature
-        signature = hmac.new(
-            app_secret.encode('utf-8'),
-            signature_string.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-        
-        return {
-            "timestamp": timestamp,
-            "signature": signature,
-            "signature_string": signature_string  # For debugging
+        payload = {
+            "app_key": app_key,
+            "app_secret": app_secret
         }
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+        }
+        
+        try:
+            async with self.session.post(token_url, json=payload, headers=headers) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Check for success
+                    if data.get("code") == 1 and data.get("result"):
+                        access_token = data["result"].get("access_token")
+                        expires_in = data["result"].get("expires_in", 3600)  # Default 1 hour
+                        
+                        if access_token:
+                            # Cache the token
+                            self._access_tokens[service_name] = access_token
+                            self._token_expiry[service_name] = current_time + expires_in - 60  # Refresh 1 min early
+                            
+                            logger.debug(f"GOplus access token obtained for {service_name}, expires in {expires_in}s")
+                            return access_token
+                    
+                    error_msg = data.get("message", "Failed to get access token")
+                    raise GOplusAPIError(f"Token request failed: {error_msg}")
+                else:
+                    error_text = await response.text()
+                    raise GOplusAPIError(f"Token request HTTP {response.status}: {error_text}")
+                    
+        except asyncio.TimeoutError:
+            raise GOplusAPIError("Token request timeout")
+        except aiohttp.ClientError as e:
+            raise GOplusAPIError(f"Token request error: {str(e)}")
     
-    async def _request(self, method: str, endpoint: str, app_key: str, app_secret: str, **kwargs) -> Dict[str, Any]:
-        """Make HTTP request with GOplus APP Key/Secret authentication"""
+    async def _request_with_token(self, method: str, endpoint: str, app_key: str, app_secret: str, service_name: str, **kwargs) -> Dict[str, Any]:
+        """Make HTTP request with bearer token authentication"""
         if not app_key or not app_secret:
-            raise GOplusAPIError("GOplus APP key and secret not configured for this service")
+            raise GOplusAPIError(f"GOplus APP key and secret not configured for {service_name}")
         
         await self._ensure_session()
         await self._rate_limit()
+        
+        # Get access token
+        access_token = await self._get_access_token(app_key, app_secret, service_name)
         
         url = f"{self.base_url}{endpoint}"
         params = kwargs.pop("params", {})
         json_data = kwargs.pop("json", None)
         
-        # Generate signature
-        body_string = None
-        if json_data:
-            import json
-            body_string = json.dumps(json_data, sort_keys=True, separators=(',', ':'))
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {access_token}",
+            **kwargs.pop("headers", {})
+        }
         
-        auth_data = self._generate_signature(
-            app_secret=app_secret,
-            method=method,
-            endpoint=endpoint,
-            params=params,
-            body=body_string
-        )
-        
-        # GOplus authentication methods to try
-        auth_methods = [
-            # Method 1: Headers with signature
-            {
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "User-Agent": "Solana-Token-Analysis/1.0",
-                    "X-API-Key": app_key,
-                    "X-Timestamp": auth_data["timestamp"],
-                    "X-Signature": auth_data["signature"],
-                    **kwargs.pop("headers", {})
-                },
-                "params": params
-            },
-            # Method 2: All in query parameters
-            {
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "User-Agent": "Solana-Token-Analysis/1.0",
-                    **kwargs.pop("headers", {})
-                },
-                "params": {
-                    **params,
-                    "app_key": app_key,
-                    "timestamp": auth_data["timestamp"],
-                    "signature": auth_data["signature"]
-                }
-            },
-            # Method 3: Simple API key only
-            {
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Accept": "application/json",
-                    "User-Agent": "Solana-Token-Analysis/1.0",
-                    "Authorization": f"Bearer {app_key}",
-                    **kwargs.pop("headers", {})
-                },
-                "params": params
+        try:
+            request_kwargs = {
+                "headers": headers,
+                "params": params,
+                **kwargs
             }
-        ]
-        
-        last_error = None
-        
-        for i, auth_method in enumerate(auth_methods):
-            try:
-                logger.debug(f"GOplus auth method {i+1}: {method} {endpoint}")
-                
-                request_kwargs = {
-                    "headers": auth_method["headers"],
-                    "params": auth_method["params"],
-                    **kwargs
-                }
-                
-                if json_data:
-                    request_kwargs["json"] = json_data
-                
-                async with self.session.request(method, url, **request_kwargs) as response:
-                    content_type = response.headers.get('content-type', '').lower()
-                    
-                    logger.debug(f"GOplus {method} {endpoint} - Status: {response.status}, Content-Type: {content_type}")
-                    
-                    if response.status == 200:
-                        if 'application/json' in content_type:
-                            response_data = await response.json()
-                            
-                            # Check for GOplus API-level errors
-                            if isinstance(response_data, dict):
-                                error_code = response_data.get('code')
-                                if error_code and error_code not in [0, 1]:  # 0 or 1 usually means success
-                                    error_msg = response_data.get('message', 'Unknown API error')
-                                    logger.error(f"GOplus API error (code {error_code}): {error_msg}")
-                                    
-                                    if error_code == 4012:
-                                        # Signature verification failure - try next auth method
-                                        logger.debug(f"Auth method {i+1} failed with signature error, trying next method")
-                                        last_error = f"Signature verification failed with method {i+1}"
-                                        continue
-                                    else:
-                                        raise GOplusAPIError(f"API error (code {error_code}): {error_msg}")
-                            
-                            logger.info(f"✅ GOplus auth method {i+1} successful")
-                            return response_data
-                        else:
-                            response_text = await response.text()
-                            logger.error(f"Unexpected content type from GOplus: {content_type}")
-                            last_error = f"Expected JSON, got {content_type}"
-                            continue
-                    
-                    elif response.status == 401:
-                        logger.debug(f"Auth method {i+1}: 401 Unauthorized")
-                        last_error = "Invalid credentials"
-                        continue
-                    elif response.status == 403:
-                        logger.debug(f"Auth method {i+1}: 403 Forbidden")
-                        last_error = "Access forbidden"
-                        continue
-                    else:
-                        try:
-                            error_text = await response.text()
-                            last_error = f"HTTP {response.status}: {error_text[:200]}"
-                            continue
-                        except:
-                            last_error = f"HTTP {response.status}: Unknown error"
-                            continue
             
-            except asyncio.TimeoutError:
-                last_error = "Request timeout"
-                continue
-            except aiohttp.ClientError as e:
-                last_error = f"Client error: {str(e)}"
-                continue
-            except Exception as e:
-                last_error = f"Unexpected error: {str(e)}"
-                continue
+            if json_data:
+                request_kwargs["json"] = json_data
+            
+            async with self.session.request(method, url, **request_kwargs) as response:
+                content_type = response.headers.get('content-type', '').lower()
+                
+                logger.debug(f"GOplus {method} {endpoint} - Status: {response.status}, Content-Type: {content_type}")
+                
+                if response.status == 200:
+                    if 'application/json' in content_type:
+                        response_data = await response.json()
+                        
+                        # Check for GOplus API-level errors
+                        if isinstance(response_data, dict):
+                            error_code = response_data.get('code')
+                            if error_code != 1:  # 1 means success in GOplus
+                                error_msg = response_data.get('message', 'Unknown API error')
+                                logger.error(f"GOplus API error (code {error_code}): {error_msg}")
+                                
+                                # Handle token expiry
+                                if error_code in [4001, 4002]:  # Token expired or invalid
+                                    # Clear cached token and retry once
+                                    if service_name in self._access_tokens:
+                                        del self._access_tokens[service_name]
+                                    if service_name in self._token_expiry:
+                                        del self._token_expiry[service_name]
+                                    
+                                    logger.debug(f"Token expired for {service_name}, retrying with new token")
+                                    return await self._request_with_token(method, endpoint, app_key, app_secret, service_name, params=params, json=json_data, **kwargs)
+                                
+                                raise GOplusAPIError(f"API error (code {error_code}): {error_msg}")
+                        
+                        return response_data
+                    else:
+                        response_text = await response.text()
+                        logger.error(f"Unexpected content type from GOplus: {content_type}")
+                        raise GOplusAPIError(f"Expected JSON, got {content_type}")
+                
+                elif response.status == 401:
+                    # Token might be expired, clear cache and retry once
+                    if service_name in self._access_tokens:
+                        del self._access_tokens[service_name]
+                        logger.debug(f"401 error, clearing token cache for {service_name}")
+                        return await self._request_with_token(method, endpoint, app_key, app_secret, service_name, params=params, json=json_data, **kwargs)
+                    else:
+                        raise GOplusAPIError("Authentication failed")
+                else:
+                    try:
+                        error_text = await response.text()
+                        raise GOplusAPIError(f"HTTP {response.status}: {error_text[:200]}")
+                    except:
+                        raise GOplusAPIError(f"HTTP {response.status}: Unknown error")
         
-        # If we get here, all auth methods failed
-        raise GOplusAPIError(f"All authentication methods failed. Last error: {last_error}")
+        except asyncio.TimeoutError:
+            raise GOplusAPIError("Request timeout")
+        except aiohttp.ClientError as e:
+            raise GOplusAPIError(f"Client error: {str(e)}")
     
     # ==============================================
     # TOKEN SECURITY API
@@ -271,81 +233,85 @@ class GOplusClient:
     async def analyze_token_security(self, token_address: str, chain: str = "solana") -> Dict[str, Any]:
         """Comprehensive token security analysis"""
         try:
-            endpoint = "/v1/token_security"
-            
-            # GOplus chain mapping
+            # Map chains to chain IDs for the correct endpoint format
             chain_mapping = {
-                "solana": "101",  # Solana mainnet chain ID
                 "ethereum": "1",
+                "eth": "1", 
                 "bsc": "56",
-                "polygon": "137"
+                "polygon": "137",
+                "solana": "101",
+                "sol": "101"
             }
             
-            chain_id = chain_mapping.get(chain.lower(), chain)
+            chain_id = chain_mapping.get(chain.lower(), "1")  # Default to Ethereum
+            
+            # Use the correct API endpoint format from the docs
+            endpoint = f"/api/v1/token_security/{chain_id}"
             
             params = {
-                "chain_id": chain_id,
                 "contract_addresses": token_address
             }
             
-            response = await self._request(
+            response = await self._request_with_token(
                 "GET", 
                 endpoint, 
                 self.security_app_key, 
                 self.security_app_secret,
+                "security",
                 params=params
             )
             
-            if not response.get("result"):
-                logger.warning(f"GOplus API returned no result for {token_address}")
-                return None
+            if response and response.get("result"):
+                # GOplus returns results keyed by contract address
+                token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
+                if token_results:
+                    return self._parse_security_response(token_results, token_address, chain)
             
-            # GOplus returns results keyed by contract address
-            token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
-            if not token_results:
-                logger.warning(f"No security data for {token_address} in GOplus response")
-                return None
-            
-            security_analysis = {
-                "token_address": token_address,
-                "chain": chain,
-                "security_score": token_results.get("security_score", 0),
-                "risk_level": token_results.get("risk_level", "unknown"),
-                "is_malicious": token_results.get("is_malicious", False),
-                "is_honeypot": token_results.get("is_honeypot", "0") == "1",
-                "contract_security": {
-                    "is_verified": token_results.get("is_verified", "0") == "1",
-                    "is_proxy": token_results.get("is_proxy", "0") == "1",
-                    "can_take_back_ownership": token_results.get("can_take_back_ownership", "0") == "1",
-                    "owner_change_balance": token_results.get("owner_change_balance", "0") == "1",
-                    "hidden_owner": token_results.get("hidden_owner", "0") == "1",
-                    "selfdestruct": token_results.get("selfdestruct", "0") == "1",
-                    "external_call": token_results.get("external_call", "0") == "1"
-                },
-                "trading_security": {
-                    "buy_tax": token_results.get("buy_tax"),
-                    "sell_tax": token_results.get("sell_tax"),
-                    "is_blacklisted": token_results.get("is_blacklisted", "0") == "1",
-                    "is_whitelisted": token_results.get("is_whitelisted", "0") == "1",
-                    "transfer_pausable": token_results.get("transfer_pausable", "0") == "1",
-                    "trading_cooldown": token_results.get("trading_cooldown", "0") == "1",
-                    "anti_whale_modifiable": token_results.get("anti_whale_modifiable", "0") == "1"
-                },
-                "metadata": {
-                    "token_name": token_results.get("token_name"),
-                    "token_symbol": token_results.get("token_symbol"),
-                    "total_supply": token_results.get("total_supply"),
-                    "decimals": token_results.get("decimals")
-                },
-                "warnings": self._extract_security_warnings(token_results),
-                "last_updated": token_results.get("update_time"),
-            }
-            
-            return security_analysis
+            logger.warning(f"No results returned for {token_address} on chain {chain_id}")
+            return None
             
         except Exception as e:
             logger.error(f"Error analyzing token security for {token_address} with GOplus: {str(e)}")
             return None
+    
+    def _parse_security_response(self, token_results: Dict[str, Any], token_address: str, chain: str) -> Dict[str, Any]:
+        """Parse GOplus security response"""
+        security_analysis = {
+            "token_address": token_address,
+            "chain": chain,
+            "security_score": token_results.get("security_score", 0),
+            "risk_level": token_results.get("risk_level", "unknown"),
+            "is_malicious": token_results.get("is_malicious", False),
+            "is_honeypot": token_results.get("is_honeypot", "0") == "1",
+            "contract_security": {
+                "is_verified": token_results.get("is_verified", "0") == "1",
+                "is_proxy": token_results.get("is_proxy", "0") == "1",
+                "can_take_back_ownership": token_results.get("can_take_back_ownership", "0") == "1",
+                "owner_change_balance": token_results.get("owner_change_balance", "0") == "1",
+                "hidden_owner": token_results.get("hidden_owner", "0") == "1",
+                "selfdestruct": token_results.get("selfdestruct", "0") == "1",
+                "external_call": token_results.get("external_call", "0") == "1"
+            },
+            "trading_security": {
+                "buy_tax": token_results.get("buy_tax"),
+                "sell_tax": token_results.get("sell_tax"),
+                "is_blacklisted": token_results.get("is_blacklisted", "0") == "1",
+                "is_whitelisted": token_results.get("is_whitelisted", "0") == "1",
+                "transfer_pausable": token_results.get("transfer_pausable", "0") == "1",
+                "trading_cooldown": token_results.get("trading_cooldown", "0") == "1",
+                "anti_whale_modifiable": token_results.get("anti_whale_modifiable", "0") == "1"
+            },
+            "metadata": {
+                "token_name": token_results.get("token_name"),
+                "token_symbol": token_results.get("token_symbol"),
+                "total_supply": token_results.get("total_supply"),
+                "decimals": token_results.get("decimals")
+            },
+            "warnings": self._extract_security_warnings(token_results),
+            "last_updated": token_results.get("update_time"),
+        }
+        
+        return security_analysis
     
     def _extract_security_warnings(self, token_results: Dict[str, Any]) -> List[str]:
         """Extract security warnings from token results"""
@@ -383,48 +349,52 @@ class GOplusClient:
     async def detect_rugpull(self, token_address: str, chain: str = "solana") -> Dict[str, Any]:
         """Detect rug pull risks for a token"""
         try:
-            endpoint = "/v1/rugpull_detecting"
+            # Map chains to chain IDs
+            chain_mapping = {
+                "ethereum": "1",
+                "eth": "1", 
+                "bsc": "56", 
+                "polygon": "137",
+                "solana": "101",
+                "sol": "101"
+            }
             
-            chain_mapping = {"solana": "101", "ethereum": "1", "bsc": "56", "polygon": "137"}
-            chain_id = chain_mapping.get(chain.lower(), chain)
+            chain_id = chain_mapping.get(chain.lower(), "1")  # Default to Ethereum
+            endpoint = f"/api/v1/rugpull_detecting/{chain_id}"
             
             params = {
-                "chain_id": chain_id,
                 "contract_addresses": token_address
             }
             
-            response = await self._request(
+            response = await self._request_with_token(
                 "GET",
                 endpoint,
                 self.rugpull_app_key,
                 self.rugpull_app_secret,
+                "rugpull",
                 params=params
             )
             
-            if not response.get("result"):
-                return None
+            if response and response.get("result"):
+                token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
+                if token_results:
+                    return {
+                        "token_address": token_address,
+                        "chain": chain,
+                        "rugpull_risk": token_results.get("rugpull_risk", "unknown"),
+                        "risk_score": token_results.get("risk_score", 0),
+                        "risk_factors": {
+                            "liquidity_locked": token_results.get("liquidity_locked"),
+                            "lock_ratio": token_results.get("lock_ratio"),
+                            "ownership_renounced": token_results.get("ownership_renounced"),
+                            "creator_balance": token_results.get("creator_balance"),
+                            "creator_percent": token_results.get("creator_percent"),
+                        },
+                        "warnings": token_results.get("warnings", []),
+                        "last_updated": token_results.get("last_updated")
+                    }
             
-            token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
-            if not token_results:
-                return None
-            
-            rugpull_analysis = {
-                "token_address": token_address,
-                "chain": chain,
-                "rugpull_risk": token_results.get("rugpull_risk", "unknown"),
-                "risk_score": token_results.get("risk_score", 0),
-                "risk_factors": {
-                    "liquidity_locked": token_results.get("liquidity_locked"),
-                    "lock_ratio": token_results.get("lock_ratio"),
-                    "ownership_renounced": token_results.get("ownership_renounced"),
-                    "creator_balance": token_results.get("creator_balance"),
-                    "creator_percent": token_results.get("creator_percent"),
-                },
-                "warnings": token_results.get("warnings", []),
-                "last_updated": token_results.get("last_updated")
-            }
-            
-            return rugpull_analysis
+            return None
             
         except Exception as e:
             logger.error(f"Error detecting rugpull for {token_address} with GOplus: {str(e)}")
@@ -437,28 +407,52 @@ class GOplusClient:
     async def simulate_transaction(self, transaction_data: Dict[str, Any], chain: str = "solana") -> Dict[str, Any]:
         """Simulate a transaction before execution"""
         try:
-            endpoint = "/v1/transaction/simulate"
+            endpoint = "/api/v1/transaction/simulate"
             payload = {
                 "chain": chain,
                 "transaction": transaction_data
             }
             
-            response = await self._request(
+            response = await self._request_with_token(
                 "POST",
                 endpoint,
                 self.transaction_app_key,
                 self.transaction_app_secret,
+                "transaction",
                 json=payload
             )
             
-            if not response.get("result"):
-                return None
+            if response and response.get("result"):
+                return response["result"]
             
-            return response["result"]
+            return None
             
         except Exception as e:
             logger.error(f"Error simulating transaction with GOplus: {str(e)}")
             return None
+    
+    # ==============================================
+    # SUPPORTED CHAINS
+    # ==============================================
+    
+    async def get_supported_chains(self) -> List[Dict[str, Any]]:
+        """Get supported chains"""
+        try:
+            # Return commonly supported chains based on GOplus documentation
+            supported_chains = [
+                {"chain_id": "1", "name": "Ethereum", "supported": True},
+                {"chain_id": "56", "name": "BSC", "supported": True},
+                {"chain_id": "137", "name": "Polygon", "supported": True},
+                {"chain_id": "101", "name": "Solana", "supported": True},
+                {"chain_id": "43114", "name": "Avalanche", "supported": True}
+            ]
+            
+            logger.debug("Returning common supported chains for GOplus")
+            return supported_chains
+            
+        except Exception as e:
+            logger.error(f"Error getting supported chains: {str(e)}")
+            return []
     
     # ==============================================
     # COMPREHENSIVE ANALYSIS
@@ -589,13 +583,23 @@ class GOplusClient:
             # Test token security service if configured
             if services_status["token_security"]["configured"]:
                 try:
-                    # Simple test with a well-known token
-                    test_result = await self.analyze_token_security("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")  # USDC
+                    # Test with the working endpoint and token authentication
+                    test_result = await self.analyze_token_security("0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95", "ethereum")
                     services_status["token_security"]["healthy"] = test_result is not None
                     if test_result is None:
                         services_status["token_security"]["error"] = "No data returned for test token"
+                    else:
+                        services_status["token_security"]["note"] = "Successfully tested with Ethereum token"
+                        
                 except Exception as e:
-                    services_status["token_security"]["error"] = str(e)
+                    error_msg = str(e)
+                    services_status["token_security"]["error"] = error_msg
+                    
+                    # Check for specific error types
+                    if "token request failed" in error_msg.lower():
+                        services_status["token_security"]["error"] = "Failed to get access token - check API key and secret"
+                    elif "invalid credentials" in error_msg.lower():
+                        services_status["token_security"]["error"] = "Invalid API credentials"
             
             # For other services, mark as healthy if configured (to avoid extra API calls)
             for service in ["transaction_simulation", "rugpull_detection"]:
