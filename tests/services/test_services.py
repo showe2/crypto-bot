@@ -55,7 +55,7 @@ class SafeServiceTester:
             "chainbase": 0.50,       # ~$0.50 per 1000 calls
             "blowfish": 2.00,        # ~$2.00 per 1000 scans
             "dataimpulse": 1.00,     # ~$1.00 per 1000 calls
-            "solscan": 0.05          # ~$0.05 per 1000 calls (has free tier)
+            "solscan": 0.05          # ~$0.05 per 1000 calls (pro tier)
         }
     
     async def test_system_health(self) -> TestResult:
@@ -195,8 +195,8 @@ class SafeServiceTester:
             result = await self._test_dexscreener()
             results.append(result)
             
-            # Test Solscan (has free tier)
-            result = await self._test_solscan_free()
+            # Test Solscan v2.0 (has free tier and pro tier)
+            result = await self._test_solscan_v2()
             results.append(result)
         
         # Test public configuration endpoints
@@ -238,10 +238,9 @@ class SafeServiceTester:
                 error=str(e)
             )
     
-    #TODO: Add API V2 endpoints
-    async def _test_solscan_free(self) -> TestResult:
-        """Test Solscan API (handles API key requirement)"""
-        print("   📊 Testing Solscan API...")
+    async def _test_solscan_v2(self) -> TestResult:
+        """Test Solscan v2.0 API (UPDATED for new endpoints)"""
+        print("   📊 Testing Solscan v2.0 API...")
         
         start_time = time.time()
         
@@ -267,53 +266,33 @@ class SafeServiceTester:
                 print(f"   ⚠️ Error reading .env file: {e}")
         
         if not api_key:
-            # Debug: Check what environment variables are available
-            env_vars = [k for k in os.environ.keys() if 'SOLSCAN' in k.upper()]
-            print(f"   🔍 Debug: Environment variables with 'SOLSCAN': {env_vars}")
-            
-            # Also check if .env file exists and what it contains
-            env_file = Path.cwd() / '.env'
-            print(f"   🔍 Debug: .env file exists: {env_file.exists()}")
-            
-            if env_file.exists():
-                try:
-                    with open(env_file, 'r') as f:
-                        lines = f.readlines()
-                        solscan_lines = [line.strip() for line in lines if 'SOLSCAN' in line.upper()]
-                        print(f"   🔍 Debug: Lines in .env with 'SOLSCAN': {len(solscan_lines)} found")
-                        for line in solscan_lines:
-                            if not line.startswith('#'):
-                                print(f"   🔍 Debug: Found line: {line[:30]}...")
-                except Exception as e:
-                    print(f"   🔍 Debug: Error reading .env: {e}")
-            
-            # Test without API key first (some endpoints might be free)
-            result = await self._test_solscan_no_auth(start_time)
+            # Test without API key first (some v2.0 endpoints might be free)
+            result = await self._test_solscan_v2_no_auth(start_time)
             if result.success:
                 return result
             
             # If no auth fails, return helpful message
             response_time = time.time() - start_time
-            print("   ⚠️ Solscan requires API key for most endpoints")
+            print("   ⚠️ Solscan v2.0 requires API key for most endpoints")
             return TestResult(
                 service="solscan",
-                endpoint="/auth_required",
+                endpoint="/v2.0/auth_required",
                 success=False,
                 response_time=response_time,
                 cost_estimate="FREE",
-                error="API key not found in environment. Check SOLSCAN_API_KEY in .env file. Get key from https://solscan.io/"
+                error="API key not found. Get key from https://pro.solscan.io and set SOLSCAN_API_KEY in .env"
             )
         
-        # Test with API key
-        return await self._test_solscan_with_auth(api_key, start_time)
+        # Test with API key using v2.0 endpoints
+        return await self._test_solscan_v2_with_auth(api_key, start_time)
     
-    async def _test_solscan_no_auth(self, start_time: float) -> TestResult:
-        """Test Solscan endpoints that might work without API key"""
+    async def _test_solscan_v2_no_auth(self, start_time: float) -> TestResult:
+        """Test Solscan v2.0 endpoints that might work without API key"""
         
-        # FIXED: Current working public endpoints
+        # v2.0 public endpoints to try
         public_endpoints = [
-            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
-            ("https://public-api.solscan.io/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/token/meta"),
+            ("https://pro-api.solscan.io/v2.0/chaininfo", "/v2.0/chaininfo"),
+            # Note: Most v2.0 endpoints require authentication
         ]
         
         for full_url, endpoint_name in public_endpoints:
@@ -324,56 +303,6 @@ class SafeServiceTester:
                         "User-Agent": "Solana-Token-Analysis/1.0"
                     }
                     
-                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
-                        response_time = time.time() - start_time
-                        
-                        if response.status == 200:
-                            try:
-                                content_type = response.headers.get('content-type', '').lower()
-                                if 'application/json' in content_type:
-                                    data = await response.json()
-                                    print(f"   ✅ Solscan public endpoint {endpoint_name} working ({response_time:.2f}s)")
-                                    return TestResult(
-                                        service="solscan",
-                                        endpoint=endpoint_name,
-                                        success=True,
-                                        response_time=response_time,
-                                        cost_estimate="FREE",
-                                        data_size=len(str(data))
-                                    )
-                            except Exception:
-                                pass
-            except Exception:
-                continue
-        
-        # No public endpoints worked
-        return TestResult(
-            service="solscan",
-            endpoint="/public",
-            success=False,
-            response_time=time.time() - start_time,
-            cost_estimate="FREE",
-            error="No public endpoints available"
-        )
-    
-    async def _test_solscan_with_auth(self, api_key: str, start_time: float) -> TestResult:
-        """Test Solscan with API key authentication"""
-        
-        # FIXED: Current working Solscan API endpoints
-        auth_endpoints = [
-            ("https://public-api.solscan.io/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/token/meta"),
-            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
-        ]
-        
-        for full_url, endpoint_name in auth_endpoints:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    headers = {
-                        "Accept": "application/json",
-                        "User-Agent": "Solana-Token-Analysis/1.0",
-                        "token": api_key  # Solscan uses 'token' header
-                    }
-                    
                     async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as response:
                         response_time = time.time() - start_time
                         
@@ -382,17 +311,90 @@ class SafeServiceTester:
                                 content_type = response.headers.get('content-type', '').lower()
                                 if 'application/json' in content_type:
                                     data = await response.json()
-                                    print(f"   ✅ Solscan auth endpoint {endpoint_name} working ({response_time:.2f}s)")
-                                    return TestResult(
-                                        service="solscan",
-                                        endpoint=endpoint_name,
-                                        success=True,
-                                        response_time=response_time,
-                                        cost_estimate="$0.001",  # Minimal cost for API call
-                                        data_size=len(str(data))
-                                    )
+                                    
+                                    # Check v2.0 API response format
+                                    if isinstance(data, dict) and data.get("success") != False:
+                                        print(f"   ✅ Solscan v2.0 public endpoint {endpoint_name} working ({response_time:.2f}s)")
+                                        return TestResult(
+                                            service="solscan",
+                                            endpoint=endpoint_name,
+                                            success=True,
+                                            response_time=response_time,
+                                            cost_estimate="FREE",
+                                            data_size=len(str(data))
+                                        )
+                            except Exception:
+                                pass
+                        elif response.status == 401:
+                            # Expected for most v2.0 endpoints
+                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} requires authentication")
+                            continue
+            except Exception:
+                continue
+        
+        # No public endpoints worked
+        return TestResult(
+            service="solscan",
+            endpoint="/v2.0/public",
+            success=False,
+            response_time=time.time() - start_time,
+            cost_estimate="FREE",
+            error="v2.0 API requires authentication for most endpoints"
+        )
+    
+    async def _test_solscan_v2_with_auth(self, api_key: str, start_time: float) -> TestResult:
+        """Test Solscan v2.0 with API key authentication (UPDATED)"""
+        
+        # v2.0 API endpoints to test
+        auth_endpoints = [
+            ("https://pro-api.solscan.io/v2.0/chaininfo", "/v2.0/chaininfo"),
+            (f"https://pro-api.solscan.io/v2.0/token/{self.safe_test_tokens[0]}", "/v2.0/token/{token}"),
+            (f"https://pro-api.solscan.io/v2.0/account/{self.safe_test_tokens[0]}", "/v2.0/account/{account}"),
+        ]
+        
+        for full_url, endpoint_name in auth_endpoints:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {
+                        "Accept": "application/json",
+                        "User-Agent": "Solana-Token-Analysis/1.0",
+                        "Authorization": f"Bearer {api_key}"  # v2.0 uses Bearer token
+                    }
+                    
+                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                        response_time = time.time() - start_time
+                        
+                        if response.status == 200:
+                            try:
+                                content_type = response.headers.get('content-type', '').lower()
+                                if 'application/json' in content_type:
+                                    data = await response.json()
+                                    
+                                    # Check v2.0 API response format
+                                    if isinstance(data, dict):
+                                        if data.get("success") == False:
+                                            error_msg = data.get("error", "API returned success: false")
+                                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} API error: {error_msg}")
+                                            return TestResult(
+                                                service="solscan",
+                                                endpoint=endpoint_name,
+                                                success=False,
+                                                response_time=response_time,
+                                                cost_estimate="$0.001",
+                                                error=f"API error: {error_msg}"
+                                            )
+                                        else:
+                                            print(f"   ✅ Solscan v2.0 {endpoint_name} working ({response_time:.2f}s)")
+                                            return TestResult(
+                                                service="solscan",
+                                                endpoint=endpoint_name,
+                                                success=True,
+                                                response_time=response_time,
+                                                cost_estimate="$0.001",  # Minimal cost for v2.0 API call
+                                                data_size=len(str(data))
+                                            )
                             except Exception as parse_error:
-                                print(f"   ⚠️ Solscan {endpoint_name} auth success but parsing failed")
+                                print(f"   ⚠️ Solscan v2.0 {endpoint_name} auth success but parsing failed")
                                 return TestResult(
                                     service="solscan",
                                     endpoint=endpoint_name,
@@ -404,29 +406,29 @@ class SafeServiceTester:
                         
                         elif response.status == 401:
                             error_text = await response.text()
-                            print(f"   ❌ Solscan {endpoint_name} - Invalid API key")
+                            print(f"   ❌ Solscan v2.0 {endpoint_name} - Invalid API key")
                             return TestResult(
                                 service="solscan",
                                 endpoint=endpoint_name,
                                 success=False,
                                 response_time=response_time,
                                 cost_estimate="FREE",
-                                error=f"Invalid API key. Check your Solscan account: {error_text[:100]}"
+                                error=f"Invalid API key. Check your Solscan Pro account: {error_text[:100]}"
                             )
                         
                         elif response.status == 403:
-                            print(f"   ❌ Solscan {endpoint_name} - Access forbidden")
+                            print(f"   ❌ Solscan v2.0 {endpoint_name} - Access forbidden")
                             return TestResult(
                                 service="solscan",
                                 endpoint=endpoint_name,
                                 success=False,
                                 response_time=response_time,
                                 cost_estimate="FREE",
-                                error="Access forbidden. API key might lack permissions"
+                                error="Access forbidden. API key might lack v2.0 permissions"
                             )
                         
                         elif response.status == 429:
-                            print(f"   ⚠️ Solscan {endpoint_name} - Rate limited")
+                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} - Rate limited")
                             return TestResult(
                                 service="solscan",
                                 endpoint=endpoint_name,
@@ -456,15 +458,15 @@ class SafeServiceTester:
         
         # All auth endpoints failed
         response_time = time.time() - start_time
-        print(f"   ❌ All Solscan auth endpoints failed ({response_time:.2f}s)")
+        print(f"   ❌ All Solscan v2.0 auth endpoints failed ({response_time:.2f}s)")
         
         return TestResult(
             service="solscan",
-            endpoint="/auth_endpoints",
+            endpoint="/v2.0/auth_endpoints",
             success=False,
             response_time=response_time,
             cost_estimate="FREE",
-            error="All authenticated endpoints failed. Check API key validity"
+            error="All v2.0 authenticated endpoints failed. Check API key validity and v2.0 access"
         )
     
     async def _test_config_endpoint(self) -> TestResult:
@@ -581,6 +583,13 @@ class SafeServiceTester:
             else:
                 error = health_data.get("error")
             
+            # Special handling for Solscan v2.0
+            if service_name == "solscan" and success:
+                api_version = health_data.get("api_version", "unknown")
+                if api_version == "v2.0":
+                    print(f"   ✅ Solscan v2.0 API confirmed working")
+                    cost_estimate = "$0.001"  # v2.0 API calls have minimal cost
+            
             return TestResult(
                 service=service_name,
                 endpoint="health_check",
@@ -616,7 +625,7 @@ class SafeServiceTester:
         print("  • Birdeye API (Price data)")
         print("  • Chainbase API (Analytics)")
         print("  • Blowfish API (Security)")
-        print("  • Solscan API (On-chain data)")
+        print("  • Solscan v2.0 API (On-chain data) - UPDATED")
         print("  • DataImpulse API (Social sentiment)")
         print("\nRecommendation: Test with ENABLE_API_MOCKS=true first")
         print("="*60)
@@ -640,7 +649,7 @@ class SafeServiceTester:
         health_result = await self.test_system_health()
         all_results.append(health_result)
         
-        # Phase 2: Free APIs
+        # Phase 2: Free APIs (including Solscan v2.0 tests)
         free_results = await self.test_free_apis()
         all_results.extend(free_results)
         
@@ -708,7 +717,7 @@ class SafeServiceTester:
         
         for result in summary['results']:
             status = "✅" if result['success'] else "❌"
-            print(f"{status} {result['service']:12} {result['endpoint']:20} "
+            print(f"{status} {result['service']:12} {result['endpoint']:25} "
                   f"{result['response_time']:6.3f}s {result['cost']:8}")
             
             if result['error']:
@@ -739,16 +748,23 @@ class SafeServiceTester:
         
         # Service-specific recommendations
         solscan_results = [r for r in summary['results'] if r['service'] == 'solscan']
-        if solscan_results and not solscan_results[0]['success']:
-            print("   • Solscan: Consider getting an API key for higher rate limits")
+        if solscan_results:
+            solscan_result = solscan_results[0]
+            if not solscan_result['success']:
+                if 'v2.0' in str(solscan_result.get('error', '')):
+                    print("   • Solscan: Upgrade to Pro API for v2.0 access at https://pro.solscan.io")
+                else:
+                    print("   • Solscan: Consider getting a Pro API key for v2.0 features")
+            else:
+                print("   • Solscan v2.0 API working - enhanced features available")
         
         print("="*80)
 
 async def main():
-    """Main testing function"""
+    """Main testing function with v2.0 API support"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Safe Service Tester")
+    parser = argparse.ArgumentParser(description="Safe Service Tester with Solscan v2.0 Support")
     parser.add_argument("--mode", choices=['mock', 'free', 'limited', 'full'], 
                        default='mock', help="Testing mode")
     parser.add_argument("--url", default="http://localhost:8000", 
