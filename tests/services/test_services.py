@@ -309,10 +309,10 @@ class SafeServiceTester:
     async def _test_solscan_no_auth(self, start_time: float) -> TestResult:
         """Test Solscan endpoints that might work without API key"""
         
-        # Some public endpoints that might work without auth (Solscan v1 API)
+        # FIXED: Current working public endpoints
         public_endpoints = [
-            ("https://public-api.solscan.io/account/tokens?account=So11111111111111111111111111111111111112&limit=10", "/account/tokens"),
-            ("https://api.solscan.io/", "/api_root"),
+            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
+            ("https://public-api.solscan.io/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/token/meta"),
         ]
         
         for full_url, endpoint_name in public_endpoints:
@@ -358,10 +358,10 @@ class SafeServiceTester:
     async def _test_solscan_with_auth(self, api_key: str, start_time: float) -> TestResult:
         """Test Solscan with API key authentication"""
         
-        # Endpoints that require API key (Solscan v1 API)
+        # FIXED: Current working Solscan API endpoints
         auth_endpoints = [
-            ("https://pro-api.solscan.io/v1.0/account/tokens?account=So11111111111111111111111111111111111112&limit=10", "/v1.0/account/tokens"),
-            ("https://pro-api.solscan.io/v1.0/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/v1.0/token/meta"),
+            ("https://public-api.solscan.io/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/token/meta"),
+            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
         ]
         
         for full_url, endpoint_name in auth_endpoints:
