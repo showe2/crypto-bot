@@ -238,6 +238,7 @@ class SafeServiceTester:
                 error=str(e)
             )
     
+    #TODO: Add API V2 endpoints
     async def _test_solscan_free(self) -> TestResult:
         """Test Solscan API (handles API key requirement)"""
         print("   📊 Testing Solscan API...")

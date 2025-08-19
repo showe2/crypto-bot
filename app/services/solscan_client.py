@@ -1,4 +1,4 @@
-# Replace the content of app/services/solscan_client.py with this:
+# Updated app/services/solscan_client.py with latest v2.0 API endpoints
 
 import asyncio
 import aiohttp
@@ -19,11 +19,11 @@ class SolscanAPIError(Exception):
 
 
 class SolscanClient:
-    """Solscan API client - Updated with correct endpoints"""
+    """Solscan API client - Updated with v2.0 endpoints"""
     
     def __init__(self):
         self.api_key = settings.SOLSCAN_API_KEY
-        self.base_url = settings.SOLSCAN_BASE_URL
+        self.base_url = "https://pro-api.solscan.io"  # Updated to pro-api
         self.session = None
         self._rate_limit_delay = 0.2  # 200ms between requests
         self._last_request_time = 0
@@ -74,9 +74,9 @@ class SolscanClient:
             **kwargs.pop("headers", {})
         }
         
-        # Add API key if available - Solscan uses 'token' header
+        # Add API key if available - Solscan v2.0 uses Authorization header
         if self.api_key:
-            headers["token"] = self.api_key
+            headers["Authorization"] = f"Bearer {self.api_key}"
         
         try:
             async with self.session.request(method, url, headers=headers, **kwargs) as response:
@@ -101,7 +101,9 @@ class SolscanClient:
                     # Retry once
                     return await self._request(method, endpoint, **kwargs)
                 elif response.status == 401:
-                    raise SolscanAPIError("Invalid Solscan API key")
+                    raise SolscanAPIError("Invalid Solscan API key or unauthorized access")
+                elif response.status == 403:
+                    raise SolscanAPIError("Forbidden - check API key permissions")
                 elif response.status == 404:
                     # Endpoint not found
                     raise SolscanAPIError(f"Solscan endpoint not found: {endpoint}")
@@ -117,20 +119,68 @@ class SolscanClient:
         except aiohttp.ClientError as e:
             raise SolscanAPIError(f"Solscan client error: {str(e)}")
     
-    async def get_token_info(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token information - FIXED ENDPOINT"""
+    async def get_account_detail(self, account_address: str) -> Dict[str, Any]:
+        """Get account details using v2.0 API - UPDATED ENDPOINT"""
         try:
-            # Use correct Solscan token endpoint
-            endpoint = f"/token/meta?tokenAddress={token_address}"
+            # v2.0 endpoint: /v2.0/account/{account}
+            endpoint = f"/v2.0/account/{account_address}"
             
             response = await self._request("GET", endpoint)
             
             if not response:
-                raise SolscanAPIError("No data returned from token/meta endpoint")
+                raise SolscanAPIError("No data returned from account detail endpoint")
             
-            # Handle both success and data structures
+            # Handle v2.0 response structure
             if isinstance(response, dict):
-                # Direct data or wrapped in 'data' field
+                # Check for success field in v2.0 API
+                if response.get("success") == False:
+                    error_msg = response.get("error", "Unknown API error")
+                    raise SolscanAPIError(f"API error: {error_msg}")
+                
+                # Extract data from v2.0 response
+                data = response.get("data", response)
+                
+                account_info = {
+                    "address": account_address,
+                    "lamports": data.get("lamports"),
+                    "owner": data.get("owner"),
+                    "executable": data.get("executable", False),
+                    "rent_epoch": data.get("rentEpoch"),
+                    "space": data.get("space"),
+                    "account_type": data.get("type"),
+                    "balance_sol": float(data.get("lamports", 0)) / 1e9 if data.get("lamports") else 0,
+                    # v2.0 specific fields
+                    "account_data": data.get("data"),
+                    "parsed_data": data.get("parsedData")
+                }
+                
+                return account_info
+            else:
+                raise SolscanAPIError("Unexpected response format")
+            
+        except SolscanAPIError:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting account detail from Solscan for {account_address}: {str(e)}")
+            raise SolscanAPIError(f"Failed to get account detail: {str(e)}")
+    
+    async def get_token_info(self, token_address: str) -> Dict[str, Any]:
+        """Get token information using v2.0 API - UPDATED ENDPOINT"""
+        try:
+            # v2.0 endpoint: /v2.0/token/{token}
+            endpoint = f"/v2.0/token/{token_address}"
+            
+            response = await self._request("GET", endpoint)
+            
+            if not response:
+                raise SolscanAPIError("No data returned from token info endpoint")
+            
+            # Handle v2.0 response structure
+            if isinstance(response, dict):
+                if response.get("success") == False:
+                    error_msg = response.get("error", "Unknown API error")
+                    raise SolscanAPIError(f"API error: {error_msg}")
+                
                 data = response.get("data", response)
                 
                 token_info = {
@@ -142,13 +192,21 @@ class SolscanClient:
                     "icon": data.get("icon"),
                     "website": data.get("website"),
                     "twitter": data.get("twitter"),
+                    "discord": data.get("discord"),
+                    "telegram": data.get("telegram"),
+                    # Market data from v2.0 API
                     "price": data.get("price"),
-                    "volume_24h": data.get("volume24h") or data.get("volume_24h"),
-                    "market_cap": data.get("marketCap") or data.get("market_cap"),
-                    "price_change_24h": data.get("priceChange24h") or data.get("price_change_24h"),
-                    "holder_count": data.get("holderCount") or data.get("holder_count"),
-                    "created_time": data.get("createdTime") or data.get("created_time"),
-                    "updated_time": data.get("updatedTime") or data.get("updated_time")
+                    "price_change_24h": data.get("priceChange24h"),
+                    "volume_24h": data.get("volume24h"),
+                    "market_cap": data.get("marketCap"),
+                    "holder_count": data.get("holderCount"),
+                    "created_time": data.get("createdTime"),
+                    "updated_time": data.get("updatedTime"),
+                    # v2.0 specific fields
+                    "mint_authority": data.get("mintAuthority"),
+                    "freeze_authority": data.get("freezeAuthority"),
+                    "is_initialized": data.get("isInitialized"),
+                    "tags": data.get("tags", [])
                 }
                 
                 return token_info
@@ -161,42 +219,63 @@ class SolscanClient:
             logger.error(f"Error getting token info from Solscan for {token_address}: {str(e)}")
             raise SolscanAPIError(f"Failed to get token info: {str(e)}")
     
-    async def get_token_holders(self, token_address: str, limit: int = 100) -> Dict[str, Any]:
-        """Get token holders list - FIXED ENDPOINT"""
+    async def get_token_holders(self, token_address: str, limit: int = 100, offset: int = 0) -> Dict[str, Any]:
+        """Get token holders using v2.0 API - UPDATED ENDPOINT"""
         try:
-            # Use correct endpoint structure
-            endpoint = f"/token/holders?tokenAddress={token_address}&offset=0&limit={min(limit, 1000)}"
+            # v2.0 endpoint: /v2.0/token/{token}/holders
+            endpoint = f"/v2.0/token/{token_address}/holders"
+            params = {
+                "limit": min(limit, 1000),
+                "offset": offset
+            }
             
-            response = await self._request("GET", endpoint)
+            response = await self._request("GET", endpoint, params=params)
             
             if not response:
-                raise SolscanAPIError("No data returned from token/holders endpoint")
+                raise SolscanAPIError("No data returned from token holders endpoint")
             
-            # Handle response structure
-            data = response.get("data", response) if isinstance(response, dict) else response
-            
-            holders = []
-            
-            # Handle different response formats
-            holder_list = data if isinstance(data, list) else data.get("data", [])
-            
-            for holder in holder_list:
-                holder_info = {
-                    "address": holder.get("address"),
-                    "amount": holder.get("amount"),
-                    "decimals": holder.get("decimals"),
-                    "owner": holder.get("owner"),
-                    "rank": holder.get("rank"),
-                    "percentage": holder.get("percentage")
+            # Handle v2.0 response structure
+            if isinstance(response, dict):
+                if response.get("success") == False:
+                    error_msg = response.get("error", "Unknown API error")
+                    raise SolscanAPIError(f"API error: {error_msg}")
+                
+                data = response.get("data", response)
+                
+                holders = []
+                holder_list = data.get("holders", data) if isinstance(data, dict) else data
+                
+                if isinstance(holder_list, list):
+                    for holder in holder_list:
+                        holder_info = {
+                            "address": holder.get("address"),
+                            "amount": holder.get("amount"),
+                            "decimals": holder.get("decimals"),
+                            "owner": holder.get("owner"),
+                            "rank": holder.get("rank"),
+                            "percentage": holder.get("percentage"),
+                            # v2.0 specific fields
+                            "ui_amount": holder.get("uiAmount"),
+                            "ui_amount_string": holder.get("uiAmountString")
+                        }
+                        holders.append(holder_info)
+                
+                # Extract pagination info from v2.0 response
+                pagination = data.get("pagination", {})
+                total_count = pagination.get("total", len(holders))
+                
+                return {
+                    "holders": holders,
+                    "total": total_count,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total_count,
+                        "has_next": offset + len(holders) < total_count
+                    }
                 }
-                holders.append(holder_info)
-            
-            total_count = data.get("total", len(holders)) if isinstance(data, dict) else len(holders)
-            
-            return {
-                "holders": holders,
-                "total": total_count
-            }
+            else:
+                raise SolscanAPIError("Unexpected response format")
             
         except SolscanAPIError:
             raise
@@ -204,38 +283,57 @@ class SolscanClient:
             logger.error(f"Error getting token holders from Solscan for {token_address}: {str(e)}")
             raise SolscanAPIError(f"Failed to get token holders: {str(e)}")
     
-    async def search_tokens(self, keyword: str) -> List[Dict[str, Any]]:
-        """Search for tokens by name or symbol - FIXED ENDPOINT"""
+    async def search_tokens(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Search for tokens using v2.0 API - UPDATED ENDPOINT"""
         try:
-            # Use current search endpoint
-            endpoint = f"/token/search?keyword={keyword}"
+            # v2.0 endpoint: /v2.0/token/search
+            endpoint = "/v2.0/token/search"
+            params = {
+                "keyword": keyword,
+                "limit": min(limit, 100)
+            }
             
-            response = await self._request("GET", endpoint)
+            response = await self._request("GET", endpoint, params=params)
             
             if not response:
                 return []
             
-            # Handle response structure
-            data = response.get("data", response) if isinstance(response, dict) else response
-            token_list = data if isinstance(data, list) else data.get("data", [])
-            
-            tokens = []
-            for token in token_list:
-                token_info = {
-                    "address": token.get("address"),
-                    "name": token.get("name"),
-                    "symbol": token.get("symbol"),
-                    "decimals": token.get("decimals"),
-                    "icon": token.get("icon"),
-                    "price": token.get("price"),
-                    "volume_24h": token.get("volume24h") or token.get("volume_24h"),
-                    "market_cap": token.get("marketCap") or token.get("market_cap"),
-                    "holder_count": token.get("holderCount") or token.get("holder_count"),
-                    "verified": token.get("verified", False)
-                }
-                tokens.append(token_info)
-            
-            return tokens
+            # Handle v2.0 response structure
+            if isinstance(response, dict):
+                if response.get("success") == False:
+                    error_msg = response.get("error", "Unknown API error")
+                    logger.warning(f"Token search API error: {error_msg}")
+                    return []
+                
+                data = response.get("data", response)
+                token_list = data.get("tokens", data) if isinstance(data, dict) else data
+                
+                if not isinstance(token_list, list):
+                    return []
+                
+                tokens = []
+                for token in token_list:
+                    token_info = {
+                        "address": token.get("address"),
+                        "name": token.get("name"),
+                        "symbol": token.get("symbol"),
+                        "decimals": token.get("decimals"),
+                        "icon": token.get("icon"),
+                        "price": token.get("price"),
+                        "volume_24h": token.get("volume24h"),
+                        "market_cap": token.get("marketCap"),
+                        "holder_count": token.get("holderCount"),
+                        "verified": token.get("verified", False),
+                        # v2.0 specific fields
+                        "supply": token.get("supply"),
+                        "tags": token.get("tags", []),
+                        "created_time": token.get("createdTime")
+                    }
+                    tokens.append(token_info)
+                
+                return tokens
+            else:
+                return []
             
         except SolscanAPIError:
             raise
@@ -244,10 +342,10 @@ class SolscanClient:
             raise SolscanAPIError(f"Failed to search tokens: {str(e)}")
     
     async def get_network_stats(self) -> Dict[str, Any]:
-        """Get Solana network statistics - FIXED ENDPOINT"""
+        """Get Solana network statistics using v2.0 API - UPDATED ENDPOINT"""
         try:
-            # Use the correct current endpoint for chain info
-            endpoint = "/chaininfo"
+            # v2.0 endpoint: /v2.0/chaininfo
+            endpoint = "/v2.0/chaininfo"
             
             logger.debug(f"Solscan network stats: trying {endpoint}")
             response = await self._request("GET", endpoint)
@@ -255,34 +353,44 @@ class SolscanClient:
             if response:
                 logger.info(f"✅ Solscan {endpoint} successful")
                 
-                # Extract network stats from response
-                network_stats = {
-                    "endpoint_used": endpoint,
-                    "response_keys": list(response.keys()) if isinstance(response, dict) else [],
-                    "data_available": True
-                }
-                
-                # Handle response structure (may be wrapped in 'data' or direct)
-                data = response.get("data", response) if isinstance(response, dict) else response
-                
-                # Try to extract common network information with multiple field name variations
-                field_mappings = {
-                    "current_slot": ["currentSlot", "current_slot", "slot", "latestSlot"],
-                    "current_epoch": ["currentEpoch", "current_epoch", "epoch", "latestEpoch"], 
-                    "total_validators": ["totalValidators", "total_validators", "validators", "validatorCount"],
-                    "total_stake": ["totalStake", "total_stake", "stake", "totalStakeAmount"],
-                    "circulating_supply": ["circulatingSupply", "circulating_supply", "supply", "totalSupply"]
-                }
-                
-                for standard_key, possible_fields in field_mappings.items():
-                    for field in possible_fields:
-                        if field in data:
-                            network_stats[standard_key] = data[field]
-                            break
-                
-                return network_stats
+                # Handle v2.0 response structure
+                if isinstance(response, dict):
+                    if response.get("success") == False:
+                        error_msg = response.get("error", "Unknown API error")
+                        raise SolscanAPIError(f"API error: {error_msg}")
+                    
+                    data = response.get("data", response)
+                    
+                    network_stats = {
+                        "endpoint_used": endpoint,
+                        "response_keys": list(data.keys()) if isinstance(data, dict) else [],
+                        "data_available": True
+                    }
+                    
+                    # Extract v2.0 network information
+                    field_mappings = {
+                        "current_slot": ["currentSlot", "slot", "latestSlot"],
+                        "current_epoch": ["currentEpoch", "epoch", "latestEpoch"],
+                        "total_validators": ["totalValidators", "validators", "validatorCount"],
+                        "total_stake": ["totalStake", "stake", "totalStakeAmount"],
+                        "circulating_supply": ["circulatingSupply", "supply", "totalSupply"],
+                        # v2.0 specific fields
+                        "network_time": ["networkTime", "blockTime"],
+                        "cluster": ["cluster"],
+                        "version": ["version", "solanaVersion"]
+                    }
+                    
+                    for standard_key, possible_fields in field_mappings.items():
+                        for field in possible_fields:
+                            if field in data:
+                                network_stats[standard_key] = data[field]
+                                break
+                    
+                    return network_stats
+                else:
+                    raise SolscanAPIError("Unexpected response format")
             else:
-                raise SolscanAPIError("Empty response from /chaininfo endpoint")
+                raise SolscanAPIError("Empty response from chaininfo endpoint")
                 
         except SolscanAPIError:
             raise
@@ -290,10 +398,74 @@ class SolscanClient:
             logger.error(f"Error getting network stats from Solscan: {str(e)}")
             raise SolscanAPIError(f"Failed to get network stats: {str(e)}")
     
-    async def get_market_data(self, token_address: str) -> Dict[str, Any]:
-        """Get market data for a token"""
+    async def get_token_transfers(self, token_address: str, limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """Get token transfers using v2.0 API - NEW ENDPOINT"""
         try:
-            # Use get_token_info which includes market data
+            # v2.0 endpoint: /v2.0/token/{token}/transfers
+            endpoint = f"/v2.0/token/{token_address}/transfers"
+            params = {
+                "limit": min(limit, 100),
+                "offset": offset
+            }
+            
+            response = await self._request("GET", endpoint, params=params)
+            
+            if not response:
+                return {"transfers": [], "total": 0}
+            
+            # Handle v2.0 response structure
+            if isinstance(response, dict):
+                if response.get("success") == False:
+                    error_msg = response.get("error", "Unknown API error")
+                    raise SolscanAPIError(f"API error: {error_msg}")
+                
+                data = response.get("data", response)
+                
+                transfers = []
+                transfer_list = data.get("transfers", data) if isinstance(data, dict) else data
+                
+                if isinstance(transfer_list, list):
+                    for transfer in transfer_list:
+                        transfer_info = {
+                            "signature": transfer.get("signature"),
+                            "block_time": transfer.get("blockTime"),
+                            "slot": transfer.get("slot"),
+                            "from_address": transfer.get("fromAddress"),
+                            "to_address": transfer.get("toAddress"),
+                            "amount": transfer.get("amount"),
+                            "decimals": transfer.get("decimals"),
+                            "ui_amount": transfer.get("uiAmount"),
+                            "status": transfer.get("status"),
+                            "fee": transfer.get("fee")
+                        }
+                        transfers.append(transfer_info)
+                
+                pagination = data.get("pagination", {})
+                total_count = pagination.get("total", len(transfers))
+                
+                return {
+                    "transfers": transfers,
+                    "total": total_count,
+                    "pagination": {
+                        "limit": limit,
+                        "offset": offset,
+                        "total": total_count,
+                        "has_next": offset + len(transfers) < total_count
+                    }
+                }
+            else:
+                return {"transfers": [], "total": 0}
+            
+        except SolscanAPIError:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting token transfers from Solscan for {token_address}: {str(e)}")
+            raise SolscanAPIError(f"Failed to get token transfers: {str(e)}")
+    
+    async def get_market_data(self, token_address: str) -> Dict[str, Any]:
+        """Get market data for a token using v2.0 API"""
+        try:
+            # Use get_token_info which includes market data in v2.0
             token_info = await self.get_token_info(token_address)
             
             if token_info:
@@ -303,7 +475,8 @@ class SolscanClient:
                     "market_cap": token_info.get("market_cap"),
                     "price_change_24h": token_info.get("price_change_24h"),
                     "holder_count": token_info.get("holder_count"),
-                    "source": "solscan"
+                    "supply": token_info.get("supply"),
+                    "source": "solscan_v2"
                 }
             else:
                 raise SolscanAPIError("No token info available for market data")
@@ -315,7 +488,7 @@ class SolscanClient:
             raise SolscanAPIError(f"Failed to get market data: {str(e)}")
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check Solscan API health - ONLY test /chaininfo endpoint"""
+        """Check Solscan API health using v2.0 endpoints"""
         try:
             start_time = time.time()
             
@@ -326,33 +499,49 @@ class SolscanClient:
                     "error": "Solscan API key not configured. Set SOLSCAN_API_KEY in .env file",
                     "base_url": self.base_url,
                     "response_time": 0.0,
-                    "recommendation": "Get API key from https://solscan.io or use free tier"
+                    "recommendation": "Get API key from https://pro.solscan.io"
                 }
             
-            # Test the /chaininfo endpoint which should work
-            logger.debug("Solscan health check: testing /chaininfo endpoint")
-            network_stats = await self.get_network_stats()
-            response_time = time.time() - start_time
+            # Test the v2.0 chaininfo endpoint
+            logger.debug("Solscan health check: testing v2.0 /v2.0/chaininfo endpoint")
             
-            return {
-                "healthy": True,
-                "api_key_configured": True,
-                "base_url": self.base_url,
-                "response_time": response_time,
-                "test_data": network_stats,
-                "working_endpoint": "/chaininfo"
-            }
+            try:
+                network_stats = await self.get_network_stats()
+                response_time = time.time() - start_time
                 
-        except SolscanAPIError as e:
-            response_time = time.time() - start_time
-            return {
-                "healthy": False,
-                "api_key_configured": True,
-                "error": f"/chaininfo endpoint failed: {str(e)}",
-                "base_url": self.base_url,
-                "response_time": response_time,
-                "tested_endpoint": "/chaininfo"
-            }
+                return {
+                    "healthy": True,
+                    "api_key_configured": True,
+                    "base_url": self.base_url,
+                    "response_time": response_time,
+                    "test_data": network_stats,
+                    "working_endpoint": "/v2.0/chaininfo",
+                    "api_version": "v2.0"
+                }
+                
+            except SolscanAPIError as e:
+                response_time = time.time() - start_time
+                error_msg = str(e)
+                
+                if "unauthorized" in error_msg.lower() or "forbidden" in error_msg.lower():
+                    return {
+                        "healthy": False,
+                        "api_key_configured": True,
+                        "error": f"Authentication failed: {error_msg}",
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "recommendation": "Check API key validity at https://pro.solscan.io"
+                    }
+                else:
+                    return {
+                        "healthy": False,
+                        "api_key_configured": True,
+                        "error": f"API endpoint failed: {error_msg}",
+                        "base_url": self.base_url,
+                        "response_time": response_time,
+                        "tested_endpoint": "/v2.0/chaininfo"
+                    }
+                
         except Exception as e:
             response_time = time.time() - start_time
             return {
