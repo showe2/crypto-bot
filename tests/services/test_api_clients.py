@@ -213,7 +213,7 @@ class TestSolscanClient:
         assert client is not None
         assert hasattr(client, 'api_key')
         assert hasattr(client, 'base_url')
-        assert client.base_url == "https://public-api.solscan.io"
+        assert client.base_url == "https://pro-api.solscan.io"
     
     @pytest.mark.asyncio
     async def test_solscan_health_check_mock(self):
@@ -265,7 +265,7 @@ class TestSolscanClient:
         
         # Should have base URL
         assert "base_url" in result
-        assert result["base_url"] == "https://public-api.solscan.io"
+        assert result["base_url"] == "https://pro-api.solscan.io"
     
     @pytest.mark.real_api
     @pytest.mark.solscan
@@ -335,6 +335,147 @@ class TestDataImpulseClient:
 
 
 @pytest.mark.services
+class TestGOplusClient:
+    """Tests for GOplus API client - NEW"""
+    
+    @pytest.mark.asyncio
+    async def test_goplus_client_creation(self):
+        """Test GOplus client can be created"""
+        from app.services.goplus_client import GOplusClient
+        
+        client = GOplusClient()
+        assert client is not None
+        assert hasattr(client, 'transaction_api_key')
+        assert hasattr(client, 'rugpull_api_key')
+        assert hasattr(client, 'security_api_key')
+        assert hasattr(client, 'base_url')
+        assert client.base_url == "https://api.gopluslabs.io"
+    
+    @pytest.mark.asyncio
+    async def test_goplus_health_check_mock(self):
+        """Test GOplus health check with mock"""
+        from app.services.goplus_client import check_goplus_health
+        
+        with patch('app.services.goplus_client.GOplusClient') as MockClient:
+            mock_instance = AsyncMock()
+            mock_instance.health_check.return_value = {
+                "healthy": True,
+                "services": {
+                    "transaction_simulation": {"configured": True, "healthy": True},
+                    "rugpull_detection": {"configured": False, "healthy": False},
+                    "token_security": {"configured": True, "healthy": True}
+                },
+                "summary": {
+                    "configured_services": 2,
+                    "healthy_services": 2,
+                    "total_services": 3
+                }
+            }
+            MockClient.return_value.__aenter__.return_value = mock_instance
+            
+            result = await check_goplus_health()
+            
+            assert result["healthy"] == True
+            assert "services" in result
+            assert "summary" in result
+    
+    @pytest.mark.asyncio
+    async def test_goplus_client_methods(self):
+        """Test GOplus client method existence"""
+        from app.services.goplus_client import GOplusClient
+        
+        client = GOplusClient()
+        
+        # Check that required methods exist
+        assert hasattr(client, 'simulate_transaction')
+        assert hasattr(client, 'detect_rugpull')
+        assert hasattr(client, 'analyze_token_security')
+        assert hasattr(client, 'comprehensive_analysis')
+        assert hasattr(client, 'health_check')
+    
+    @pytest.mark.asyncio
+    async def test_goplus_api_key_logging(self):
+        """Test GOplus API key status logging"""
+        from app.services.goplus_client import GOplusClient
+        
+        client = GOplusClient()
+        
+        # Should have logged API key status during initialization
+        # Check that the method exists and doesn't crash
+        assert hasattr(client, '_log_api_key_status')
+        
+        # Test the method directly (should not crash)
+        try:
+            client._log_api_key_status()
+        except Exception as e:
+            pytest.fail(f"_log_api_key_status should not raise exceptions: {e}")
+    
+    @pytest.mark.real_api
+    @pytest.mark.goplus
+    @pytest.mark.asyncio
+    async def test_goplus_real_health_check(self):
+        """Test real GOplus health check"""
+        from app.services.goplus_client import check_goplus_health
+        
+        result = await check_goplus_health()
+        
+        assert isinstance(result, dict)
+        assert "healthy" in result
+        assert "services" in result
+        
+        # Should have base URL
+        assert "base_url" in result
+        assert result["base_url"] == "https://api.gopluslabs.io"
+        
+        # Check services structure
+        services = result.get("services", {})
+        expected_services = ["transaction_simulation", "rugpull_detection", "token_security"]
+        
+        for service in expected_services:
+            if service in services:
+                service_info = services[service]
+                assert isinstance(service_info, dict)
+                assert "configured" in service_info
+                assert "healthy" in service_info
+    
+    @pytest.mark.real_api
+    @pytest.mark.goplus
+    @pytest.mark.asyncio
+    async def test_goplus_comprehensive_analysis_mock(self):
+        """Test GOplus comprehensive analysis with mock"""
+        from app.services.goplus_client import GOplusClient
+        
+        with patch.object(GOplusClient, 'analyze_token_security') as mock_security, \
+             patch.object(GOplusClient, 'detect_rugpull') as mock_rugpull:
+            
+            # Mock security analysis
+            mock_security.return_value = {
+                "token_address": "So11111111111111111111111111111111111112",
+                "security_score": 85,
+                "risk_level": "low",
+                "is_malicious": False
+            }
+            
+            # Mock rugpull detection
+            mock_rugpull.return_value = {
+                "token_address": "So11111111111111111111111111111111111112",
+                "rugpull_risk": "low",
+                "risk_score": 15
+            }
+            
+            client = GOplusClient()
+            
+            # Test comprehensive analysis
+            result = await client.comprehensive_analysis("So11111111111111111111111111111111111112")
+            
+            assert isinstance(result, dict)
+            assert "token_address" in result
+            assert "services_used" in result
+            assert "analyses" in result
+            assert "overall_assessment" in result
+
+
+@pytest.mark.services
 class TestServiceManager:
     """Tests for Service Manager that coordinates all API clients"""
     
@@ -348,14 +489,14 @@ class TestServiceManager:
         assert hasattr(manager, 'clients')
         assert isinstance(manager.clients, dict)
         
-        # Check that all expected services are in the client list
-        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan"]
+        # Check that all expected services are in the client list (including GOplus)
+        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan", "goplus"]
         for service in expected_services:
             assert service in manager.clients
     
     @pytest.mark.asyncio
     async def test_service_health_check_all(self):
-        """Test checking health of all services"""
+        """Test checking health of all services including GOplus"""
         from app.services.service_manager import get_api_health_status
         
         health = await get_api_health_status()
@@ -365,26 +506,25 @@ class TestServiceManager:
         assert "overall_healthy" in health
         assert "summary" in health
         
-        # Check that Solscan is included
+        # Check that GOplus is included
         services = health.get("services", {})
-        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan"]
+        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan", "goplus"]
         
         # At least some services should be present
         assert len(services) > 0
         
-        # Solscan should be included
-        # Note: This might not always be present if the service manager doesn't include it yet
-        if "solscan" in services:
-            solscan_health = services["solscan"]
-            assert isinstance(solscan_health, dict)
-            assert "healthy" in solscan_health
+        # GOplus should be included
+        if "goplus" in services:
+            goplus_health = services["goplus"]
+            assert isinstance(goplus_health, dict)
+            assert "healthy" in goplus_health
     
     @pytest.mark.asyncio
     async def test_service_manager_with_mocks(self):
-        """Test service manager with mocked clients"""
+        """Test service manager with mocked clients including GOplus"""
         from app.services.service_manager import APIManager
         
-        # Mock all client health checks including Solscan
+        # Mock all client health checks including GOplus
         with patch.multiple(
             'app.services.service_manager',
             check_helius_health=AsyncMock(return_value={"healthy": True}),
@@ -392,7 +532,8 @@ class TestServiceManager:
             check_chainbase_health=AsyncMock(return_value={"healthy": False}),
             check_blowfish_health=AsyncMock(return_value={"healthy": True}),
             check_solscan_health=AsyncMock(return_value={"healthy": True}),
-            check_dataimpulse_health=AsyncMock(return_value={"healthy": False})
+            check_dataimpulse_health=AsyncMock(return_value={"healthy": False}),
+            check_goplus_health=AsyncMock(return_value={"healthy": True, "services": {"transaction_simulation": {"configured": True, "healthy": True}}})
         ):
             manager = APIManager()
             health = await manager.check_all_services_health()
@@ -400,23 +541,51 @@ class TestServiceManager:
             assert "services" in health
             assert len(health["services"]) > 0
             
-            # Should have results for all services
-            expected_services = ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse"]
+            # Should have results for all services including GOplus
+            expected_services = ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse", "goplus"]
             for service in expected_services:
                 if service in health["services"]:
                     service_health = health["services"][service]
                     assert isinstance(service_health, dict)
                     assert "healthy" in service_health
+    
+    @pytest.mark.asyncio
+    async def test_goplus_integration_in_service_manager(self):
+        """Test GOplus integration in service manager"""
+        from app.services.service_manager import APIManager
+        
+        manager = APIManager()
+        
+        # Test that GOplus methods are available
+        assert hasattr(manager, 'get_goplus_analysis')
+        assert hasattr(manager, 'simulate_transaction_goplus')
+        assert hasattr(manager, 'detect_rugpull_goplus')
+        
+        # Test with mocked GOplus client
+        with patch('app.services.service_manager.api_manager.clients') as mock_clients:
+            mock_goplus_client = AsyncMock()
+            mock_goplus_client.comprehensive_analysis.return_value = {
+                "token_address": "So11111111111111111111111111111111111112",
+                "overall_assessment": {"risk_score": 25, "risk_level": "low"}
+            }
+            mock_clients = {"goplus": mock_goplus_client}
+            manager.clients = mock_clients
+            
+            # Test GOplus analysis
+            result = await manager.get_goplus_analysis("So11111111111111111111111111111111111112")
+            
+            assert isinstance(result, dict)
+            assert "token_address" in result
 
 
 @pytest.mark.services
 @pytest.mark.slow
 class TestServiceIntegration:
-    """Integration tests for service interactions"""
+    """Integration tests for service interactions including GOplus"""
     
     @pytest.mark.asyncio
     async def test_service_client_lifecycle(self):
-        """Test service client initialization and cleanup"""
+        """Test service client initialization and cleanup including GOplus"""
         from app.services.service_manager import initialize_api_services, cleanup_api_services
         
         # Should not raise exceptions
@@ -429,17 +598,18 @@ class TestServiceIntegration:
     
     @pytest.mark.asyncio 
     async def test_concurrent_service_calls(self):
-        """Test concurrent calls to multiple services"""
+        """Test concurrent calls to multiple services including GOplus"""
         from app.services.service_manager import api_manager
         
-        # Test concurrent health checks for all services
+        # Test concurrent health checks for all services including GOplus
         service_health_checks = [
             ("helius", "app.services.helius_client.check_helius_health"),
             ("birdeye", "app.services.birdeye_client.check_birdeye_health"),
             ("chainbase", "app.services.chainbase_client.check_chainbase_health"),
             ("blowfish", "app.services.blowfish_client.check_blowfish_health"),
             ("solscan", "app.services.solscan_client.check_solscan_health"),
-            ("dataimpulse", "app.services.dataimpulse_client.check_dataimpulse_health")
+            ("dataimpulse", "app.services.dataimpulse_client.check_dataimpulse_health"),
+            ("goplus", "app.services.goplus_client.check_goplus_health")
         ]
         
         tasks = []
@@ -469,13 +639,13 @@ class TestServiceIntegration:
     
     @pytest.mark.asyncio
     async def test_all_services_represented(self):
-        """Test that all services are properly represented in the system"""
+        """Test that all services are properly represented in the system including GOplus"""
         from app.services.service_manager import APIManager
         
         manager = APIManager()
         
-        # All expected services should be in the clients dict
-        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan"]
+        # All expected services should be in the clients dict (including GOplus)
+        expected_services = ["helius", "chainbase", "birdeye", "blowfish", "dataimpulse", "solscan", "goplus"]
         
         for service in expected_services:
             assert service in manager.clients, f"Service {service} should be in APIManager.clients"
@@ -485,17 +655,107 @@ class TestServiceIntegration:
         services_checked = health.get("services", {})
         
         # At least the major services should be checked
-        key_services = ["helius", "birdeye", "solscan"]
+        key_services = ["helius", "birdeye", "solscan", "goplus"]
         for service in key_services:
             if service not in services_checked:
                 print(f"Warning: {service} not included in health check")
 
 
-# Pytest markers for service testing
+@pytest.mark.services
+class TestGOplusSpecificFeatures:
+    """Tests for GOplus-specific features"""
+    
+    @pytest.mark.asyncio
+    async def test_goplus_multiple_api_keys(self):
+        """Test GOplus multiple API key handling"""
+        from app.services.goplus_client import GOplusClient
+        
+        client = GOplusClient()
+        
+        # Should have all three API key attributes
+        assert hasattr(client, 'transaction_api_key')
+        assert hasattr(client, 'rugpull_api_key')
+        assert hasattr(client, 'security_api_key')
+        
+        # Should have API key status logging
+        assert hasattr(client, '_log_api_key_status')
+    
+    @pytest.mark.asyncio
+    async def test_goplus_service_specific_methods(self):
+        """Test GOplus service-specific methods"""
+        from app.services.goplus_client import GOplusClient
+        
+        client = GOplusClient()
+        
+        # Transaction simulation methods
+        assert hasattr(client, 'simulate_transaction')
+        assert hasattr(client, 'validate_transaction')
+        
+        # Rugpull detection methods
+        assert hasattr(client, 'detect_rugpull')
+        assert hasattr(client, 'get_rugpull_history')
+        
+        # Token security methods
+        assert hasattr(client, 'analyze_token_security')
+        assert hasattr(client, 'get_supported_chains')
+    
+    @pytest.mark.asyncio
+    async def test_goplus_comprehensive_analysis_structure(self):
+        """Test GOplus comprehensive analysis structure"""
+        from app.services.goplus_client import GOplusClient
+        
+        with patch.object(GOplusClient, 'analyze_token_security') as mock_security, \
+             patch.object(GOplusClient, 'detect_rugpull') as mock_rugpull:
+            
+            # Mock responses
+            mock_security.return_value = {"security_score": 80, "risk_level": "low"}
+            mock_rugpull.return_value = {"rugpull_risk": "low", "risk_score": 20}
+            
+            client = GOplusClient()
+            result = await client.comprehensive_analysis("So11111111111111111111111111111111111112")
+            
+            # Check structure
+            assert isinstance(result, dict)
+            required_fields = ["token_address", "chain", "timestamp", "services_used", "analyses", "overall_assessment"]
+            
+            for field in required_fields:
+                assert field in result, f"Missing required field: {field}"
+            
+            # Check overall assessment structure
+            assessment = result["overall_assessment"]
+            assessment_fields = ["risk_score", "risk_level", "is_safe", "major_risks", "recommendations", "confidence"]
+            
+            for field in assessment_fields:
+                assert field in assessment, f"Missing assessment field: {field}"
+    
+    @pytest.mark.asyncio
+    async def test_goplus_error_handling(self):
+        """Test GOplus error handling"""
+        from app.services.goplus_client import GOplusClient, GOplusAPIError
+        
+        client = GOplusClient()
+        
+        # Test with no API keys (should handle gracefully)
+        client.transaction_api_key = None
+        client.rugpull_api_key = None
+        client.security_api_key = None
+        
+        # Should not crash when trying operations without API keys
+        try:
+            result = await client.comprehensive_analysis("So11111111111111111111111111111111111112")
+            # Should return error info, not crash
+            assert isinstance(result, dict)
+            assert "analyses" in result
+        except Exception as e:
+            # Should be a controlled error, not a crash
+            assert any(word in str(e).lower() for word in ["api key", "not configured", "not available"])
+
+
+# Pytest markers for service testing including GOplus
 pytest_plugins = []
 
 def pytest_configure(config):
-    """Configure pytest with service testing markers"""
+    """Configure pytest with service testing markers including GOplus"""
     config.addinivalue_line(
         "markers", "services: marks tests as service/API tests"
     )
@@ -519,6 +779,9 @@ def pytest_configure(config):
     )
     config.addinivalue_line(
         "markers", "dataimpulse: marks tests specific to DataImpulse API"
+    )
+    config.addinivalue_line(
+        "markers", "goplus: marks tests specific to GOplus API"
     )
 
 

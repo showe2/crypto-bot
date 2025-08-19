@@ -53,10 +53,13 @@ class Settings(BaseSettings):
     # RugCheck API
     RUGCHECK_API_KEY: Optional[str] = None
 
-    # GOplus API - 3 different API keys for different services
-    GOPLUS_TRANSACTION_API_KEY: Optional[str] = None
-    GOPLUS_RUGPULL_API_KEY: Optional[str] = None
-    GOPLUS_SECURITY_API_KEY: Optional[str] = None
+    # GOplus API - Updated to use APP Key + APP Secret pairs
+    GOPLUS_TRANSACTION_APP_KEY: Optional[str] = None
+    GOPLUS_TRANSACTION_APP_SECRET: Optional[str] = None
+    GOPLUS_RUGPULL_APP_KEY: Optional[str] = None
+    GOPLUS_RUGPULL_APP_SECRET: Optional[str] = None
+    GOPLUS_SECURITY_APP_KEY: Optional[str] = None
+    GOPLUS_SECURITY_APP_SECRET: Optional[str] = None
     GOPLUS_BASE_URL: str = "https://api.gopluslabs.io"
 
     # ==============================================
@@ -185,7 +188,7 @@ class Settings(BaseSettings):
         "env_file": ".env",
         "env_file_encoding": "utf-8",
         "case_sensitive": True,
-        "extra": "allow"  # <--- Allow extra keys in .env
+        "extra": "allow"
     }
 
     # ==============================================
@@ -227,9 +230,17 @@ class Settings(BaseSettings):
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
             'BLOWFISH_API_KEY', 'SOLSCAN_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
-            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY',
-            'GOPLUS_TRANSACTION_API_KEY', 'GOPLUS_RUGPULL_API_KEY', 'GOPLUS_SECURITY_API_KEY'
+            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY'
         ]
+        
+        # Add GOplus APP keys
+        goplus_keys = [
+            'GOPLUS_TRANSACTION_APP_KEY', 'GOPLUS_TRANSACTION_APP_SECRET',
+            'GOPLUS_RUGPULL_APP_KEY', 'GOPLUS_RUGPULL_APP_SECRET',
+            'GOPLUS_SECURITY_APP_KEY', 'GOPLUS_SECURITY_APP_SECRET'
+        ]
+        api_keys.extend(goplus_keys)
+        
         for key in api_keys:
             value = getattr(self, key)
             keys_status[key] = {
@@ -239,25 +250,40 @@ class Settings(BaseSettings):
         return keys_status
 
     def get_goplus_keys_status(self) -> dict:
-        """Get GOplus specific API keys status"""
-        goplus_keys = {
-            'transaction': self.GOPLUS_TRANSACTION_API_KEY,
-            'rugpull': self.GOPLUS_RUGPULL_API_KEY,
-            'security': self.GOPLUS_SECURITY_API_KEY
+        """Get GOplus specific APP keys status"""
+        goplus_services = {
+            'transaction': {
+                'app_key': self.GOPLUS_TRANSACTION_APP_KEY,
+                'app_secret': self.GOPLUS_TRANSACTION_APP_SECRET
+            },
+            'rugpull': {
+                'app_key': self.GOPLUS_RUGPULL_APP_KEY,
+                'app_secret': self.GOPLUS_RUGPULL_APP_SECRET
+            },
+            'security': {
+                'app_key': self.GOPLUS_SECURITY_APP_KEY,
+                'app_secret': self.GOPLUS_SECURITY_APP_SECRET
+            }
         }
         
         status = {}
-        for service, key in goplus_keys.items():
+        for service, keys in goplus_services.items():
+            has_both = bool(keys['app_key'] and keys['app_secret'])
             status[service] = {
-                'configured': bool(key),
-                'masked_value': f"{key[:8]}***" if key else None
+                'configured': has_both,
+                'app_key_present': bool(keys['app_key']),
+                'app_secret_present': bool(keys['app_secret']),
+                'masked_app_key': f"{keys['app_key'][:8]}***" if keys['app_key'] else None
             }
+        
+        configured_count = sum(1 for info in status.values() if info['configured'])
         
         return {
             'services': status,
-            'configured_count': sum(1 for key in goplus_keys.values() if key),
-            'total_services': len(goplus_keys),
-            'base_url': self.GOPLUS_BASE_URL
+            'configured_count': configured_count,
+            'total_services': len(goplus_services),
+            'base_url': self.GOPLUS_BASE_URL,
+            'all_configured': configured_count == len(goplus_services)
         }
 
 

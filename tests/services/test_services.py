@@ -44,6 +44,14 @@ class SafeServiceTester:
         self.safe_test_tokens = [
             "So11111111111111111111111111111111111112",  # Wrapped SOL
             "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
+        ]
+        
+        # GOplus-specific test tokens (known to work with GOplus)
+        self.goplus_test_tokens = [
+            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC - widely supported
+            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT - widely supported
+            "So11111111111111111111111111111111111112",  # Wrapped SOL
         ]
         
         # API cost estimates (USD per 1000 calls - approximate)
@@ -55,7 +63,8 @@ class SafeServiceTester:
             "chainbase": 0.50,       # ~$0.50 per 1000 calls
             "blowfish": 2.00,        # ~$2.00 per 1000 scans
             "dataimpulse": 1.00,     # ~$1.00 per 1000 calls
-            "solscan": 0.05          # ~$0.05 per 1000 calls (pro tier)
+            "solscan": 0.05,         # ~$0.05 per 1000 calls (pro tier)
+            "goplus": 0.15           # ~$0.15 per 1000 calls (estimated)
         }
     
     async def test_system_health(self) -> TestResult:
@@ -239,16 +248,15 @@ class SafeServiceTester:
             )
     
     async def _test_solscan_v2(self) -> TestResult:
-        """Test Solscan v2.0 API (UPDATED for new endpoints)"""
+        """Test Solscan v2.0 API"""
         print("   📊 Testing Solscan v2.0 API...")
         
         start_time = time.time()
         
-        # Try to get API key from environment with better loading
+        # Try to get API key from environment
         import os
         from pathlib import Path
         
-        # Load .env file if it exists
         api_key = os.getenv('SOLSCAN_API_KEY')
         
         if not api_key:
@@ -266,12 +274,6 @@ class SafeServiceTester:
                 print(f"   ⚠️ Error reading .env file: {e}")
         
         if not api_key:
-            # Test without API key first (some v2.0 endpoints might be free)
-            result = await self._test_solscan_v2_no_auth(start_time)
-            if result.success:
-                return result
-            
-            # If no auth fails, return helpful message
             response_time = time.time() - start_time
             print("   ⚠️ Solscan v2.0 requires API key for most endpoints")
             return TestResult(
@@ -286,70 +288,13 @@ class SafeServiceTester:
         # Test with API key using v2.0 endpoints
         return await self._test_solscan_v2_with_auth(api_key, start_time)
     
-    async def _test_solscan_v2_no_auth(self, start_time: float) -> TestResult:
-        """Test Solscan v2.0 endpoints that might work without API key"""
-        
-        # v2.0 public endpoints to try
-        public_endpoints = [
-            ("https://pro-api.solscan.io/v2.0/chaininfo", "/v2.0/chaininfo"),
-            # Note: Most v2.0 endpoints require authentication
-        ]
-        
-        for full_url, endpoint_name in public_endpoints:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    headers = {
-                        "Accept": "application/json",
-                        "User-Agent": "Solana-Token-Analysis/1.0"
-                    }
-                    
-                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as response:
-                        response_time = time.time() - start_time
-                        
-                        if response.status == 200:
-                            try:
-                                content_type = response.headers.get('content-type', '').lower()
-                                if 'application/json' in content_type:
-                                    data = await response.json()
-                                    
-                                    # Check v2.0 API response format
-                                    if isinstance(data, dict) and data.get("success") != False:
-                                        print(f"   ✅ Solscan v2.0 public endpoint {endpoint_name} working ({response_time:.2f}s)")
-                                        return TestResult(
-                                            service="solscan",
-                                            endpoint=endpoint_name,
-                                            success=True,
-                                            response_time=response_time,
-                                            cost_estimate="FREE",
-                                            data_size=len(str(data))
-                                        )
-                            except Exception:
-                                pass
-                        elif response.status == 401:
-                            # Expected for most v2.0 endpoints
-                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} requires authentication")
-                            continue
-            except Exception:
-                continue
-        
-        # No public endpoints worked
-        return TestResult(
-            service="solscan",
-            endpoint="/v2.0/public",
-            success=False,
-            response_time=time.time() - start_time,
-            cost_estimate="FREE",
-            error="v2.0 API requires authentication for most endpoints"
-        )
-    
     async def _test_solscan_v2_with_auth(self, api_key: str, start_time: float) -> TestResult:
-        """Test Solscan v2.0 with API key authentication (UPDATED)"""
+        """Test Solscan v2.0 with API key authentication"""
         
         # v2.0 API endpoints to test
         auth_endpoints = [
             ("https://pro-api.solscan.io/v2.0/chaininfo", "/v2.0/chaininfo"),
             (f"https://pro-api.solscan.io/v2.0/token/{self.safe_test_tokens[0]}", "/v2.0/token/{token}"),
-            (f"https://pro-api.solscan.io/v2.0/account/{self.safe_test_tokens[0]}", "/v2.0/account/{account}"),
         ]
         
         for full_url, endpoint_name in auth_endpoints:
@@ -358,7 +303,7 @@ class SafeServiceTester:
                     headers = {
                         "Accept": "application/json",
                         "User-Agent": "Solana-Token-Analysis/1.0",
-                        "Authorization": f"Bearer {api_key}"  # v2.0 uses Bearer token
+                        "Authorization": f"Bearer {api_key}"
                     }
                     
                     async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
@@ -370,7 +315,6 @@ class SafeServiceTester:
                                 if 'application/json' in content_type:
                                     data = await response.json()
                                     
-                                    # Check v2.0 API response format
                                     if isinstance(data, dict):
                                         if data.get("success") == False:
                                             error_msg = data.get("error", "API returned success: false")
@@ -390,7 +334,7 @@ class SafeServiceTester:
                                                 endpoint=endpoint_name,
                                                 success=True,
                                                 response_time=response_time,
-                                                cost_estimate="$0.001",  # Minimal cost for v2.0 API call
+                                                cost_estimate="$0.001",
                                                 data_size=len(str(data))
                                             )
                             except Exception as parse_error:
@@ -416,28 +360,6 @@ class SafeServiceTester:
                                 error=f"Invalid API key. Check your Solscan Pro account: {error_text[:100]}"
                             )
                         
-                        elif response.status == 403:
-                            print(f"   ❌ Solscan v2.0 {endpoint_name} - Access forbidden")
-                            return TestResult(
-                                service="solscan",
-                                endpoint=endpoint_name,
-                                success=False,
-                                response_time=response_time,
-                                cost_estimate="FREE",
-                                error="Access forbidden. API key might lack v2.0 permissions"
-                            )
-                        
-                        elif response.status == 429:
-                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} - Rate limited")
-                            return TestResult(
-                                service="solscan",
-                                endpoint=endpoint_name,
-                                success=False,
-                                response_time=response_time,
-                                cost_estimate="FREE",
-                                error="Rate limited. Slow down API requests"
-                            )
-                        
                         else:
                             error_text = await response.text()
                             return TestResult(
@@ -449,10 +371,6 @@ class SafeServiceTester:
                                 error=f"HTTP {response.status}: {error_text[:100]}"
                             )
                             
-            except asyncio.TimeoutError:
-                continue
-            except aiohttp.ClientConnectorError:
-                continue
             except Exception as e:
                 continue
         
@@ -524,7 +442,8 @@ class SafeServiceTester:
                 return results
             
             # Test API health endpoints (usually free or very cheap)
-            for service_name in ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse"]:
+            # Updated to include GOplus
+            for service_name in ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse", "goplus"]:
                 result = await self._test_service_health(service_name)
                 results.append(result)
         
@@ -555,6 +474,9 @@ class SafeServiceTester:
             elif service_name == "dataimpulse":
                 from app.services.dataimpulse_client import check_dataimpulse_health
                 health_data = await check_dataimpulse_health()
+            elif service_name == "goplus":
+                from app.services.goplus_client import check_goplus_health
+                health_data = await check_goplus_health()
             else:
                 raise ValueError(f"Unknown service: {service_name}")
             
@@ -565,6 +487,34 @@ class SafeServiceTester:
             api_key_configured = health_data.get("api_key_configured", False)
             error_message = health_data.get("error", "")
             
+            # For GOplus, check multiple services
+            if service_name == "goplus":
+                services_info = health_data.get("services", {})
+                configured_services = sum(1 for info in services_info.values() if info.get("configured"))
+                total_services = len(services_info)
+                
+                print(f"   📊 GOplus: {configured_services}/{total_services} API keys configured")
+                
+                if configured_services == 0:
+                    error = "No GOplus API keys configured. Set GOPLUS_*_API_KEY in .env file"
+                elif configured_services < total_services:
+                    missing_services = [service for service, info in services_info.items() if not info.get("configured")]
+                    error = f"Missing GOplus API keys for: {', '.join(missing_services)}"
+                else:
+                    error = health_data.get("error")
+                    
+                api_key_configured = configured_services > 0
+            else:
+                # Standard error handling for other services
+                if not success and not api_key_configured:
+                    error = f"API key not configured. Set {service_name.upper()}_API_KEY in .env file"
+                elif not success and "invalid" in error_message.lower():
+                    error = f"API key invalid or suspended. Check your {service_name} account"
+                elif not success and "permissions" in error_message.lower():
+                    error = f"API key lacks permissions. Upgrade your {service_name} plan"
+                else:
+                    error = health_data.get("error")
+            
             # Determine cost estimate
             if not api_key_configured:
                 cost_estimate = "FREE"  # No API calls made
@@ -572,23 +522,6 @@ class SafeServiceTester:
                 cost_estimate = "FREE"  # Failed before making billable calls
             else:
                 cost_estimate = f"${self.api_costs.get(service_name, 0.001):.3f}"
-            
-            # Create detailed error message for API key issues
-            if not success and not api_key_configured:
-                error = f"API key not configured. Set {service_name.upper()}_API_KEY in .env file"
-            elif not success and "invalid" in error_message.lower():
-                error = f"API key invalid or suspended. Check your {service_name} account"
-            elif not success and "permissions" in error_message.lower():
-                error = f"API key lacks permissions. Upgrade your {service_name} plan"
-            else:
-                error = health_data.get("error")
-            
-            # Special handling for Solscan v2.0
-            if service_name == "solscan" and success:
-                api_version = health_data.get("api_version", "unknown")
-                if api_version == "v2.0":
-                    print(f"   ✅ Solscan v2.0 API confirmed working")
-                    cost_estimate = "$0.001"  # v2.0 API calls have minimal cost
             
             return TestResult(
                 service=service_name,
@@ -616,7 +549,7 @@ class SafeServiceTester:
         print("⚠️ PAID API TESTING CONFIRMATION")
         print("="*60)
         print("You are about to test paid APIs that will consume credits.")
-        print("Estimated cost: $0.01 - $0.10 for minimal testing")
+        print("Estimated cost: $0.01 - $0.15 for minimal testing")
         print("\nAPIs that will be tested:")
         print("  • Service health checks (minimal cost)")
         print("  • Basic connectivity tests")
@@ -625,8 +558,12 @@ class SafeServiceTester:
         print("  • Birdeye API (Price data)")
         print("  • Chainbase API (Analytics)")
         print("  • Blowfish API (Security)")
-        print("  • Solscan v2.0 API (On-chain data) - UPDATED")
+        print("  • Solscan v2.0 API (On-chain data)")
         print("  • DataImpulse API (Social sentiment)")
+        print("  • GOplus API (Security & Rugpull detection) - NEW")
+        print("    - Transaction simulation")
+        print("    - Rugpull detection")
+        print("    - Token security analysis")
         print("\nRecommendation: Test with ENABLE_API_MOCKS=true first")
         print("="*60)
         
@@ -636,6 +573,260 @@ class SafeServiceTester:
         except (EOFError, KeyboardInterrupt):
             print("\n   ❌ Testing cancelled by user")
             return False
+    
+    async def test_goplus_specific(self) -> List[TestResult]:
+        """Test GOplus-specific functionality if in paid mode"""
+        print("🔒 Testing GOplus specific functionality...")
+        results = []
+        
+        if self.mode not in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
+            print("   ⚠️ GOplus testing requires paid mode")
+            return results
+        
+        # Test GOplus health endpoint
+        result = await self._test_goplus_health_detailed()
+        results.append(result)
+        
+        # Test supported chains (diagnostic)
+        chains_result = await self._test_goplus_supported_chains()
+        results.append(chains_result)
+        
+        # Test token security analysis (if API keys are configured)
+        if result.success:
+            security_result = await self._test_goplus_token_security()
+            results.append(security_result)
+        
+        return results
+    
+    async def _test_goplus_supported_chains(self) -> TestResult:
+        """Test GOplus supported chains (diagnostic)"""
+        print("   🔗 Testing GOplus supported chains...")
+        
+        start_time = time.time()
+        try:
+            from app.services.goplus_client import GOplusClient
+            
+            async with GOplusClient() as client:
+                chains = await client.get_supported_chains()
+                response_time = time.time() - start_time
+                
+                if chains and isinstance(chains, list):
+                    print(f"   ✅ GOplus supported chains retrieved ({response_time:.2f}s)")
+                    print(f"      Found {len(chains)} supported chains")
+                    
+                    # Log first few chains
+                    for i, chain in enumerate(chains[:5]):
+                        if isinstance(chain, dict):
+                            chain_name = chain.get("name", chain.get("chain_id", f"Chain {i+1}"))
+                            print(f"      - {chain_name}")
+                        else:
+                            print(f"      - {chain}")
+                    
+                    if len(chains) > 5:
+                        print(f"      ... and {len(chains) - 5} more")
+                    
+                    # Check if Solana is supported
+                    solana_supported = any(
+                        "solana" in str(chain).lower() or 
+                        (isinstance(chain, dict) and "101" in str(chain.get("chain_id", ""))) or
+                        (isinstance(chain, dict) and "solana" in str(chain.get("name", "")).lower())
+                        for chain in chains
+                    )
+                    
+                    if solana_supported:
+                        print("      ✅ Solana appears to be supported")
+                    else:
+                        print("      ⚠️ Solana not clearly listed in supported chains")
+                        print("      This might explain token security test failures")
+                    
+                    return TestResult(
+                        service="goplus",
+                        endpoint="supported_chains",
+                        success=True,
+                        response_time=response_time,
+                        cost_estimate="FREE",
+                        data_size=len(str(chains)),
+                        error=None if solana_supported else "Solana not in supported chains list"
+                    )
+                else:
+                    return TestResult(
+                        service="goplus",
+                        endpoint="supported_chains",
+                        success=False,
+                        response_time=response_time,
+                        cost_estimate="FREE",
+                        error=f"No chains data returned. Response: {str(chains)}"
+                    )
+                    
+        except Exception as e:
+            return TestResult(
+                service="goplus",
+                endpoint="supported_chains",
+                success=False,
+                response_time=time.time() - start_time,
+                cost_estimate="FREE",
+                error=f"Failed to get supported chains: {str(e)}"
+            )
+    
+    async def _test_goplus_health_detailed(self) -> TestResult:
+        """Test GOplus health in detail"""
+        print("   🔒 Testing GOplus health (detailed)...")
+        
+        start_time = time.time()
+        try:
+            from app.services.goplus_client import check_goplus_health
+            
+            health_data = await check_goplus_health()
+            response_time = time.time() - start_time
+            
+            success = health_data.get("healthy", False)
+            services_info = health_data.get("services", {})
+            
+            # Detailed logging for GOplus
+            configured_count = sum(1 for info in services_info.values() if info.get("configured"))
+            healthy_count = sum(1 for info in services_info.values() if info.get("healthy"))
+            
+            print(f"   📊 GOplus services configured: {configured_count}/{len(services_info)}")
+            print(f"   📊 GOplus services healthy: {healthy_count}/{len(services_info)}")
+            
+            for service_name, service_info in services_info.items():
+                status = "✅" if service_info.get("healthy") else "❌"
+                configured = "🔑" if service_info.get("configured") else "🚫"
+                print(f"      {status} {configured} {service_name}")
+            
+            error = None
+            if not success:
+                if configured_count == 0:
+                    error = "No GOplus API keys configured"
+                else:
+                    error = f"Some GOplus services unhealthy: {healthy_count}/{len(services_info)}"
+            
+            return TestResult(
+                service="goplus",
+                endpoint="health_detailed",
+                success=success,
+                response_time=response_time,
+                cost_estimate="FREE",
+                data_size=len(str(health_data)),
+                error=error
+            )
+            
+        except Exception as e:
+            return TestResult(
+                service="goplus",
+                endpoint="health_detailed",
+                success=False,
+                response_time=time.time() - start_time,
+                cost_estimate="FREE",
+                error=f"GOplus health check failed: {str(e)}"
+            )
+    
+    async def _test_goplus_token_security(self) -> TestResult:
+        """Test GOplus token security analysis with safe token"""
+        print("   🛡️ Testing GOplus token security analysis...")
+        
+        start_time = time.time()
+        try:
+            from app.services.goplus_client import GOplusClient
+            
+            async with GOplusClient() as client:
+                # Try multiple tokens to find one that works with GOplus
+                test_tokens_to_try = self.goplus_test_tokens
+                
+                for i, test_token in enumerate(test_tokens_to_try):
+                    token_name = ["USDC", "USDT", "Wrapped SOL"][i] if i < 3 else f"Token {i+1}"
+                    print(f"      Trying {token_name}: {test_token[:8]}...{test_token[-4:]}")
+                    
+                    try:
+                        security_result = await client.analyze_token_security(test_token, chain="solana")
+                        response_time = time.time() - start_time
+                        
+                        print(f"      Response type: {type(security_result)}")
+                        if security_result:
+                            print(f"      Response keys: {list(security_result.keys()) if isinstance(security_result, dict) else 'Not a dict'}")
+                        
+                        if security_result and isinstance(security_result, dict):
+                            # Check if we have meaningful data
+                            has_data = any([
+                                security_result.get("risk_level"),
+                                security_result.get("security_score"),
+                                security_result.get("contract_security"),
+                                security_result.get("trading_security"),
+                                security_result.get("metadata"),
+                                security_result.get("token_name"),
+                                security_result.get("token_symbol")
+                            ])
+                            
+                            if has_data:
+                                print(f"   ✅ GOplus security analysis completed with {token_name} ({response_time:.2f}s)")
+                                
+                                # Log some basic results
+                                risk_level = security_result.get("risk_level", "unknown")
+                                is_malicious = security_result.get("is_malicious", False)
+                                security_score = security_result.get("security_score", "unknown")
+                                token_name_result = security_result.get("token_name", "unknown")
+                                
+                                print(f"      Token: {token_name_result}")
+                                print(f"      Risk level: {risk_level}")
+                                print(f"      Security score: {security_score}")
+                                print(f"      Malicious: {is_malicious}")
+                                
+                                return TestResult(
+                                    service="goplus",
+                                    endpoint="token_security",
+                                    success=True,
+                                    response_time=response_time,
+                                    cost_estimate="$0.005",
+                                    data_size=len(str(security_result))
+                                )
+                            else:
+                                print(f"      {token_name}: No meaningful data in response")
+                                continue  # Try next token
+                        else:
+                            print(f"      {token_name}: No data returned")
+                            continue  # Try next token
+                            
+                    except Exception as token_error:
+                        print(f"      {token_name}: Error - {str(token_error)[:100]}")
+                        continue  # Try next token
+                
+                # If we get here, none of the tokens worked
+                response_time = time.time() - start_time
+                return TestResult(
+                    service="goplus",
+                    endpoint="token_security",
+                    success=False,
+                    response_time=response_time,
+                    cost_estimate="$0.005",
+                    error=f"No tokens returned security data. Tried {len(test_tokens_to_try)} tokens. GOplus may not support Solana tokens yet or requires different API endpoint."
+                )
+                    
+        except Exception as e:
+            error_msg = str(e)
+            print(f"   ❌ GOplus security analysis exception: {error_msg}")
+            
+            # Check for common API issues
+            if "not found" in error_msg.lower():
+                error = "Token not found in GOplus database - try a more popular token"
+            elif "chain" in error_msg.lower() or "solana" in error_msg.lower():
+                error = "Chain not supported - GOplus might not fully support Solana chain yet"
+            elif "api key" in error_msg.lower():
+                error = "API key issue - check GOPLUS_SECURITY_API_KEY configuration"
+            elif "rate limit" in error_msg.lower():
+                error = "Rate limited - wait before retrying"
+            elif "endpoint" in error_msg.lower() or "404" in error_msg:
+                error = "API endpoint issue - GOplus might use different endpoints for Solana"
+            else:
+                error = f"GOplus security analysis failed: {error_msg}"
+            
+            return TestResult(
+                service="goplus",
+                endpoint="token_security",
+                success=False,
+                response_time=time.time() - start_time,
+                cost_estimate="FREE",
+                error=error
+            )
     
     async def run_all_tests(self) -> Dict[str, Any]:
         """Run all tests according to the selected mode"""
@@ -653,9 +844,14 @@ class SafeServiceTester:
         free_results = await self.test_free_apis()
         all_results.extend(free_results)
         
-        # Phase 3: Service clients (if enabled)
+        # Phase 3: Service clients (if enabled) - now includes GOplus
         service_results = await self.test_service_clients()
         all_results.extend(service_results)
+        
+        # Phase 4: GOplus specific tests (if enabled)
+        if self.mode in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
+            goplus_results = await self.test_goplus_specific()
+            all_results.extend(goplus_results)
         
         total_time = time.time() - start_time
         
@@ -672,6 +868,9 @@ class SafeServiceTester:
             for r in results
         )
         
+        # Count GOplus specific results
+        goplus_results = [r for r in results if r.service == "goplus"]
+        
         summary = {
             "mode": self.mode.value,
             "total_tests": len(results),
@@ -683,6 +882,8 @@ class SafeServiceTester:
                 sum(r.response_time for r in successful) / len(successful) if successful else 0,
                 3
             ),
+            "goplus_tests": len(goplus_results),
+            "goplus_successful": len([r for r in goplus_results if r.success]),
             "results": [
                 {
                     "service": r.service,
@@ -712,12 +913,20 @@ class SafeServiceTester:
         print(f"Estimated Cost: {summary['estimated_cost']}")
         print(f"Avg Response Time: {summary['avg_response_time']}s")
         
+        # GOplus specific summary
+        if summary['goplus_tests'] > 0:
+            print(f"GOplus Tests: {summary['goplus_successful']}/{summary['goplus_tests']} ✅")
+        
         print("\n📋 DETAILED RESULTS:")
         print("-" * 80)
         
         for result in summary['results']:
             status = "✅" if result['success'] else "❌"
-            print(f"{status} {result['service']:12} {result['endpoint']:25} "
+            service_name = result['service']
+            if service_name == "goplus":
+                service_name = "🔒 goplus"
+            
+            print(f"{status} {service_name:12} {result['endpoint']:25} "
                   f"{result['response_time']:6.3f}s {result['cost']:8}")
             
             if result['error']:
@@ -746,6 +955,46 @@ class SafeServiceTester:
             print(f"   • Total estimated cost: {summary['estimated_cost']}")
             print("   • Monitor API dashboards for actual usage")
         
+        # GOplus specific recommendations
+        goplus_results = [r for r in summary['results'] if r['service'] == 'goplus']
+        if goplus_results:
+            goplus_success_count = len([r for r in goplus_results if r['success']])
+            goplus_total = len(goplus_results)
+            
+            if goplus_success_count == 0:
+                goplus_errors = [r['error'] for r in goplus_results if r['error']]
+                if any('API key' in str(error) for error in goplus_errors):
+                    print("   • GOplus: Get API keys from https://gopluslabs.io/")
+                    print("   • GOplus uses 3 different API keys:")
+                    print("     - GOPLUS_TRANSACTION_API_KEY (transaction simulation)")
+                    print("     - GOPLUS_RUGPULL_API_KEY (rugpull detection)")
+                    print("     - GOPLUS_SECURITY_API_KEY (token security)")
+                else:
+                    print("   • GOplus: Service issues detected")
+            elif goplus_success_count < goplus_total:
+                # Partial success - check for specific issues
+                failed_results = [r for r in goplus_results if not r['success']]
+                
+                token_security_failed = any(r['endpoint'] == 'token_security' for r in failed_results)
+                if token_security_failed:
+                    token_security_error = next((r['error'] for r in failed_results if r['endpoint'] == 'token_security'), '')
+                    
+                    if 'not support' in token_security_error.lower() or 'solana' in token_security_error.lower():
+                        print("   • GOplus: Token security may have limited Solana support")
+                        print("     - Try Ethereum tokens for testing: 0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95")
+                        print("     - Check GOplus documentation for Solana compatibility")
+                    elif 'no data' in token_security_error.lower():
+                        print("   • GOplus: Token security returned no data")
+                        print("     - GOplus may not have data for this specific token")
+                        print("     - Try more popular tokens like major stablecoins")
+                    else:
+                        print("   • GOplus: Token security test failed - check API key and endpoint")
+                
+                print(f"   • GOplus: {goplus_success_count}/{goplus_total} tests passed")
+            else:
+                print("   • GOplus: All tests passed - full security analysis available")
+                print("   • GOplus: Transaction simulation, rugpull detection, and token security working")
+        
         # Service-specific recommendations
         solscan_results = [r for r in summary['results'] if r['service'] == 'solscan']
         if solscan_results:
@@ -761,16 +1010,18 @@ class SafeServiceTester:
         print("="*80)
 
 async def main():
-    """Main testing function with v2.0 API support"""
+    """Main testing function with GOplus support"""
     import argparse
     
-    parser = argparse.ArgumentParser(description="Safe Service Tester with Solscan v2.0 Support")
+    parser = argparse.ArgumentParser(description="Safe Service Tester with GOplus Support")
     parser.add_argument("--mode", choices=['mock', 'free', 'limited', 'full'], 
                        default='mock', help="Testing mode")
     parser.add_argument("--url", default="http://localhost:8000", 
                        help="Base URL for testing")
     parser.add_argument("--start-server", action="store_true",
                        help="Try to start the server if not running")
+    parser.add_argument("--goplus-only", action="store_true",
+                       help="Test only GOplus services")
     
     args = parser.parse_args()
     
@@ -787,6 +1038,36 @@ async def main():
         mode=mode_map[args.mode]
     )
     
+    # GOplus-only testing mode
+    if args.goplus_only:
+        if args.mode == 'mock':
+            print("⚠️ GOplus testing requires at least 'limited' mode")
+            print("   Use --mode limited for minimal GOplus testing")
+            return
+        
+        print("🔒 GOplus-only testing mode")
+        start_time = time.time()
+        
+        # Test only GOplus services
+        goplus_results = await tester.test_goplus_specific()
+        total_time = time.time() - start_time
+        
+        summary = tester._generate_summary(goplus_results, total_time)
+        tester.print_summary(summary)
+        
+        # Save GOplus-specific results
+        results_dir = Path(__file__).parent / "results"
+        results_dir.mkdir(exist_ok=True)
+        
+        results_file = f"goplus_test_{int(time.time())}.json"
+        results_path = results_dir / results_file
+        
+        with open(results_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        
+        print(f"\n💾 GOplus results saved to {results_path}")
+        return
+    
     # Check if server is running for mock mode
     if args.mode == 'mock':
         try:
@@ -797,7 +1078,6 @@ async def main():
             if args.start_server:
                 print("🚀 Starting FastAPI server...")
                 import subprocess
-                import os
                 
                 # Try to start the server in background
                 try:
