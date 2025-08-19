@@ -17,7 +17,7 @@ class SolscanAPIError(Exception):
 
 
 class SolscanClient:
-    """Solscan API client for additional on-chain data and analytics"""
+    """Solscan API client - ABSOLUTELY NO ROOT ENDPOINTS"""
     
     def __init__(self):
         self.api_key = settings.SOLSCAN_API_KEY
@@ -118,13 +118,14 @@ class SolscanClient:
     async def get_token_info(self, token_address: str) -> Dict[str, Any]:
         """Get comprehensive token information"""
         try:
-            endpoint = f"/token/meta"
+            # Use correct Solscan token endpoint
+            endpoint = "/token/meta"
             params = {"tokenAddress": token_address}
             
             response = await self._request("GET", endpoint, params=params)
             
             if not response.get("data"):
-                return None
+                raise SolscanAPIError("No data returned from token/meta endpoint")
             
             data = response["data"]
             token_info = {
@@ -147,14 +148,16 @@ class SolscanClient:
             
             return token_info
             
+        except SolscanAPIError:
+            raise
         except Exception as e:
             logger.error(f"Error getting token info from Solscan for {token_address}: {str(e)}")
-            return None
+            raise SolscanAPIError(f"Failed to get token info: {str(e)}")
     
     async def get_token_holders(self, token_address: str, limit: int = 100) -> Dict[str, Any]:
         """Get token holders list"""
         try:
-            endpoint = f"/token/holders"
+            endpoint = "/token/holders"
             params = {
                 "tokenAddress": token_address,
                 "limit": min(limit, 1000),
@@ -164,10 +167,7 @@ class SolscanClient:
             response = await self._request("GET", endpoint, params=params)
             
             if not response.get("data"):
-                return {
-                    "holders": [],
-                    "total": 0
-                }
+                raise SolscanAPIError("No data returned from token/holders endpoint")
             
             data = response["data"]
             holders = []
@@ -188,12 +188,11 @@ class SolscanClient:
                 "total": data.get("total", len(holders))
             }
             
+        except SolscanAPIError:
+            raise
         except Exception as e:
             logger.error(f"Error getting token holders from Solscan for {token_address}: {str(e)}")
-            return {
-                "holders": [],
-                "total": 0
-            }
+            raise SolscanAPIError(f"Failed to get token holders: {str(e)}")
     
     async def search_tokens(self, keyword: str) -> List[Dict[str, Any]]:
         """Search for tokens by name or symbol"""
@@ -224,78 +223,59 @@ class SolscanClient:
             
             return tokens
             
+        except SolscanAPIError:
+            raise
         except Exception as e:
             logger.warning(f"Token search failed on Solscan for keyword '{keyword}': {str(e)}")
-            return []
+            raise SolscanAPIError(f"Failed to search tokens: {str(e)}")
     
     async def get_network_stats(self) -> Dict[str, Any]:
-        """Get Solana network statistics using correct endpoint"""
+        """Get Solana network statistics - ONLY /chaininfo endpoint"""
         try:
-            # Try different possible endpoints for network stats
-            endpoints_to_try = [
-                "/chaininfo",  # Most common Solscan endpoint
-                "/network",    # Alternative endpoint
-                "/statistics", # Another possibility
-                "/"           # Root endpoint sometimes has basic info
-            ]
+            # Use the correct Solscan endpoint (no v2)
+            endpoint = "/chaininfo"
             
-            for endpoint in endpoints_to_try:
-                try:
-                    logger.debug(f"Trying Solscan endpoint: {endpoint}")
-                    response = await self._request("GET", endpoint)
+            logger.debug(f"Solscan network stats: trying ONLY {endpoint}")
+            response = await self._request("GET", endpoint)
+            
+            if response:
+                logger.info(f"✅ Solscan {endpoint} successful")
+                
+                # Extract network stats from response
+                network_stats = {
+                    "endpoint_used": endpoint,
+                    "response_keys": list(response.keys()) if isinstance(response, dict) else [],
+                    "data_available": True
+                }
+                
+                # Try to extract common network information
+                if isinstance(response, dict):
+                    common_fields = [
+                        "currentSlot", "current_slot", "slot",
+                        "currentEpoch", "current_epoch", "epoch", 
+                        "totalValidators", "total_validators", "validators",
+                        "totalStake", "total_stake", "stake",
+                        "circulatingSupply", "circulating_supply", "supply"
+                    ]
                     
-                    if response:
-                        # Success! Process the response
-                        logger.info(f"✅ Solscan endpoint {endpoint} working")
-                        
-                        # Extract network stats from response
-                        network_stats = {
-                            "endpoint_used": endpoint,
-                            "response_keys": list(response.keys()) if isinstance(response, dict) else [],
-                            "data_available": True
-                        }
-                        
-                        # Try to extract common network information
-                        if isinstance(response, dict):
-                            # Look for common network stat fields
-                            common_fields = [
-                                "currentSlot", "current_slot", "slot",
-                                "currentEpoch", "current_epoch", "epoch", 
-                                "totalValidators", "total_validators", "validators",
-                                "totalStake", "total_stake", "stake",
-                                "circulatingSupply", "circulating_supply", "supply"
-                            ]
-                            
-                            for field in common_fields:
-                                if field in response:
-                                    network_stats[field.lower()] = response[field]
-                        
-                        return network_stats
-                        
-                except SolscanAPIError as e:
-                    if "not found" in str(e).lower() or "404" in str(e):
-                        logger.debug(f"Endpoint {endpoint} not found, trying next...")
-                        continue
-                    else:
-                        # Other API error, might be rate limiting or auth
-                        logger.debug(f"Endpoint {endpoint} failed: {e}")
-                        continue
-                except Exception as e:
-                    logger.debug(f"Endpoint {endpoint} error: {e}")
-                    continue
-            
-            # If all endpoints failed, return None
-            logger.warning("All Solscan network endpoints failed")
-            return None
-            
+                    for field in common_fields:
+                        if field in response:
+                            network_stats[field.lower()] = response[field]
+                
+                return network_stats
+            else:
+                raise SolscanAPIError("Empty response from /chaininfo endpoint")
+                
+        except SolscanAPIError:
+            raise
         except Exception as e:
             logger.error(f"Error getting network stats from Solscan: {str(e)}")
-            return None
+            raise SolscanAPIError(f"Failed to get network stats: {str(e)}")
     
     async def get_market_data(self, token_address: str) -> Dict[str, Any]:
         """Get market data for a token"""
         try:
-            # Try to get token info which includes market data
+            # Use get_token_info which includes market data
             token_info = await self.get_token_info(token_address)
             
             if token_info:
@@ -307,15 +287,17 @@ class SolscanClient:
                     "holder_count": token_info.get("holder_count"),
                     "source": "solscan"
                 }
+            else:
+                raise SolscanAPIError("No token info available for market data")
             
-            return None
-            
+        except SolscanAPIError:
+            raise
         except Exception as e:
             logger.error(f"Error getting market data from Solscan for {token_address}: {str(e)}")
-            return None
+            raise SolscanAPIError(f"Failed to get market data: {str(e)}")
     
     async def health_check(self) -> Dict[str, Any]:
-        """Check Solscan API health with improved endpoint testing"""
+        """Check Solscan API health - ONLY test /chaininfo endpoint"""
         try:
             start_time = time.time()
             
@@ -329,47 +311,36 @@ class SolscanClient:
                     "recommendation": "Get API key from https://solscan.io"
                 }
             
-            # Try to get network stats or any available endpoint
+            # Test ONLY the /chaininfo endpoint - ABSOLUTELY NO OTHER ENDPOINTS
+            logger.debug("Solscan health check: testing ONLY /chaininfo endpoint")
             network_stats = await self.get_network_stats()
             response_time = time.time() - start_time
             
-            if network_stats:
-                return {
-                    "healthy": True,
-                    "api_key_configured": True,
-                    "base_url": self.base_url,
-                    "response_time": response_time,
-                    "test_data": network_stats,
-                    "working_endpoint": network_stats.get("endpoint_used")
-                }
-            else:
-                # Try a simple GET to root endpoint
-                try:
-                    await self._request("GET", "/")
-                    response_time = time.time() - start_time
-                    return {
-                        "healthy": True,
-                        "api_key_configured": True,
-                        "base_url": self.base_url,
-                        "response_time": response_time,
-                        "note": "Basic connectivity working but no specific endpoint found"
-                    }
-                except Exception as e:
-                    return {
-                        "healthy": False,
-                        "api_key_configured": True,
-                        "error": f"All endpoints failed: {str(e)}",
-                        "base_url": self.base_url,
-                        "response_time": response_time,
-                        "recommendation": "Check Solscan API documentation for current endpoints"
-                    }
-            
+            return {
+                "healthy": True,
+                "api_key_configured": True,
+                "base_url": self.base_url,
+                "response_time": response_time,
+                "test_data": network_stats,
+                "working_endpoint": "/chaininfo"
+            }
+                
+        except SolscanAPIError as e:
+            response_time = time.time() - start_time
+            return {
+                "healthy": False,
+                "api_key_configured": True,
+                "error": f"/chaininfo endpoint failed: {str(e)}",
+                "base_url": self.base_url,
+                "response_time": response_time,
+                "tested_endpoint": "/chaininfo"
+            }
         except Exception as e:
             response_time = time.time() - start_time
             return {
                 "healthy": False,
                 "api_key_configured": bool(self.api_key),
-                "error": str(e),
+                "error": f"Health check exception: {str(e)}",
                 "base_url": self.base_url,
                 "response_time": response_time
             }

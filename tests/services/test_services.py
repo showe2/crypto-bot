@@ -111,7 +111,7 @@ class SafeServiceTester:
                     
         except aiohttp.ClientConnectorError:
             response_time = time.time() - start_time
-            print(f"   ⚠️  Server not running at {self.base_url}")
+            print(f"   ⚠️ Server not running at {self.base_url}")
             return TestResult(
                 service="system",
                 endpoint="/health", 
@@ -239,22 +239,83 @@ class SafeServiceTester:
             )
     
     async def _test_solscan_free(self) -> TestResult:
-        """Test Solscan API (using correct endpoints)"""
-        print("   📊 Testing Solscan API (free endpoints)...")
+        """Test Solscan API (handles API key requirement)"""
+        print("   📊 Testing Solscan API...")
         
         start_time = time.time()
         
-        # List of Solscan endpoints to try (from most likely to work to least)
-        endpoints_to_try = [
-            ("https://public-api.solscan.io/chaininfo", "/chaininfo"),
-            ("https://public-api.solscan.io/network", "/network"),
-            ("https://public-api.solscan.io/", "/"),
-            ("https://public-api.solscan.io/statistics", "/statistics")
+        # Try to get API key from environment with better loading
+        import os
+        from pathlib import Path
+        
+        # Load .env file if it exists
+        api_key = os.getenv('SOLSCAN_API_KEY')
+        
+        if not api_key:
+            # Try to load from .env file manually
+            try:
+                env_file = Path.cwd() / '.env'
+                if env_file.exists():
+                    with open(env_file, 'r') as f:
+                        for line in f:
+                            line = line.strip()
+                            if line.startswith('SOLSCAN_API_KEY=') and not line.startswith('#'):
+                                api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
+                                break
+            except Exception as e:
+                print(f"   ⚠️ Error reading .env file: {e}")
+        
+        if not api_key:
+            # Debug: Check what environment variables are available
+            env_vars = [k for k in os.environ.keys() if 'SOLSCAN' in k.upper()]
+            print(f"   🔍 Debug: Environment variables with 'SOLSCAN': {env_vars}")
+            
+            # Also check if .env file exists and what it contains
+            env_file = Path.cwd() / '.env'
+            print(f"   🔍 Debug: .env file exists: {env_file.exists()}")
+            
+            if env_file.exists():
+                try:
+                    with open(env_file, 'r') as f:
+                        lines = f.readlines()
+                        solscan_lines = [line.strip() for line in lines if 'SOLSCAN' in line.upper()]
+                        print(f"   🔍 Debug: Lines in .env with 'SOLSCAN': {len(solscan_lines)} found")
+                        for line in solscan_lines:
+                            if not line.startswith('#'):
+                                print(f"   🔍 Debug: Found line: {line[:30]}...")
+                except Exception as e:
+                    print(f"   🔍 Debug: Error reading .env: {e}")
+            
+            # Test without API key first (some endpoints might be free)
+            result = await self._test_solscan_no_auth(start_time)
+            if result.success:
+                return result
+            
+            # If no auth fails, return helpful message
+            response_time = time.time() - start_time
+            print("   ⚠️ Solscan requires API key for most endpoints")
+            return TestResult(
+                service="solscan",
+                endpoint="/auth_required",
+                success=False,
+                response_time=response_time,
+                cost_estimate="FREE",
+                error="API key not found in environment. Check SOLSCAN_API_KEY in .env file. Get key from https://solscan.io/"
+            )
+        
+        # Test with API key
+        return await self._test_solscan_with_auth(api_key, start_time)
+    
+    async def _test_solscan_no_auth(self, start_time: float) -> TestResult:
+        """Test Solscan endpoints that might work without API key"""
+        
+        # Some public endpoints that might work without auth (Solscan v1 API)
+        public_endpoints = [
+            ("https://public-api.solscan.io/account/tokens?account=So11111111111111111111111111111111111112&limit=10", "/account/tokens"),
+            ("https://api.solscan.io/", "/api_root"),
         ]
         
-        last_error = None
-        
-        for full_url, endpoint_name in endpoints_to_try:
+        for full_url, endpoint_name in public_endpoints:
             try:
                 async with aiohttp.ClientSession() as session:
                     headers = {
@@ -262,17 +323,15 @@ class SafeServiceTester:
                         "User-Agent": "Solana-Token-Analysis/1.0"
                     }
                     
-                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as response:
+                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=5)) as response:
                         response_time = time.time() - start_time
                         
                         if response.status == 200:
                             try:
-                                # Try to parse as JSON
                                 content_type = response.headers.get('content-type', '').lower()
-                                
                                 if 'application/json' in content_type:
                                     data = await response.json()
-                                    print(f"   ✅ Solscan endpoint {endpoint_name} working ({response_time:.2f}s)")
+                                    print(f"   ✅ Solscan public endpoint {endpoint_name} working ({response_time:.2f}s)")
                                     return TestResult(
                                         service="solscan",
                                         endpoint=endpoint_name,
@@ -281,73 +340,135 @@ class SafeServiceTester:
                                         cost_estimate="FREE",
                                         data_size=len(str(data))
                                     )
-                                else:
-                                    # Not JSON, but 200 OK means endpoint exists
-                                    text_data = await response.text()
-                                    print(f"   ✅ Solscan endpoint {endpoint_name} accessible ({response_time:.2f}s)")
+                            except Exception:
+                                pass
+            except Exception:
+                continue
+        
+        # No public endpoints worked
+        return TestResult(
+            service="solscan",
+            endpoint="/public",
+            success=False,
+            response_time=time.time() - start_time,
+            cost_estimate="FREE",
+            error="No public endpoints available"
+        )
+    
+    async def _test_solscan_with_auth(self, api_key: str, start_time: float) -> TestResult:
+        """Test Solscan with API key authentication"""
+        
+        # Endpoints that require API key (Solscan v1 API)
+        auth_endpoints = [
+            ("https://pro-api.solscan.io/v1.0/account/tokens?account=So11111111111111111111111111111111111112&limit=10", "/v1.0/account/tokens"),
+            ("https://pro-api.solscan.io/v1.0/token/meta?tokenAddress=So11111111111111111111111111111111111112", "/v1.0/token/meta"),
+        ]
+        
+        for full_url, endpoint_name in auth_endpoints:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    headers = {
+                        "Accept": "application/json",
+                        "User-Agent": "Solana-Token-Analysis/1.0",
+                        "token": api_key  # Solscan uses 'token' header
+                    }
+                    
+                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as response:
+                        response_time = time.time() - start_time
+                        
+                        if response.status == 200:
+                            try:
+                                content_type = response.headers.get('content-type', '').lower()
+                                if 'application/json' in content_type:
+                                    data = await response.json()
+                                    print(f"   ✅ Solscan auth endpoint {endpoint_name} working ({response_time:.2f}s)")
                                     return TestResult(
                                         service="solscan",
                                         endpoint=endpoint_name,
                                         success=True,
                                         response_time=response_time,
-                                        cost_estimate="FREE",
-                                        data_size=len(text_data)
+                                        cost_estimate="$0.001",  # Minimal cost for API call
+                                        data_size=len(str(data))
                                     )
-                                    
                             except Exception as parse_error:
-                                # Endpoint exists but data parsing failed
-                                print(f"   ⚠️  Solscan {endpoint_name} returned data but parsing failed")
+                                print(f"   ⚠️ Solscan {endpoint_name} auth success but parsing failed")
                                 return TestResult(
                                     service="solscan",
                                     endpoint=endpoint_name,
-                                    success=True,  # Endpoint is working, just parsing issue
+                                    success=True,
                                     response_time=response_time,
-                                    cost_estimate="FREE",
-                                    error=f"Data parsing issue: {str(parse_error)}"
+                                    cost_estimate="$0.001",
+                                    error=f"Auth success, parse error: {str(parse_error)}"
                                 )
                         
-                        elif response.status == 404:
-                            # This endpoint doesn't exist, try next one
-                            last_error = f"Endpoint {endpoint_name} not found (404)"
-                            continue
-                            
-                        elif response.status == 403:
-                            # Forbidden - might need API key
-                            last_error = f"Endpoint {endpoint_name} requires authentication (403)"
-                            continue
-                            
-                        else:
-                            # Other HTTP error
+                        elif response.status == 401:
                             error_text = await response.text()
-                            last_error = f"HTTP {response.status} for {endpoint_name}: {error_text[:100]}"
-                            continue
+                            print(f"   ❌ Solscan {endpoint_name} - Invalid API key")
+                            return TestResult(
+                                service="solscan",
+                                endpoint=endpoint_name,
+                                success=False,
+                                response_time=response_time,
+                                cost_estimate="FREE",
+                                error=f"Invalid API key. Check your Solscan account: {error_text[:100]}"
+                            )
+                        
+                        elif response.status == 403:
+                            print(f"   ❌ Solscan {endpoint_name} - Access forbidden")
+                            return TestResult(
+                                service="solscan",
+                                endpoint=endpoint_name,
+                                success=False,
+                                response_time=response_time,
+                                cost_estimate="FREE",
+                                error="Access forbidden. API key might lack permissions"
+                            )
+                        
+                        elif response.status == 429:
+                            print(f"   ⚠️ Solscan {endpoint_name} - Rate limited")
+                            return TestResult(
+                                service="solscan",
+                                endpoint=endpoint_name,
+                                success=False,
+                                response_time=response_time,
+                                cost_estimate="FREE",
+                                error="Rate limited. Slow down API requests"
+                            )
+                        
+                        else:
+                            error_text = await response.text()
+                            return TestResult(
+                                service="solscan",
+                                endpoint=endpoint_name,
+                                success=False,
+                                response_time=response_time,
+                                cost_estimate="FREE",
+                                error=f"HTTP {response.status}: {error_text[:100]}"
+                            )
                             
             except asyncio.TimeoutError:
-                last_error = f"Timeout for endpoint {endpoint_name}"
                 continue
             except aiohttp.ClientConnectorError:
-                last_error = f"Connection failed for {endpoint_name}"
                 continue
             except Exception as e:
-                last_error = f"Error testing {endpoint_name}: {str(e)}"
                 continue
         
-        # All endpoints failed
+        # All auth endpoints failed
         response_time = time.time() - start_time
-        print(f"   ❌ All Solscan endpoints failed ({response_time:.2f}s)")
+        print(f"   ❌ All Solscan auth endpoints failed ({response_time:.2f}s)")
         
         return TestResult(
             service="solscan",
-            endpoint="/multiple_endpoints",
+            endpoint="/auth_endpoints",
             success=False,
             response_time=response_time,
             cost_estimate="FREE",
-            error=f"All endpoints failed. Last error: {last_error}"
+            error="All authenticated endpoints failed. Check API key validity"
         )
     
     async def _test_config_endpoint(self) -> TestResult:
         """Test configuration endpoint (free, internal)"""
-        print("   ⚙️  Testing configuration endpoint...")
+        print("   ⚙️ Testing configuration endpoint...")
         
         start_time = time.time()
         try:
@@ -367,7 +488,7 @@ class SafeServiceTester:
                     
         except aiohttp.ClientConnectorError:
             response_time = time.time() - start_time
-            print(f"   ⚠️  Server not running at {self.base_url}")
+            print(f"   ⚠️ Server not running at {self.base_url}")
             return TestResult(
                 service="system", 
                 endpoint="/config",
@@ -392,7 +513,7 @@ class SafeServiceTester:
         results = []
         
         if self.mode in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
-            print("   ⚠️  WARNING: This will test paid API clients!")
+            print("   ⚠️ WARNING: This will test paid API clients!")
             
             # Ask for confirmation
             if not self._confirm_paid_testing():
@@ -482,7 +603,7 @@ class SafeServiceTester:
     def _confirm_paid_testing(self) -> bool:
         """Ask user to confirm paid API testing"""
         print("\n" + "="*60)
-        print("⚠️  PAID API TESTING CONFIRMATION")
+        print("⚠️ PAID API TESTING CONFIRMATION")
         print("="*60)
         print("You are about to test paid APIs that will consume credits.")
         print("Estimated cost: $0.01 - $0.10 for minimal testing")
@@ -509,7 +630,7 @@ class SafeServiceTester:
     async def run_all_tests(self) -> Dict[str, Any]:
         """Run all tests according to the selected mode"""
         print(f"🚀 Starting safe service testing (mode: {self.mode.value})")
-        print(f"📍 Base URL: {self.base_url}")
+        print(f"🎯 Base URL: {self.base_url}")
         
         start_time = time.time()
         all_results = []
