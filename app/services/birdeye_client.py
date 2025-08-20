@@ -264,7 +264,7 @@ class BirdeyeClient:
     async def get_token_trades(self, token_address: str, sort_type: str = "desc", limit: int = 50) -> List[Dict[str, Any]]:
         """Get recent token trades"""
         try:
-            endpoint = "/defi/txs/token"
+            endpoint = "/defi/v3/token/txs"
             querystring = {"address": token_address, "sort_type": sort_type, "limit": limit}
             
             response = await self._request("GET", endpoint=endpoint, params=querystring)

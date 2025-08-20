@@ -5,154 +5,256 @@ import time
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+import argparse
+from datetime import datetime
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 class TestMode(Enum):
-    """Testing modes from safest to most expensive"""
-    MOCK_ONLY = "mock"           # No real API calls
-    FREE_APIS = "free"           # Only free APIs  
-    LIMITED_PAID = "limited"     # Minimal paid API calls
-    FULL_TESTING = "full"        # All APIs (use carefully!)
+    """🎯 Testing modes from safest to most comprehensive"""
+    MOCK_ONLY = "mock"           # 🛡️ No real API calls - completely safe
+    FREE_APIS = "free"           # 💚 Only free APIs (SolanaFM, DexScreener)
+    LIMITED_PAID = "limited"     # 💛 Minimal paid API calls (~$0.01-0.05)
+    FULL_TESTING = "full"        # 🔴 All APIs (use carefully! ~$0.10-0.50)
+
+class ServiceCategory(Enum):
+    """📊 Service categories"""
+    FREE = "free"
+    PAID = "paid"
+    PREMIUM = "premium"
 
 @dataclass
 class TestResult:
-    """Test result container"""
+    """🔬 Enhanced test result tracking"""
     service: str
     endpoint: str
     success: bool
     response_time: float
     cost_estimate: str
-    error: Optional[str] = None
     data_size: int = 0
+    error: Optional[str] = None
+    category: ServiceCategory = ServiceCategory.PAID
+    timestamp: float = 0
+    
+    def __post_init__(self):
+        if self.timestamp == 0:
+            self.timestamp = time.time()
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to JSON-serializable dictionary"""
+        return {
+            "service": self.service,
+            "endpoint": self.endpoint,
+            "success": self.success,
+            "response_time": self.response_time,
+            "cost_estimate": self.cost_estimate,
+            "data_size": self.data_size,
+            "error": self.error,
+            "category": self.category.value,  # Convert enum to string
+            "timestamp": self.timestamp
+        }
 
-class SafeServiceTester:
-    """Safe service tester that prioritizes cost efficiency"""
+@dataclass  
+class ServiceConfig:
+    """⚙️ Service configuration"""
+    name: str
+    category: ServiceCategory
+    cost_per_1k: float  # USD per 1000 calls
+    requires_auth: bool
+    health_check_module: str
+    client_module: str
+    test_methods: List[str]
+    icon: str = "🔧"
+
+class ComprehensiveServiceTester:
+    """🧪 Advanced service tester with comprehensive features"""
     
     def __init__(self, base_url: str = "http://localhost:8000", mode: TestMode = TestMode.MOCK_ONLY):
         self.base_url = base_url
         self.mode = mode
         self.results: List[TestResult] = []
-        self.total_estimated_cost = 0.0
+        self.start_time = time.time()
         
-        # Test tokens (well-known, widely supported)
-        self.safe_test_tokens = [
-            "So11111111111111111111111111111111111112",  # Wrapped SOL
-            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT
-        ]
+        # 🎯 Test tokens - carefully selected for maximum compatibility
+        self.test_tokens = {
+            "solana": [
+                "So11111111111111111111111111111111111111112",  # Wrapped SOL - most supported
+                "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC - widely available
+                "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT - good coverage
+            ],
+            "ethereum": [
+                "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",  # WETH - excellent for testing
+                "0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95",  # ELF - GOplus friendly
+                "0xdAC17F958D2ee523a2206206994597C13D831ec7",  # USDT - universal
+            ]
+        }
         
-        # GOplus-specific test tokens (known to work with GOplus)
-        self.goplus_test_tokens = [
-            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC - widely supported
-            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  # USDT - widely supported
-            "So11111111111111111111111111111111111112",  # Wrapped SOL
-        ]
-        
-        # API cost estimates (USD per 1000 calls - approximate)
-        self.api_costs = {
-            "dexscreener": 0.0,      # Free
-            "solana_rpc": 0.0,       # Free tier available
-            "helius": 0.10,          # ~$0.10 per 1000 calls
-            "birdeye": 0.25,         # ~$0.25 per 1000 calls  
-            "chainbase": 0.50,       # ~$0.50 per 1000 calls
-            "blowfish": 2.00,        # ~$2.00 per 1000 scans
-            "dataimpulse": 1.00,     # ~$1.00 per 1000 calls
-            "solscan": 0.05,         # ~$0.05 per 1000 calls (pro tier)
-            "goplus": 0.15           # ~$0.15 per 1000 calls (estimated)
+        # 🔧 Service configurations with your specific structure
+        self.services = {
+            "helius": ServiceConfig(
+                name="Helius",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.10,
+                requires_auth=True,
+                health_check_module="app.services.helius_client.check_helius_health",
+                client_module="app.services.helius_client.HeliusClient",
+                test_methods=["get_token_metadata", "get_token_supply"],
+                icon="🌞"
+            ),
+            "birdeye": ServiceConfig(
+                name="Birdeye",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.25,
+                requires_auth=True,
+                health_check_module="app.services.birdeye_client.check_birdeye_health",
+                client_module="app.services.birdeye_client.BirdeyeClient",
+                test_methods=["get_token_price", "get_trending_tokens", "get_token_trades", "get_price_history", "get_top_traders"],
+                icon="🦅"
+            ),
+            "chainbase": ServiceConfig(
+                name="Chainbase",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.50,
+                requires_auth=True,
+                health_check_module="app.services.chainbase_client.check_chainbase_health",
+                client_module="app.services.chainbase_client.ChainbaseClient",
+                test_methods=["get_token_metadata", "get_token_holders"],
+                icon="🔗"
+            ),
+            "solanafm": ServiceConfig(
+                name="SolanaFM",
+                category=ServiceCategory.FREE,
+                cost_per_1k=0.0,
+                requires_auth=False,
+                health_check_module="app.services.solanafm_client.check_solanafm_health",
+                client_module="app.services.solanafm_client.SolanaFMClient",
+                test_methods=["get_token_info", "get_account_detail"],
+                icon="📊"
+            ),
+            "goplus": ServiceConfig(
+                name="GOplus",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.15,
+                requires_auth=True,
+                health_check_module="app.services.goplus_client.check_goplus_health",
+                client_module="app.services.goplus_client.GOplusClient",
+                test_methods=["analyze_token_security", "detect_rugpull", "comprehensive_analysis"],
+                icon="🔒"
+            ),
+            "blowfish": ServiceConfig(
+                name="Blowfish",
+                category=ServiceCategory.PREMIUM,
+                cost_per_1k=2.00,
+                requires_auth=True,
+                health_check_module="app.services.blowfish_client.check_blowfish_health",
+                client_module="app.services.blowfish_client.BlowfishClient",
+                test_methods=["scan_token", "get_risk_indicators"],
+                icon="🐡"
+            ),
+            "dataimpulse": ServiceConfig(
+                name="DataImpulse",
+                category=ServiceCategory.PREMIUM,
+                cost_per_1k=1.00,
+                requires_auth=True,
+                health_check_module="app.services.dataimpulse_client.check_dataimpulse_health",
+                client_module="app.services.dataimpulse_client.DataImpulseClient",
+                test_methods=["analyze_token_buzz"],
+                icon="📱"
+            )
         }
     
+    def print_header(self):
+        """🎨 Print fancy header"""
+        print("\n" + "="*80)
+        print("🧪 COMPREHENSIVE SERVICE TESTING SUITE")
+        print("="*80)
+        print(f"🎯 Mode: {self.mode.value.upper()}")
+        print(f"🔗 Base URL: {self.base_url}")
+        print(f"⏰ Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if self.mode == TestMode.MOCK_ONLY:
+            print("🛡️ SAFE MODE: No real API calls will be made")
+        elif self.mode == TestMode.FREE_APIS:
+            print("💚 FREE MODE: Only testing free APIs")
+        elif self.mode == TestMode.LIMITED_PAID:
+            print("💛 LIMITED MODE: Minimal paid API usage (~$0.01-0.05)")
+        elif self.mode == TestMode.FULL_TESTING:
+            print("🔴 FULL MODE: ⚠️ All APIs - may cost $0.10-0.50!")
+        
+        print("="*80)
+    
     async def test_system_health(self) -> TestResult:
-        """Test system health (no external API calls)"""
-        print("🏥 Testing system health...")
+        """🏥 Test system health and connectivity"""
+        print(f"\n🏥 Testing system health...")
         
         start_time = time.time()
         
-        # In mock mode, if server isn't running, test system components instead
+        # Mock mode - test system components
         if self.mode == TestMode.MOCK_ONLY:
             try:
-                # Quick server check first
+                # Quick server check
                 async with aiohttp.ClientSession() as session:
                     async with session.get(f"{self.base_url}/health", timeout=aiohttp.ClientTimeout(total=2)) as response:
                         data = await response.json()
                         response_time = time.time() - start_time
                         
-                        result = TestResult(
+                        print(f"   ✅ Server health: {response.status} ({response_time:.3f}s)")
+                        return TestResult(
                             service="system",
                             endpoint="/health",
                             success=response.status in [200, 503],
                             response_time=response_time,
                             cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
                             data_size=len(str(data))
                         )
                         
-                        print(f"   ✅ Server health check: {response.status} ({response_time:.2f}s)")
-                        return result
-                        
             except (aiohttp.ClientConnectorError, asyncio.TimeoutError):
-                # Server not running - test system components instead
                 print("   🔧 Server not running, testing system components...")
                 return await self._test_system_components()
         
-        # For non-mock modes, require server
+        # Other modes require server
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{self.base_url}/health", timeout=aiohttp.ClientTimeout(total=5)) as response:
                     data = await response.json()
                     response_time = time.time() - start_time
                     
-                    result = TestResult(
+                    print(f"   ✅ Server health: {response.status} ({response_time:.3f}s)")
+                    return TestResult(
                         service="system",
                         endpoint="/health",
                         success=response.status in [200, 503],
                         response_time=response_time,
                         cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
                         data_size=len(str(data))
                     )
-                    
-                    print(f"   ✅ Health check: {response.status} ({response_time:.2f}s)")
-                    return result
                     
         except aiohttp.ClientConnectorError:
             response_time = time.time() - start_time
             print(f"   ⚠️ Server not running at {self.base_url}")
             return TestResult(
                 service="system",
-                endpoint="/health", 
+                endpoint="/health",
                 success=False,
                 response_time=response_time,
                 cost_estimate="FREE",
-                error=f"Server not running at {self.base_url}. Start with: python -m app.main"
-            )
-        except Exception as e:
-            return TestResult(
-                service="system",
-                endpoint="/health", 
-                success=False,
-                response_time=time.time() - start_time,
-                cost_estimate="FREE",
-                error=str(e)
+                category=ServiceCategory.FREE,
+                error=f"Server not running. Start with: python -m app.main"
             )
     
     async def _test_system_components(self) -> TestResult:
-        """Test system components when server is not running"""
+        """🔧 Test system components when server is not running"""
         start_time = time.time()
         
         try:
-            # Test imports
-            import sys
-            from pathlib import Path
-            
-            # Add project root to path for imports
-            project_root = Path(__file__).parent.parent.parent
-            sys.path.insert(0, str(project_root))
-            
-            # Test basic imports
+            # Test core imports
             from app.core.config import get_settings
             from app.models.token import TokenMetadata
             
@@ -169,8 +271,7 @@ class SafeServiceTester:
             assert metadata.symbol == "TEST"
             
             response_time = time.time() - start_time
-            
-            print(f"   ✅ System components test passed ({response_time:.2f}s)")
+            print(f"   ✅ System components: All working ({response_time:.3f}s)")
             
             return TestResult(
                 service="system",
@@ -178,12 +279,12 @@ class SafeServiceTester:
                 success=True,
                 response_time=response_time,
                 cost_estimate="FREE",
-                data_size=0
+                category=ServiceCategory.FREE
             )
             
         except Exception as e:
             response_time = time.time() - start_time
-            print(f"   ❌ System components test failed ({response_time:.2f}s)")
+            print(f"   ❌ System components failed ({response_time:.3f}s)")
             
             return TestResult(
                 service="system",
@@ -191,330 +292,328 @@ class SafeServiceTester:
                 success=False,
                 response_time=response_time,
                 cost_estimate="FREE",
-                error=f"System components test failed: {str(e)}"
+                category=ServiceCategory.FREE,
+                error=f"Component test failed: {str(e)}"
             )
     
-    async def test_free_apis(self) -> List[TestResult]:
-        """Test free APIs only"""
-        print("🆓 Testing free APIs...")
+    async def test_free_services(self) -> List[TestResult]:
+        """💚 Test free services (SolanaFM, DexScreener)"""
+        print(f"\n💚 Testing free services...")
         results = []
         
-        # Test DexScreener (free, no auth required)
         if self.mode in [TestMode.FREE_APIS, TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
-            result = await self._test_dexscreener()
-            results.append(result)
+            # Test SolanaFM
+            solanafm_results = await self._test_solanafm_comprehensive()
+            results.extend(solanafm_results)
             
-            # Test Solscan v2.0 (has free tier and pro tier)
-            result = await self._test_solscan_v2()
-            results.append(result)
+            # Test DexScreener
+            dexscreener_result = await self._test_dexscreener()
+            results.append(dexscreener_result)
         
-        # Test public configuration endpoints
-        result = await self._test_config_endpoint()
-        results.append(result)
+        return results
+    
+    async def _test_solanafm_comprehensive(self) -> List[TestResult]:
+        """📊 Comprehensive SolanaFM testing"""
+        print(f"   📊 Testing SolanaFM (FREE service)...")
+        results = []
+        
+        try:
+            from app.services.solanafm_client import SolanaFMClient
+            
+            async with SolanaFMClient() as client:
+                # Test 1: Account detail
+                print(f"      👤 Testing account detail...")
+                start_time = time.time()
+                
+                try:
+                    account_info = await client.get_account_detail("AK2VbkdYLHSiJKS6AGUfNZYNaejABkV6VYDX1Vrgxfo")
+                    account_time = time.time() - start_time
+                    
+                    if account_info:
+                        balance_sol = account_info.get('balance_sol', 0)
+                        friendly_name = account_info.get('friendly_name', 'Unknown')
+                        print(f"         ✅ Account: {friendly_name} ({balance_sol} SOL) ({account_time:.3f}s)")
+                        
+                        results.append(TestResult(
+                            service="solanafm",
+                            endpoint="/v0/accounts/{account}",
+                            success=True,
+                            response_time=account_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            data_size=len(str(account_info))
+                        ))
+                    else:
+                        print(f"         ⚠️ No account data ({account_time:.3f}s)")
+                        results.append(TestResult(
+                            service="solanafm",
+                            endpoint="/v0/accounts/{account}",
+                            success=False,
+                            response_time=account_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            error="No account data returned"
+                        ))
+                        
+                except Exception as e:
+                    account_time = time.time() - start_time
+                    print(f"         ❌ Account detail error: {str(e)} ({account_time:.3f}s)")
+                    results.append(TestResult(
+                        service="solanafm",
+                        endpoint="/v0/accounts/{account}",
+                        success=False,
+                        response_time=account_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
+                        error=str(e)
+                    ))
+                
+                await asyncio.sleep(0.3)  # Rate limiting
+                
+                # Test 2: Token info (from your example)
+                print(f"      🪙 Testing token info...")
+                start_time = time.time()
+                
+                try:
+                    token_info = await client.get_token_info("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+                    token_time = time.time() - start_time
+                    
+                    if token_info:
+                        name = token_info.get('name', 'Unknown')
+                        symbol = token_info.get('symbol', 'N/A')
+                        decimals = token_info.get('decimals', 'N/A')
+                        print(f"         ✅ Token: {name} ({symbol}) - {decimals} decimals ({token_time:.3f}s)")
+                        
+                        results.append(TestResult(
+                            service="solanafm",
+                            endpoint="/v1/tokens/{token}",
+                            success=True,
+                            response_time=token_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            data_size=len(str(token_info))
+                        ))
+                    else:
+                        print(f"         ⚠️ No token data ({token_time:.3f}s)")
+                        results.append(TestResult(
+                            service="solanafm",
+                            endpoint="/v1/tokens/{token}",
+                            success=False,
+                            response_time=token_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            error="No token data returned"
+                        ))
+                        
+                except Exception as e:
+                    token_time = time.time() - start_time
+                    print(f"         ❌ Token info error: {str(e)} ({token_time:.3f}s)")
+                    results.append(TestResult(
+                        service="solanafm",
+                        endpoint="/v1/tokens/{token}",
+                        success=False,
+                        response_time=token_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
+                        error=str(e)
+                    ))
+                
+        except ImportError:
+            print(f"      ❌ SolanaFM client not available")
+            results.append(TestResult(
+                service="solanafm",
+                endpoint="/import",
+                success=False,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.FREE,
+                error="SolanaFM client not available"
+            ))
+        except Exception as e:
+            print(f"      ❌ SolanaFM test failed: {str(e)}")
+            results.append(TestResult(
+                service="solanafm",
+                endpoint="/test",
+                success=False,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.FREE,
+                error=str(e)
+            ))
         
         return results
     
     async def _test_dexscreener(self) -> TestResult:
-        """Test DexScreener API (completely free)"""
-        print("   🔍 Testing DexScreener API...")
+        """🔍 Test DexScreener API (completely free)"""
+        print(f"      🔍 Testing DexScreener...")
         
         start_time = time.time()
         try:
-            # DexScreener is free and doesn't require API keys
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{self.safe_test_tokens[0]}"
+            url = f"https://api.dexscreener.com/latest/dex/tokens/{self.test_tokens['solana'][0]}"
             
             async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
                     data = await response.json()
                     response_time = time.time() - start_time
                     
-                    return TestResult(
-                        service="dexscreener",
-                        endpoint="/dex/tokens", 
-                        success=response.status == 200,
-                        response_time=response_time,
-                        cost_estimate="FREE",
-                        data_size=len(str(data))
-                    )
-                    
+                    if response.status == 200 and data:
+                        pairs_count = len(data.get('pairs', []))
+                        print(f"         ✅ DexScreener: {pairs_count} trading pairs found ({response_time:.3f}s)")
+                        
+                        return TestResult(
+                            service="dexscreener",
+                            endpoint="/dex/tokens",
+                            success=True,
+                            response_time=response_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            data_size=len(str(data))
+                        )
+                    else:
+                        print(f"         ⚠️ DexScreener: No data ({response_time:.3f}s)")
+                        return TestResult(
+                            service="dexscreener",
+                            endpoint="/dex/tokens",
+                            success=False,
+                            response_time=response_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            error=f"HTTP {response.status}"
+                        )
+                        
         except Exception as e:
+            response_time = time.time() - start_time
+            print(f"         ❌ DexScreener error: {str(e)} ({response_time:.3f}s)")
             return TestResult(
                 service="dexscreener",
                 endpoint="/dex/tokens",
-                success=False, 
-                response_time=time.time() - start_time,
-                cost_estimate="FREE",
-                error=str(e)
-            )
-    
-    async def _test_solscan_v2(self) -> TestResult:
-        """Test Solscan v2.0 API"""
-        print("   📊 Testing Solscan v2.0 API...")
-        
-        start_time = time.time()
-        
-        # Try to get API key from environment
-        import os
-        from pathlib import Path
-        
-        api_key = os.getenv('SOLSCAN_API_KEY')
-        
-        if not api_key:
-            # Try to load from .env file manually
-            try:
-                env_file = Path.cwd() / '.env'
-                if env_file.exists():
-                    with open(env_file, 'r') as f:
-                        for line in f:
-                            line = line.strip()
-                            if line.startswith('SOLSCAN_API_KEY=') and not line.startswith('#'):
-                                api_key = line.split('=', 1)[1].strip().strip('"').strip("'")
-                                break
-            except Exception as e:
-                print(f"   ⚠️ Error reading .env file: {e}")
-        
-        if not api_key:
-            response_time = time.time() - start_time
-            print("   ⚠️ Solscan v2.0 requires API key for most endpoints")
-            return TestResult(
-                service="solscan",
-                endpoint="/v2.0/auth_required",
                 success=False,
                 response_time=response_time,
                 cost_estimate="FREE",
-                error="API key not found. Get key from https://pro.solscan.io and set SOLSCAN_API_KEY in .env"
-            )
-        
-        # Test with API key using v2.0 endpoints
-        return await self._test_solscan_v2_with_auth(api_key, start_time)
-    
-    async def _test_solscan_v2_with_auth(self, api_key: str, start_time: float) -> TestResult:
-        """Test Solscan v2.0 with API key authentication"""
-        
-        # v2.0 API endpoints to test
-        auth_endpoints = [
-            ("https://pro-api.solscan.io/v2.0/chaininfo", "/v2.0/chaininfo"),
-            (f"https://pro-api.solscan.io/v2.0/token/{self.safe_test_tokens[0]}", "/v2.0/token/{token}"),
-        ]
-        
-        for full_url, endpoint_name in auth_endpoints:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    headers = {
-                        "Accept": "application/json",
-                        "User-Agent": "Solana-Token-Analysis/1.0",
-                        "Authorization": f"Bearer {api_key}"
-                    }
-                    
-                    async with session.get(full_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                        response_time = time.time() - start_time
-                        
-                        if response.status == 200:
-                            try:
-                                content_type = response.headers.get('content-type', '').lower()
-                                if 'application/json' in content_type:
-                                    data = await response.json()
-                                    
-                                    if isinstance(data, dict):
-                                        if data.get("success") == False:
-                                            error_msg = data.get("error", "API returned success: false")
-                                            print(f"   ⚠️ Solscan v2.0 {endpoint_name} API error: {error_msg}")
-                                            return TestResult(
-                                                service="solscan",
-                                                endpoint=endpoint_name,
-                                                success=False,
-                                                response_time=response_time,
-                                                cost_estimate="$0.001",
-                                                error=f"API error: {error_msg}"
-                                            )
-                                        else:
-                                            print(f"   ✅ Solscan v2.0 {endpoint_name} working ({response_time:.2f}s)")
-                                            return TestResult(
-                                                service="solscan",
-                                                endpoint=endpoint_name,
-                                                success=True,
-                                                response_time=response_time,
-                                                cost_estimate="$0.001",
-                                                data_size=len(str(data))
-                                            )
-                            except Exception as parse_error:
-                                print(f"   ⚠️ Solscan v2.0 {endpoint_name} auth success but parsing failed")
-                                return TestResult(
-                                    service="solscan",
-                                    endpoint=endpoint_name,
-                                    success=True,
-                                    response_time=response_time,
-                                    cost_estimate="$0.001",
-                                    error=f"Auth success, parse error: {str(parse_error)}"
-                                )
-                        
-                        elif response.status == 401:
-                            error_text = await response.text()
-                            print(f"   ❌ Solscan v2.0 {endpoint_name} - Invalid API key")
-                            return TestResult(
-                                service="solscan",
-                                endpoint=endpoint_name,
-                                success=False,
-                                response_time=response_time,
-                                cost_estimate="FREE",
-                                error=f"Invalid API key. Check your Solscan Pro account: {error_text[:100]}"
-                            )
-                        
-                        else:
-                            error_text = await response.text()
-                            return TestResult(
-                                service="solscan",
-                                endpoint=endpoint_name,
-                                success=False,
-                                response_time=response_time,
-                                cost_estimate="FREE",
-                                error=f"HTTP {response.status}: {error_text[:100]}"
-                            )
-                            
-            except Exception as e:
-                continue
-        
-        # All auth endpoints failed
-        response_time = time.time() - start_time
-        print(f"   ❌ All Solscan v2.0 auth endpoints failed ({response_time:.2f}s)")
-        
-        return TestResult(
-            service="solscan",
-            endpoint="/v2.0/auth_endpoints",
-            success=False,
-            response_time=response_time,
-            cost_estimate="FREE",
-            error="All v2.0 authenticated endpoints failed. Check API key validity and v2.0 access"
-        )
-    
-    async def _test_config_endpoint(self) -> TestResult:
-        """Test configuration endpoint (free, internal)"""
-        print("   ⚙️ Testing configuration endpoint...")
-        
-        start_time = time.time()
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{self.base_url}/config", timeout=aiohttp.ClientTimeout(total=5)) as response:
-                    data = await response.json()
-                    response_time = time.time() - start_time
-                    
-                    return TestResult(
-                        service="system",
-                        endpoint="/config",
-                        success=response.status == 200,
-                        response_time=response_time,
-                        cost_estimate="FREE",
-                        data_size=len(str(data))
-                    )
-                    
-        except aiohttp.ClientConnectorError:
-            response_time = time.time() - start_time
-            print(f"   ⚠️ Server not running at {self.base_url}")
-            return TestResult(
-                service="system", 
-                endpoint="/config",
-                success=False,
-                response_time=response_time,
-                cost_estimate="FREE",
-                error=f"Server not running at {self.base_url}. Start with: python -m app.main"
-            )
-        except Exception as e:
-            return TestResult(
-                service="system", 
-                endpoint="/config",
-                success=False,
-                response_time=time.time() - start_time,
-                cost_estimate="FREE",
+                category=ServiceCategory.FREE,
                 error=str(e)
             )
     
-    async def test_service_clients(self) -> List[TestResult]:
-        """Test service clients with controlled API usage"""
-        print("🔌 Testing service clients...")
+    async def test_paid_services(self) -> List[TestResult]:
+        """💛 Test paid services with health checks and limited calls"""
+        print(f"\n💛 Testing paid services...")
         results = []
         
-        if self.mode in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
-            print("   ⚠️ WARNING: This will test paid API clients!")
-            
-            # Ask for confirmation
-            if not self._confirm_paid_testing():
-                print("   ❌ Service client testing cancelled")
-                return results
-            
-            # Test API health endpoints (usually free or very cheap)
-            # Updated to include GOplus
-            for service_name in ["helius", "birdeye", "chainbase", "blowfish", "solscan", "dataimpulse", "goplus"]:
-                result = await self._test_service_health(service_name)
-                results.append(result)
+        if self.mode not in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
+            print(f"   ⚠️ Paid service testing requires 'limited' or 'full' mode")
+            return results
+        
+        # Ask for confirmation
+        if not await self._confirm_paid_testing():
+            print(f"   ❌ Paid service testing cancelled by user")
+            return results
+        
+        # Test each paid service
+        for service_name, config in self.services.items():
+            if config.category in [ServiceCategory.PAID, ServiceCategory.PREMIUM]:
+                service_results = await self._test_service_comprehensive(service_name, config)
+                results.extend(service_results)
         
         return results
     
-    async def _test_service_health(self, service_name: str) -> TestResult:
-        """Test individual service health with improved error handling"""
-        print(f"   🔍 Testing {service_name} service health...")
+    async def _confirm_paid_testing(self) -> bool:
+        """⚠️ Confirm paid API testing with user"""
+        print(f"\n" + "="*60)
+        print(f"⚠️ PAID API TESTING CONFIRMATION")
+        print(f"="*60)
+        print(f"You are about to test APIs that may consume credits.")
+        
+        if self.mode == TestMode.LIMITED_PAID:
+            print(f"💛 LIMITED MODE: Estimated cost $0.01-$0.05")
+            print(f"   • Health checks only")
+            print(f"   • Minimal data requests")
+        elif self.mode == TestMode.FULL_TESTING:
+            print(f"🔴 FULL MODE: Estimated cost $0.10-$0.50")
+            print(f"   • Full API testing")
+            print(f"   • Multiple endpoints")
+        
+        print(f"\nServices to test:")
+        for service_name, config in self.services.items():
+            if config.category != ServiceCategory.FREE:
+                cost_info = f"${config.cost_per_1k:.3f}/1k calls"
+                print(f"  {config.icon} {config.name}: {cost_info}")
+        
+        print(f"="*60)
+        
+        try:
+            response = input("Continue with paid API testing? (yes/no): ").lower().strip()
+            return response in ['yes', 'y']
+        except (EOFError, KeyboardInterrupt):
+            print(f"\n   ❌ Testing cancelled by user")
+            return False
+    
+    async def _test_service_comprehensive(self, service_name: str, config: ServiceConfig) -> List[TestResult]:
+        """🔧 Comprehensive service testing based on your examples"""
+        print(f"   {config.icon} Testing {config.name}...")
+        results = []
+        
+        # Test 1: Health check
+        health_result = await self._test_service_health(service_name, config)
+        results.append(health_result)
+        
+        # Only continue with API calls if health check passed and we have auth
+        if health_result.success and self.mode == TestMode.FULL_TESTING:
+            # Test specific API calls based on service
+            if service_name == "birdeye":
+                api_results = await self._test_birdeye_api_calls()
+                results.extend(api_results)
+            elif service_name == "chainbase":
+                api_results = await self._test_chainbase_api_calls()
+                results.extend(api_results)
+            elif service_name == "goplus":
+                api_results = await self._test_goplus_api_calls()
+                results.extend(api_results)
+        
+        return results
+    
+    async def _test_service_health(self, service_name: str, config: ServiceConfig) -> TestResult:
+        """🏥 Test service health check"""
+        print(f"      🏥 Health check...")
         
         start_time = time.time()
         try:
-            # Try to import and test the service client
-            if service_name == "helius":
-                from app.services.helius_client import check_helius_health
-                health_data = await check_helius_health()
-            elif service_name == "birdeye":
-                from app.services.birdeye_client import check_birdeye_health  
-                health_data = await check_birdeye_health()
-            elif service_name == "chainbase":
-                from app.services.chainbase_client import check_chainbase_health
-                health_data = await check_chainbase_health()
-            elif service_name == "blowfish":
-                from app.services.blowfish_client import check_blowfish_health
-                health_data = await check_blowfish_health()
-            elif service_name == "solscan":
-                from app.services.solscan_client import check_solscan_health
-                health_data = await check_solscan_health()
-            elif service_name == "dataimpulse":
-                from app.services.dataimpulse_client import check_dataimpulse_health
-                health_data = await check_dataimpulse_health()
-            elif service_name == "goplus":
-                from app.services.goplus_client import check_goplus_health
-                health_data = await check_goplus_health()
-            else:
-                raise ValueError(f"Unknown service: {service_name}")
+            # Import health check function
+            module_path, function_name = config.health_check_module.rsplit('.', 1)
+            module = __import__(module_path, fromlist=[function_name])
+            health_check_func = getattr(module, function_name)
             
+            health_data = await health_check_func()
             response_time = time.time() - start_time
-            success = health_data.get("healthy", False)
             
-            # Check for specific API key issues
+            success = health_data.get("healthy", False)
             api_key_configured = health_data.get("api_key_configured", False)
             error_message = health_data.get("error", "")
             
-            # For GOplus, check simplified configuration
-            if service_name == "goplus":
-                if not api_key_configured:
-                    error = "GOplus API keys not configured. Set GOPLUS_APP_KEY and GOPLUS_APP_SECRET in .env file"
-                elif not success and "invalid" in error_message.lower():
-                    error = "GOplus API keys invalid or suspended. Check your account"
-                else:
-                    error = health_data.get("error")
-                    
-                print(f"   📊 GOplus: API keys configured: {api_key_configured}")
+            # Determine cost
+            if not api_key_configured or not success:
+                cost_estimate = "FREE"
             else:
-                # Standard error handling for other services
-                if not success and not api_key_configured:
-                    error = f"API key not configured. Set {service_name.upper()}_API_KEY in .env file"
-                elif not success and "invalid" in error_message.lower():
-                    error = f"API key invalid or suspended. Check your {service_name} account"
-                elif not success and "permissions" in error_message.lower():
-                    error = f"API key lacks permissions. Upgrade your {service_name} plan"
-                else:
-                    error = health_data.get("error")
+                cost_estimate = f"${config.cost_per_1k:.3f}"
             
-            # Determine cost estimate
-            if not api_key_configured:
-                cost_estimate = "FREE"  # No API calls made
-            elif "invalid" in error_message.lower() or "suspended" in error_message.lower():
-                cost_estimate = "FREE"  # Failed before making billable calls
+            # Generate status message
+            if success:
+                status_msg = f"✅ Healthy"
+                if not config.requires_auth:
+                    status_msg += " (no auth required)"
+                elif api_key_configured:
+                    status_msg += " (authenticated)"
             else:
-                cost_estimate = f"${self.api_costs.get(service_name, 0.001):.3f}"
+                if not config.requires_auth:
+                    status_msg = f"❌ Service issues"
+                elif not api_key_configured:
+                    status_msg = f"⚠️ No API key configured"
+                else:
+                    status_msg = f"❌ Authentication failed"
+            
+            print(f"         {status_msg} ({response_time:.3f}s)")
+            
+            if error_message and not success:
+                print(f"         💭 {error_message[:60]}...")
             
             return TestResult(
                 service=service_name,
@@ -522,484 +621,717 @@ class SafeServiceTester:
                 success=success,
                 response_time=response_time,
                 cost_estimate=cost_estimate,
+                category=config.category,
                 data_size=len(str(health_data)),
-                error=error
+                error=error_message if not success else None
             )
             
         except Exception as e:
+            response_time = time.time() - start_time
+            print(f"         ❌ Health check failed: {str(e)} ({response_time:.3f}s)")
+            
             return TestResult(
                 service=service_name,
                 endpoint="health_check",
                 success=False,
-                response_time=time.time() - start_time,
+                response_time=response_time,
                 cost_estimate="FREE",
+                category=config.category,
                 error=f"Health check failed: {str(e)}"
             )
     
-    def _confirm_paid_testing(self) -> bool:
-        """Ask user to confirm paid API testing"""
-        print("\n" + "="*60)
-        print("⚠️ PAID API TESTING CONFIRMATION")
-        print("="*60)
-        print("You are about to test paid APIs that will consume credits.")
-        print("Estimated cost: $0.01 - $0.15 for minimal testing")
-        print("\nAPIs that will be tested:")
-        print("  • Service health checks (minimal cost)")
-        print("  • Basic connectivity tests")
-        print("\nServices to be tested:")
-        print("  • Helius API (Solana RPC)")
-        print("  • Birdeye API (Price data)")
-        print("  • Chainbase API (Analytics)")
-        print("  • Blowfish API (Security)")
-        print("  • Solscan v2.0 API (On-chain data)")
-        print("  • DataImpulse API (Social sentiment)")
-        print("  • GOplus API (Security & Rugpull detection)")
-        print("    - Token security analysis")
-        print("    - Rugpull detection")
-        print("    - Bearer token authentication")
-        print("\nRecommendation: Test with ENABLE_API_MOCKS=true first")
-        print("="*60)
-        
-        try:
-            response = input("Continue with paid API testing? (yes/no): ").lower().strip()
-            return response in ['yes', 'y']
-        except (EOFError, KeyboardInterrupt):
-            print("\n   ❌ Testing cancelled by user")
-            return False
-    
-    async def test_goplus_specific(self) -> List[TestResult]:
-        """Test GOplus-specific functionality with simplified authentication"""
-        print("🔒 Testing GOplus specific functionality...")
+    async def _test_birdeye_api_calls(self) -> List[TestResult]:
+        """🦅 Test Birdeye API calls"""
+        print(f"      🦅 Testing Birdeye API calls...")
         results = []
         
-        if self.mode not in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
-            print("   ⚠️ GOplus testing requires paid mode")
-            return results
-        
-        # Test GOplus health endpoint
-        result = await self._test_goplus_health_detailed()
-        results.append(result)
-        
-        # Only continue if health check passed
-        if result.success:
-            # Test token security analysis (paid endpoint)
-            security_result = await self._test_goplus_token_security()
-            results.append(security_result)
+        try:
+            from app.services.birdeye_client import BirdeyeClient
             
-            # Test rugpull detection (paid endpoint)
-            rugpull_result = await self._test_goplus_rugpull_detection()
-            results.append(rugpull_result)
-        else:
-            print("   ⚠️ Skipping other GOplus tests due to failed health check")
+            async with BirdeyeClient() as client:
+                # Test Birdeye endpoints
+                print(f"         💸 Testing token price...")
+                start_time = time.time()
+
+                try:
+                    token_price = await client.get_token_price(self.test_tokens['solana'][0])
+                    price_time = time.time() - start_time
+
+                    if token_price and len(token_price) > 0:
+                        print(f"            ✅ Received token price ({price_time:.3f}s)")
+
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/price",
+                            success=True,
+                            response_time=price_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(token_price))
+                        ))
+                    else:
+                        print(f"            ⚠️ No price data ({price_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/price",
+                            success=False,
+                            response_time=price_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No price data returned"
+                        ))
+                
+                except Exception as e:
+                    price_time = time.time() - start_time
+                    print(f"            ❌ Top traders error: {str(e)} ({price_time:.3f}s)")
+                    results.append(TestResult(
+                        service="birdeye",
+                        endpoint="/defi/price",
+                        success=False,
+                        response_time=price_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+
+                print(f"         📈 Testing trending tokens...")
+                start_time = time.time()
+
+                try:
+                    trending_tokens = await client.get_trending_tokens(limit=5)
+                    trending_time = time.time() - start_time
+
+                    if trending_tokens and len(trending_tokens) > 0:
+                        print(f"            ✅ Received tokens ({trending_time:.3f}s)")
+
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/token_trending",
+                            success=True,
+                            response_time=trending_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(trending_tokens))
+                        ))
+                    else:
+                        print(f"            ⚠️ No data ({trending_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/token_trending",
+                            success=False,
+                            response_time=trending_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No data returned"
+                        ))
+                
+                except Exception as e:
+                    trending_time = time.time() - start_time
+                    print(f"            ❌ Trending tokens error: {str(e)} ({trending_time:.3f}s)")
+                    results.append(TestResult(
+                        service="birdeye",
+                        endpoint="defi/token_trending",
+                        success=False,
+                        response_time=trending_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+
+                print(f"         🗃️ Testing price history...")
+                start_time = time.time()
+
+                try:
+                    history = await client.get_price_history(token_address=self.test_tokens["solana"][0], time_from=1700000000, time_to=1726704000)
+                    history_time = time.time() - start_time
+
+                    if history and len(history) > 0:
+                        print(f"            ✅ Received price history ({history_time:.3f}s)")
+
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/history_price",
+                            success=True,
+                            response_time=history_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(history))
+                        ))
+                    else:
+                        print(f"            ⚠️ No price history data ({history_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/history_price",
+                            success=False,
+                            response_time=history_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No price history data returned"
+                        ))
+                
+                except Exception as e:
+                    history_time = time.time() - start_time
+                    print(f"            ❌ Price history error: {str(e)} ({history_time:.3f}s)")
+                    results.append(TestResult(
+                        service="birdeye",
+                        endpoint="/defi/history_price",
+                        success=False,
+                        response_time=history_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+
+                print(f"         🤝 Testing token trades...")
+                start_time = time.time()
+
+                try:
+                    trades = await client.get_token_trades(token_address=self.test_tokens["solana"][0], limit=5)
+                    trades_time = time.time() - start_time
+
+                    if trades and len(trades) > 0:
+                        print(f"            ✅ Received trades ({trades_time:.3f}s)")
+
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/v3/token/txs",
+                            success=True,
+                            response_time=trades_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(trades))
+                        ))
+                    else:
+                        print(f"            ⚠️ No trades data ({trades_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="/defi/v3/token/txs",
+                            success=False,
+                            response_time=trades_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No trades data returned"
+                        ))
+                
+                except Exception as e:
+                    trades_time = time.time() - start_time
+                    print(f"            ❌ Token trades error: {str(e)} ({trades_time:.3f}s)")
+                    results.append(TestResult(
+                        service="birdeye",
+                        endpoint="/defi/v3/token/txs",
+                        success=False,
+                        response_time=trades_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+
+                print(f"         👥 Testing top traders...")
+                start_time = time.time()
+                
+                try:
+                    top_traders = await client.get_top_traders(
+                        token_address=self.test_tokens["solana"][0],
+                        limit=3
+                    )
+                    traders_time = time.time() - start_time
+                    
+                    if top_traders and len(top_traders) > 0:
+                        print(f"            ✅ Found {len(top_traders)} top traders ({traders_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="defi/v2/tokens/top_traders",
+                            success=True,
+                            response_time=traders_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(top_traders))
+                        ))
+                    else:
+                        print(f"            ⚠️ No trader data ({traders_time:.3f}s)")
+                        results.append(TestResult(
+                            service="birdeye",
+                            endpoint="defi/v2/tokens/top_traders",
+                            success=False,
+                            response_time=traders_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No trader data returned"
+                        ))
+                        
+                except Exception as e:
+                    traders_time = time.time() - start_time
+                    print(f"            ❌ Top traders error: {str(e)} ({traders_time:.3f}s)")
+                    results.append(TestResult(
+                        service="birdeye",
+                        endpoint="defi/v2/tokens/top_traders",
+                        success=False,
+                        response_time=traders_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
+        except Exception as e:
+            print(f"         ❌ Birdeye client error: {str(e)}")
+            results.append(TestResult(
+                service="birdeye",
+                endpoint="/client_error",
+                success=False,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.PAID,
+                error=str(e)
+            ))
         
         return results
     
-    async def _test_goplus_health_detailed(self) -> TestResult:
-        """Test GOplus health with simplified authentication"""
-        print("   🔒 Testing GOplus health (simplified auth)...")
+    async def _test_chainbase_api_calls(self) -> List[TestResult]:
+        """🔗 Test Chainbase API calls"""
+        print(f"      🔗 Testing Chainbase API calls...")
+        results = []
         
-        start_time = time.time()
         try:
-            from app.services.goplus_client import check_goplus_health
+            from app.services.chainbase_client import ChainbaseClient
             
-            health_data = await check_goplus_health()
-            response_time = time.time() - start_time
-            
-            success = health_data.get("healthy", False)
-            api_key_configured = health_data.get("api_key_configured", False)
-            
-            print(f"   📊 GOplus API key configured: {api_key_configured}")
-            print(f"   📊 GOplus service healthy: {success}")
-            
-            if not api_key_configured:
-                error = "GOplus APP_KEY and APP_SECRET not configured"
-                print(f"   ⚠️ {error}")
-                print(f"   💡 Set GOPLUS_APP_KEY and GOPLUS_APP_SECRET in .env file")
-            elif not success:
-                error = health_data.get("error", "Unknown error")
-                print(f"   ❌ GOplus health check failed: {error}")
-            else:
-                print(f"   ✅ GOplus authentication successful")
-                error = None
-            
-            return TestResult(
-                service="goplus",
-                endpoint="health_check",
-                success=success,
-                response_time=response_time,
-                cost_estimate="FREE",
-                data_size=len(str(health_data)),
-                error=error
-            )
-            
+            async with ChainbaseClient() as client:
+                # Test metadata and holders
+                test_token = self.test_tokens["ethereum"][0]  # WETH
+                print(f"         🪙 Testing token: {test_token[:8]}...{test_token[-4:]}")
+                
+                print(f"         📊 Testing token metadata...")
+                start_time = time.time()
+                
+                try:
+                    metadata = await client.get_token_metadata(test_token, "ethereum")
+                    metadata_time = time.time() - start_time
+                    
+                    if metadata:                        
+                        results.append(TestResult(
+                            service="chainbase",
+                            endpoint="/token/metadata",
+                            success=True,
+                            response_time=metadata_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(metadata))
+                        ))
+                    else:
+                        print(f"            ⚠️ No metadata returned ({metadata_time:.3f}s)")
+                        print(f"            📋 Response was: {metadata}")
+                        results.append(TestResult(
+                            service="chainbase",
+                            endpoint="/token/metadata",
+                            success=False,
+                            response_time=metadata_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No metadata returned"
+                        ))
+                        
+                except Exception as e:
+                    metadata_time = time.time() - start_time
+                    print(f"            ❌ Metadata error: {str(e)} ({metadata_time:.3f}s)")
+                    print(f"            📋 Full error: {repr(e)}")
+                    results.append(TestResult(
+                        service="chainbase",
+                        endpoint="/token/metadata",
+                        success=False,
+                        response_time=metadata_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+                
+                # Test token holders
+                print(f"         👥 Testing token holders...")
+                start_time = time.time()
+                
+                try:
+                    holders = await client.get_token_holders(test_token, "ethereum", limit=5)
+                    holders_time = time.time() - start_time
+                    
+                    if holders:                        
+                        if isinstance(holders, dict):
+                            print(f"            ✅ Holders data retrieved")
+                            print(f"               Response time: {holders_time:.3f}s")
+                            
+                        results.append(TestResult(
+                            service="chainbase",
+                            endpoint="/token/top-holders",
+                            success=True,
+                            response_time=holders_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(holders))
+                        ))
+                    else:
+                        print(f"            ⚠️ No holder data returned ({holders_time:.3f}s)")
+                        print(f"            📋 Response was: {holders}")
+                        results.append(TestResult(
+                            service="chainbase",
+                            endpoint="/token/top-holders",
+                            success=False,
+                            response_time=holders_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No holder data returned"
+                        ))
+                        
+                except Exception as e:
+                    holders_time = time.time() - start_time
+                    print(f"            ❌ Holders error: {str(e)} ({holders_time:.3f}s)")
+                    print(f"            📋 Full error: {repr(e)}")
+                    results.append(TestResult(
+                        service="chainbase",
+                        endpoint="/token/top-holders",
+                        success=False,
+                        response_time=holders_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
         except Exception as e:
-            return TestResult(
-                service="goplus",
-                endpoint="health_check",
+            print(f"         ❌ Chainbase client error: {str(e)}")
+            print(f"         📋 Full client error: {repr(e)}")
+            results.append(TestResult(
+                service="chainbase",
+                endpoint="/client_error",
                 success=False,
-                response_time=time.time() - start_time,
+                response_time=0,
                 cost_estimate="FREE",
-                error=f"GOplus health check failed: {str(e)}"
-            )
-    
-    async def _test_goplus_token_security(self) -> TestResult:
-        """Test GOplus token security analysis with improved error handling"""
-        print("   🛡️ Testing GOplus token security analysis...")
+                category=ServiceCategory.PAID,
+                error=str(e)
+            ))
         
-        start_time = time.time()
+        return results
+    
+    async def _test_goplus_api_calls(self) -> List[TestResult]:
+        """🔒 Test GOplus API calls"""
+        print(f"      🔒 Testing GOplus API calls...")
+        results = []
+        
         try:
             from app.services.goplus_client import GOplusClient
             
             async with GOplusClient() as client:
-                # Test scenarios prioritized by likelihood of success
+                # Test token security analysis
                 test_scenarios = [
-                    # Ethereum tokens (most likely to work with GOplus)
                     ("0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95", "ethereum", "ELF Token"),
-                    ("0xdAC17F958D2ee523a2206206994597C13D831ec7", "ethereum", "USDT"),
                     ("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "ethereum", "WETH"),
-                    # BSC tokens (also well supported)
-                    ("0x55d398326f99059fF775485246999027B3197955", "bsc", "USDT-BSC"),
-                    # Solana tokens (limited support)
-                    ("So11111111111111111111111111111111111112", "solana", "Wrapped SOL"),
-                    ("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "solana", "USDC-SOL"),
                 ]
                 
                 for token_address, chain, token_name in test_scenarios:
-                    print(f"      Trying {token_name} ({chain}): {token_address[:8]}...{token_address[-4:]}")
+                    print(f"         🛡️ Testing security for {token_name}...")
+                    start_time = time.time()
                     
                     try:
                         security_result = await client.analyze_token_security(token_address, chain)
-                        response_time = time.time() - start_time
+                        security_time = time.time() - start_time
                         
-                        if security_result and isinstance(security_result, dict):
-                            print(f"   ✅ GOplus security analysis completed with {token_name} ({response_time:.2f}s)")
-                            
-                            # Log key security findings
+                        if security_result:
                             is_honeypot = security_result.get("is_honeypot", False)
                             is_blacklisted = security_result.get("is_blacklisted", False)
-                            buy_tax = security_result.get("buy_tax", "0")
-                            sell_tax = security_result.get("sell_tax", "0")
-                            warnings = security_result.get("warnings", [])
                             
-                            print(f"      Token: {security_result.get('metadata', {}).get('token_name', token_name)}")
-                            print(f"      Honeypot: {is_honeypot}")
-                            print(f"      Blacklisted: {is_blacklisted}")
-                            print(f"      Buy Tax: {buy_tax}%")
-                            print(f"      Sell Tax: {sell_tax}%")
+                            status = "🟢 Safe"
+                            if is_honeypot or is_blacklisted:
+                                status = "🔴 Risky"
                             
-                            if warnings:
-                                print(f"      Warnings: {', '.join(warnings[:2])}")
-                            
-                            return TestResult(
+                            print(f"            ✅ Security: {status} ({security_time:.3f}s)")
+                            results.append(TestResult(
                                 service="goplus",
-                                endpoint="token_security",
+                                endpoint="/api/v1/token_security",
                                 success=True,
-                                response_time=response_time,
+                                response_time=security_time,
                                 cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
                                 data_size=len(str(security_result))
-                            )
+                            ))
+                            break  # Success, no need to test more
                         else:
-                            print(f"      {token_name}: No security data returned")
-                            continue  # Try next token
-                            
-                    except Exception as token_error:
-                        error_msg = str(token_error)
-                        print(f"      {token_name}: Error - {error_msg}")
-                        
-                        # Check for specific error types
-                        if "authentication" in error_msg.lower() or "invalid" in error_msg.lower():
-                            print(f"      {token_name}: ❌ Authentication failed - check API credentials")
-                            return TestResult(
+                            print(f"            ⚠️ No security data ({security_time:.3f}s)")
+                            results.append(TestResult(
                                 service="goplus",
-                                endpoint="token_security",
+                                endpoint="/api/v1/token_security",
                                 success=False,
-                                response_time=time.time() - start_time,
-                                cost_estimate="FREE",
-                                error="Authentication failed - check GOPLUS_APP_KEY and GOPLUS_APP_SECRET"
-                            )
-                        elif "not found" in error_msg.lower():
-                            print(f"      {token_name}: Token not found in GOplus database")
-                        elif "chain" in error_msg.lower() or "unsupported" in error_msg.lower():
-                            print(f"      {token_name}: Chain not supported")
-                        elif "rate limit" in error_msg.lower():
-                            print(f"      {token_name}: Rate limited")
-                        else:
-                            print(f"      {token_name}: Unknown error: {error_msg[:100]}")
+                                response_time=security_time,
+                                cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
+                                error="No security data returned"
+                            ))
+                            
+                    except Exception as e:
+                        security_time = time.time() - start_time
+                        print(f"            ❌ Security error: {str(e)} ({security_time:.3f}s)")
+                        results.append(TestResult(
+                            service="goplus",
+                            endpoint="/api/v1/token_security",
+                            success=False,
+                            response_time=security_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.PAID,
+                            error=str(e)
+                        ))
                         
-                        continue  # Try next token
-                
-                # If we get here, none of the tokens worked
-                response_time = time.time() - start_time
-                
-                # Check if it's an API key configuration issue
-                if not client.app_key or not client.app_secret:
-                    error = "GOplus API keys not configured. Set GOPLUS_APP_KEY and GOPLUS_APP_SECRET in .env"
-                    cost = "FREE"
-                else:
-                    # API keys are configured but no tokens returned data
-                    error = f"No tokens returned security data. Tried {len(test_scenarios)} tokens.\n"
-                    error += "This could mean:\n"
-                    error += "  • GOplus has limited support for the tested tokens\n"
-                    error += "  • API response format has changed\n"
-                    error += "  • Account limitations or subscription issues\n"
-                    error += "Recommendation: Check GOplus dashboard and documentation"
-                    cost = "$0.002"
-                
-                return TestResult(
-                    service="goplus",
-                    endpoint="token_security",
-                    success=False,
-                    response_time=response_time,
-                    cost_estimate=cost,
-                    error=error
-                )
+                        if "authentication" in str(e).lower():
+                            break  # No point testing more if auth fails
                     
+                    await asyncio.sleep(1)  # Rate limiting
+                
         except Exception as e:
-            error_msg = str(e)
-            print(f"   ❌ GOplus security analysis exception: {error_msg}")
-            
-            # Enhanced error categorization
-            if "not configured" in error_msg.lower():
-                error = "API keys not configured - set GOPLUS_APP_KEY and GOPLUS_APP_SECRET"
-                cost = "FREE"
-            elif "authentication" in error_msg.lower() or "invalid" in error_msg.lower():
-                error = "Authentication failed - verify your GOplus account and API credentials"
-                cost = "FREE"
-            elif "rate limit" in error_msg.lower():
-                error = "Rate limited - wait before retrying or upgrade plan"
-                cost = "$0.001"
-            elif "timeout" in error_msg.lower():
-                error = "Request timeout - GOplus API may be experiencing issues"
-                cost = "$0.001"
-            elif "connection" in error_msg.lower():
-                error = "Connection failed - check network connectivity"
-                cost = "FREE"
-            else:
-                error = f"GOplus security analysis failed: {error_msg}"
-                cost = "FREE"
-            
-            return TestResult(
+            print(f"         ❌ GOplus client error: {str(e)}")
+            results.append(TestResult(
                 service="goplus",
-                endpoint="token_security",
+                endpoint="/client_error",
                 success=False,
-                response_time=time.time() - start_time,
-                cost_estimate=cost,
-                error=error
-            )
-    
-    async def _test_goplus_rugpull_detection(self) -> TestResult:
-        """Test GOplus rugpull detection"""
-        print("   🚨 Testing GOplus rugpull detection...")
-        
-        start_time = time.time()
-        try:
-            from app.services.goplus_client import GOplusClient
-            
-            async with GOplusClient() as client:
-                # Test with a well-known token
-                test_token = "0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95"  # ELF token on Ethereum
-                
-                rugpull_result = await client.detect_rugpull(test_token, "ethereum")
-                response_time = time.time() - start_time
-                
-                if rugpull_result and isinstance(rugpull_result, dict):
-                    print(f"   ✅ GOplus rugpull detection completed ({response_time:.2f}s)")
-                    
-                    return TestResult(
-                        service="goplus",
-                        endpoint="rugpull_detection",
-                        success=True,
-                        response_time=response_time,
-                        cost_estimate="$0.002",
-                        data_size=len(str(rugpull_result))
-                    )
-                else:
-                    return TestResult(
-                        service="goplus",
-                        endpoint="rugpull_detection",
-                        success=False,
-                        response_time=response_time,
-                        cost_estimate="$0.002",
-                        error="No rugpull data returned"
-                    )
-                    
-        except Exception as e:
-            error_msg = str(e)
-            print(f"   ❌ GOplus rugpull detection failed: {error_msg}")
-            
-            return TestResult(
-                service="goplus",
-                endpoint="rugpull_detection",
-                success=False,
-                response_time=time.time() - start_time,
+                response_time=0,
                 cost_estimate="FREE",
-                error=f"Rugpull detection failed: {error_msg}"
-            )
-    
-    async def run_all_tests(self) -> Dict[str, Any]:
-        """Run all tests according to the selected mode"""
-        print(f"🚀 Starting safe service testing (mode: {self.mode.value})")
-        print(f"🎯 Base URL: {self.base_url}")
+                category=ServiceCategory.PAID,
+                error=str(e)
+            ))
         
-        start_time = time.time()
+        return results
+    
+    async def run_comprehensive_tests(self) -> Dict[str, Any]:
+        """🚀 Run comprehensive test suite"""
+        self.print_header()
+        
         all_results = []
         
-        # Phase 1: System health (always safe)
+        # Phase 1: System Health
+        print(f"\n🏥 PHASE 1: SYSTEM HEALTH")
         health_result = await self.test_system_health()
         all_results.append(health_result)
         
-        # Phase 2: Free APIs (including Solscan v2.0 tests)
-        free_results = await self.test_free_apis()
+        # Phase 2: Free Services
+        print(f"\n💚 PHASE 2: FREE SERVICES")
+        free_results = await self.test_free_services()
         all_results.extend(free_results)
         
-        # Phase 3: Service clients (if enabled) - now includes GOplus
-        service_results = await self.test_service_clients()
-        all_results.extend(service_results)
-        
-        # Phase 4: GOplus specific tests (if enabled)
+        # Phase 3: Paid Services
         if self.mode in [TestMode.LIMITED_PAID, TestMode.FULL_TESTING]:
-            goplus_results = await self.test_goplus_specific()
-            all_results.extend(goplus_results)
+            print(f"\n💛 PHASE 3: PAID SERVICES")
+            paid_results = await self.test_paid_services()
+            all_results.extend(paid_results)
         
-        total_time = time.time() - start_time
-        
-        # Generate summary
-        return self._generate_summary(all_results, total_time)
+        # Generate comprehensive summary
+        return self._generate_comprehensive_summary(all_results)
     
-    def _generate_summary(self, results: List[TestResult], total_time: float) -> Dict[str, Any]:
-        """Generate test summary"""
+    def _generate_comprehensive_summary(self, results: List[TestResult]) -> Dict[str, Any]:
+        """📊 Generate comprehensive test summary"""
+        total_time = time.time() - self.start_time
+        
+        # Categorize results
         successful = [r for r in results if r.success]
         failed = [r for r in results if not r.success]
+        
+        # Calculate costs by category
+        free_results = [r for r in results if r.category == ServiceCategory.FREE]
+        paid_results = [r for r in results if r.category == ServiceCategory.PAID]
+        premium_results = [r for r in results if r.category == ServiceCategory.PREMIUM]
         
         total_estimated_cost = sum(
             float(r.cost_estimate.replace('$', '').replace('FREE', '0'))
             for r in results
         )
         
-        # Count GOplus specific results
-        goplus_results = [r for r in results if r.service == "goplus"]
+        # Service breakdown
+        service_summary = {}
+        for result in results:
+            if result.service not in service_summary:
+                service_summary[result.service] = {
+                    "total": 0,
+                    "successful": 0,
+                    "failed": 0,
+                    "cost": 0.0,
+                    "avg_response_time": 0.0
+                }
+            
+            service_summary[result.service]["total"] += 1
+            if result.success:
+                service_summary[result.service]["successful"] += 1
+            else:
+                service_summary[result.service]["failed"] += 1
+            
+            cost = float(result.cost_estimate.replace('$', '').replace('FREE', '0'))
+            service_summary[result.service]["cost"] += cost
         
-        summary = {
+        # Calculate average response times
+        for service_name in service_summary:
+            service_results = [r for r in results if r.service == service_name and r.success]
+            if service_results:
+                avg_time = sum(r.response_time for r in service_results) / len(service_results)
+                service_summary[service_name]["avg_response_time"] = avg_time
+        
+        return {
             "mode": self.mode.value,
+            "total_time": round(total_time, 2),
             "total_tests": len(results),
             "successful": len(successful),
             "failed": len(failed),
-            "total_time": round(total_time, 2),
+            "success_rate": round((len(successful) / len(results)) * 100, 1) if results else 0,
             "estimated_cost": f"${total_estimated_cost:.3f}",
-            "avg_response_time": round(
-                sum(r.response_time for r in successful) / len(successful) if successful else 0,
-                3
-            ),
-            "goplus_tests": len(goplus_results),
-            "goplus_successful": len([r for r in goplus_results if r.success]),
-            "results": [
-                {
-                    "service": r.service,
-                    "endpoint": r.endpoint,
-                    "success": r.success,
-                    "response_time": round(r.response_time, 3),
-                    "cost": r.cost_estimate,
-                    "error": r.error,
-                    "data_size": r.data_size
-                }
-                for r in results
-            ]
+            "category_breakdown": {
+                "free": len(free_results),
+                "paid": len(paid_results),
+                "premium": len(premium_results)
+            },
+            "service_summary": service_summary,
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
         }
-        
-        return summary
     
-    def print_summary(self, summary: Dict[str, Any]):
-        """Print formatted test summary"""
-        print("\n" + "="*80)
-        print("📊 SERVICE TESTING SUMMARY")
-        print("="*80)
-        print(f"Mode: {summary['mode'].upper()}")
-        print(f"Total Tests: {summary['total_tests']}")
-        print(f"Successful: {summary['successful']} ✅")
-        print(f"Failed: {summary['failed']} ❌")
-        print(f"Total Time: {summary['total_time']}s")
-        print(f"Estimated Cost: {summary['estimated_cost']}")
-        print(f"Avg Response Time: {summary['avg_response_time']}s")
+    def print_comprehensive_summary(self, summary: Dict[str, Any]):
+        """🎨 Print fancy comprehensive summary"""
+        print(f"\n" + "="*80)
+        print(f"📊 COMPREHENSIVE TEST RESULTS")
+        print(f"="*80)
         
-        # GOplus specific summary
-        if summary['goplus_tests'] > 0:
-            print(f"GOplus Tests: {summary['goplus_successful']}/{summary['goplus_tests']} ✅")
+        # Overall stats
+        print(f"🎯 Mode: {summary['mode'].upper()}")
+        print(f"⏱️ Total Time: {summary['total_time']}s")
+        print(f"🧪 Total Tests: {summary['total_tests']}")
+        print(f"✅ Successful: {summary['successful']}")
+        print(f"❌ Failed: {summary['failed']}")
+        print(f"📈 Success Rate: {summary['success_rate']}%")
+        print(f"💰 Estimated Cost: {summary['estimated_cost']}")
         
-        print("\n📋 DETAILED RESULTS:")
-        print("-" * 80)
+        # Category breakdown
+        category_breakdown = summary['category_breakdown']
+        print(f"\n📋 Test Categories:")
+        print(f"   💚 Free Services: {category_breakdown['free']}")
+        print(f"   💛 Paid Services: {category_breakdown['paid']}")
+        print(f"   🔴 Premium Services: {category_breakdown['premium']}")
         
-        for result in summary['results']:
-            status = "✅" if result['success'] else "❌"
-            service_name = result['service']
-            if service_name == "goplus":
-                service_name = "🔒 goplus"
+        # Service summary
+        print(f"\n🔧 Service Performance:")
+        service_summary = summary['service_summary']
+        
+        for service_name, stats in service_summary.items():
+            config = self.services.get(service_name, None)
+            icon = config.icon if config else "🔧"
             
-            print(f"{status} {service_name:12} {result['endpoint']:25} "
-                  f"{result['response_time']:6.3f}s {result['cost']:8}")
+            success_rate = round((stats['successful'] / stats['total']) * 100, 1) if stats['total'] > 0 else 0
+            avg_time = stats['avg_response_time']
+            cost = stats['cost']
             
-            if result['error']:
-                print(f"    Error: {result['error']}")
+            status_icon = "✅" if success_rate >= 80 else "⚠️" if success_rate >= 50 else "❌"
+            
+            print(f"   {status_icon} {icon} {service_name:12} "
+                  f"{stats['successful']}/{stats['total']} ({success_rate:5.1f}%) "
+                  f"{avg_time:6.3f}s ${cost:5.3f}")
         
-        print("\n💡 RECOMMENDATIONS:")
+        # Detailed results
+        print(f"\n📋 DETAILED RESULTS:")
+        print(f"-" * 80)
+        
+        for result_data in summary['detailed_results']:
+            service = result_data['service']
+            endpoint = result_data['endpoint']
+            success = result_data['success']
+            response_time = result_data['response_time']
+            cost = result_data['cost_estimate']
+            error = result_data.get('error')
+            
+            config = self.services.get(service, None)
+            icon = config.icon if config else "🔧"
+            
+            status_icon = "✅" if success else "❌"
+            
+            print(f"{status_icon} {icon} {service:12} {endpoint:25} "
+                  f"{response_time:6.3f}s {cost:8}")
+            
+            if error:
+                error_short = error[:60] + "..." if len(error) > 60 else error
+                print(f"    💭 {error_short}")
+        
+        # Recommendations
+        print(f"\n💡 RECOMMENDATIONS:")
         
         if summary['failed'] > 0:
-            print("   • Check failed services before using real API keys")
-            print("   • Ensure all dependencies are installed")
-            print("   • Verify network connectivity")
-            
-            # Check for server connection issues
-            server_errors = [r for r in summary['results'] if 'Server not running' in str(r.get('error', ''))]
-            if server_errors:
-                print("   • Start the FastAPI server first:")
-                print("     python -m app.main")
-                print("     # or")
-                print("     uvicorn app.main:app --host 0.0.0.0 --port 8000")
+            print(f"   • Check failed services configuration")
+            print(f"   • Verify API keys are valid and have proper permissions")
+            print(f"   • Ensure network connectivity")
         
         if summary['mode'] == 'mock':
-            print("   • Mock testing complete - safe to try free APIs")
-            print("   • Run with --mode free to test external APIs")
+            print(f"   • Mock testing complete - ready for free API testing")
+            print(f"   • Run with --mode free to test external APIs")
         
-        if summary['estimated_cost'] != '$0.000':
-            print(f"   • Total estimated cost: {summary['estimated_cost']}")
-            print("   • Monitor API dashboards for actual usage")
+        if float(summary['estimated_cost'].replace('$', '')) > 0:
+            print(f"   • Monitor API usage in your dashboards")
+            print(f"   • Consider implementing rate limiting for production")
         
-        # GOplus specific recommendations
-        goplus_results = [r for r in summary['results'] if r['service'] == 'goplus']
-        if goplus_results:
-            goplus_success_count = len([r for r in goplus_results if r['success']])
-            goplus_total = len(goplus_results)
+        # Service-specific recommendations
+        failed_services = [name for name, stats in service_summary.items() if stats['successful'] == 0]
+        if failed_services:
+            print(f"   • Failed services: {', '.join(failed_services)}")
             
-            if goplus_success_count == 0:
-                goplus_errors = [r['error'] for r in goplus_results if r['error']]
-                if any('API key' in str(error) for error in goplus_errors):
-                    print("   • GOplus: Get API keys from https://gopluslabs.io/")
-                    print("   • GOplus uses simplified authentication:")
-                    print("     - GOPLUS_APP_KEY=your_app_key")
-                    print("     - GOPLUS_APP_SECRET=your_app_secret")
-                else:
-                    print("   • GOplus: Service issues detected")
-            elif goplus_success_count < goplus_total:
-                print(f"   • GOplus: {goplus_success_count}/{goplus_total} tests passed")
-            else:
-                print("   • GOplus: All tests passed - security analysis available")
-                print("   • GOplus: Token security and rugpull detection working")
+            if 'solanafm' in failed_services:
+                print(f"     - SolanaFM: Check service availability at https://api.solana.fm")
+            if 'goplus' in failed_services:
+                print(f"     - GOplus: Get API keys from https://gopluslabs.io/")
+            if 'birdeye' in failed_services:
+                print(f"     - Birdeye: Get API keys from https://birdeye.so")
         
-        print("="*80)
+        successful_services = [name for name, stats in service_summary.items() if stats['successful'] > 0]
+        if successful_services:
+            print(f"   • Working services: {', '.join(successful_services)}")
+            print(f"   • These services are ready for production use")
+        
+        print(f"="*80)
 
 
 async def main():
-    """Main testing function with GOplus support"""
-    import argparse
+    """🚀 Main function with comprehensive argument handling"""
+    parser = argparse.ArgumentParser(
+        description="🧪 Comprehensive Service Testing Suite",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m tests.services.test_services --mode free
+  python -m tests.services.test_services --mode limited --service birdeye
+  python -m tests.services.test_services --solanafm-only
+  python -m tests.services.test_services --goplus-only --mode limited
+  python -m tests.services.test_services --mode full --confirm
+        """
+    )
     
-    parser = argparse.ArgumentParser(description="Safe Service Tester with GOplus Support")
     parser.add_argument("--mode", choices=['mock', 'free', 'limited', 'full'], 
                        default='mock', help="Testing mode")
     parser.add_argument("--url", default="http://localhost:8000", 
                        help="Base URL for testing")
-    parser.add_argument("--start-server", action="store_true",
-                       help="Try to start the server if not running")
+    parser.add_argument("--service", choices=['helius', 'birdeye', 'chainbase', 'solanafm', 'goplus', 'blowfish', 'dataimpulse'],
+                       help="Test only specific service")
+    parser.add_argument("--solanafm-only", action="store_true",
+                       help="Test only SolanaFM services (FREE)")
     parser.add_argument("--goplus-only", action="store_true",
                        help="Test only GOplus services")
+    parser.add_argument("--birdeye-only", action="store_true",
+                       help="Test only Birdeye services")
+    parser.add_argument("--chainbase-only", action="store_true",
+                       help="Test only Chainbase services")
+    parser.add_argument("--confirm", action="store_true",
+                       help="Auto-confirm paid testing (use carefully!)")
+    parser.add_argument("--save-results", default="auto",
+                       help="Save results to file (auto/path/none)")
+    parser.add_argument("--start-server", action="store_true",
+                       help="Try to start the server if not running")
     
     args = parser.parse_args()
     
@@ -1011,92 +1343,235 @@ async def main():
         'full': TestMode.FULL_TESTING
     }
     
-    tester = SafeServiceTester(
+    tester = ComprehensiveServiceTester(
         base_url=args.url,
         mode=mode_map[args.mode]
     )
     
-    # GOplus-only testing mode
-    if args.goplus_only:
-        if args.mode == 'mock':
-            print("⚠️ GOplus testing requires at least 'limited' mode")
-            print("   Use --mode limited for minimal GOplus testing")
-            return
-        
-        print("🔒 GOplus-only testing mode")
+    # Handle service-specific testing
+    if args.solanafm_only:
+        print(f"📊 SolanaFM-only testing mode (FREE)")
         start_time = time.time()
         
-        # Test only GOplus services
-        goplus_results = await tester.test_goplus_specific()
+        results = await tester._test_solanafm_comprehensive()
         total_time = time.time() - start_time
         
-        summary = tester._generate_summary(goplus_results, total_time)
-        tester.print_summary(summary)
+        summary = {
+            "mode": "solanafm_only",
+            "total_time": round(total_time, 2),
+            "total_tests": len(results),
+            "successful": len([r for r in results if r.success]),
+            "failed": len([r for r in results if not r.success]),
+            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
+            "estimated_cost": "FREE",
+            "category_breakdown": {"free": len(results), "paid": 0, "premium": 0},
+            "service_summary": {"solanafm": {
+                "total": len(results),
+                "successful": len([r for r in results if r.success]),
+                "failed": len([r for r in results if not r.success]),
+                "cost": 0.0,
+                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
+            }},
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
+        }
         
-        # Save GOplus-specific results
-        results_dir = Path(__file__).parent / "results"
-        results_dir.mkdir(exist_ok=True)
+        tester.print_comprehensive_summary(summary)
         
-        results_file = f"goplus_test_{int(time.time())}.json"
-        results_path = results_dir / results_file
+        if args.save_results != "none":
+            await save_results(summary, "solanafm_test", args.save_results)
         
-        with open(results_path, "w") as f:
-            json.dump(summary, f, indent=2)
-        
-        print(f"\n💾 GOplus results saved to {results_path}")
         return
     
-    # Check if server is running for mock mode
-    if args.mode == 'mock':
+    if args.goplus_only:
+        if args.mode == 'mock':
+            print(f"⚠️ GOplus testing requires at least 'limited' mode")
+            print(f"   Use --mode limited for minimal GOplus testing")
+            return
+        
+        print(f"🔒 GOplus-only testing mode")
+        start_time = time.time()
+        
+        results = await tester._test_goplus_api_calls()
+        total_time = time.time() - start_time
+        
+        summary = {
+            "mode": "goplus_only",
+            "total_time": round(total_time, 2),
+            "total_tests": len(results),
+            "successful": len([r for r in results if r.success]),
+            "failed": len([r for r in results if not r.success]),
+            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
+            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
+            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
+            "service_summary": {"goplus": {
+                "total": len(results),
+                "successful": len([r for r in results if r.success]),
+                "failed": len([r for r in results if not r.success]),
+                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
+                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
+            }},
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        tester.print_comprehensive_summary(summary)
+        
+        if args.save_results != "none":
+            await save_results(summary, "goplus_test", args.save_results)
+        
+        return
+    
+    if args.birdeye_only:
+        if args.mode == 'mock':
+            print(f"⚠️ Birdeye testing requires at least 'limited' mode")
+            return
+        
+        print(f"🦅 Birdeye-only testing mode")
+        start_time = time.time()
+        
+        results = await tester._test_birdeye_api_calls()
+        total_time = time.time() - start_time
+        
+        summary = {
+            "mode": "birdeye_only", 
+            "total_time": round(total_time, 2),
+            "total_tests": len(results),
+            "successful": len([r for r in results if r.success]),
+            "failed": len([r for r in results if not r.success]),
+            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
+            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
+            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
+            "service_summary": {"birdeye": {
+                "total": len(results),
+                "successful": len([r for r in results if r.success]),
+                "failed": len([r for r in results if not r.success]),
+                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
+                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
+            }},
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        tester.print_comprehensive_summary(summary)
+        
+        if args.save_results != "none":
+            await save_results(summary, "birdeye_test", args.save_results)
+        
+        return
+    
+    if args.chainbase_only:
+        if args.mode == 'mock':
+            print(f"⚠️ Chainbase testing requires at least 'limited' mode")
+            return
+        
+        print(f"🔗 Chainbase-only testing mode")
+        start_time = time.time()
+        
+        results = await tester._test_chainbase_api_calls()
+        total_time = time.time() - start_time
+        
+        summary = {
+            "mode": "chainbase_only",
+            "total_time": round(total_time, 2),
+            "total_tests": len(results),
+            "successful": len([r for r in results if r.success]),
+            "failed": len([r for r in results if not r.success]),
+            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
+            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
+            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
+            "service_summary": {"chainbase": {
+                "total": len(results),
+                "successful": len([r for r in results if r.success]),
+                "failed": len([r for r in results if not r.success]),
+                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
+                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
+            }},
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        tester.print_comprehensive_summary(summary)
+        
+        if args.save_results != "none":
+            await save_results(summary, "chainbase_test", args.save_results)
+        
+        return
+    
+    # Check if server needs to be started for mock mode
+    if args.mode == 'mock' and args.start_server:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(f"{args.url}/health", timeout=aiohttp.ClientTimeout(total=2)) as response:
                     pass  # Server is running
         except:
-            if args.start_server:
-                print("🚀 Starting FastAPI server...")
-                import subprocess
+            print(f"🚀 Starting FastAPI server...")
+            import subprocess
+            
+            try:
+                server_process = subprocess.Popen([
+                    "python", "-m", "uvicorn", "app.main:app", 
+                    "--host", "0.0.0.0", "--port", "8000"
+                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 
-                # Try to start the server in background
-                try:
-                    server_process = subprocess.Popen([
-                        "python", "-m", "uvicorn", "app.main:app", 
-                        "--host", "0.0.0.0", "--port", "8000"
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    
-                    # Wait a moment for server to start
-                    await asyncio.sleep(3)
-                    print("   ✅ Server started")
-                except Exception as e:
-                    print(f"   ❌ Could not start server: {e}")
-            else:
-                print("💡 TIP: Start the server first with:")
-                print("   python -m app.main")
-                print("   # or run with --start-server flag")
-                print("")
+                await asyncio.sleep(3)
+                print(f"   ✅ Server started")
+            except Exception as e:
+                print(f"   ❌ Could not start server: {e}")
     
-    summary = await tester.run_all_tests()
-    tester.print_summary(summary)
+    # Auto-confirm for paid testing if flag is set
+    if args.confirm and args.mode in ['limited', 'full']:
+        # Temporarily override the confirmation method
+        original_confirm = tester._confirm_paid_testing
+        tester._confirm_paid_testing = lambda: asyncio.sleep(0.1) or True
     
-    # Create results directory
+    # Run comprehensive tests
+    summary = await tester.run_comprehensive_tests()
+    tester.print_comprehensive_summary(summary)
+    
+    # Save results
+    if args.save_results != "none":
+        await save_results(summary, f"service_test_{args.mode}", args.save_results)
+
+
+async def save_results(summary: Dict[str, Any], filename_prefix: str, save_option: str):
+    """💾 Save test results to file"""
     results_dir = Path(__file__).parent / "results"
     results_dir.mkdir(exist_ok=True)
     
-    # Save results to file with timestamp and mode
-    results_file = f"service_test_{args.mode}_{int(time.time())}.json"
-    results_path = results_dir / results_file
+    timestamp = int(time.time())
     
+    if save_option == "auto":
+        # Save with timestamp
+        results_file = f"{filename_prefix}_{timestamp}.json"
+        results_path = results_dir / results_file
+        
+        # Also save as latest
+        latest_path = results_dir / f"latest_{filename_prefix.split('_')[-1]}.json"
+    else:
+        # Custom path
+        results_path = Path(save_option)
+        latest_path = None
+    
+    # Save main results
     with open(results_path, "w") as f:
         json.dump(summary, f, indent=2)
     
     print(f"\n💾 Results saved to {results_path}")
     
-    # Also save a latest result for easy access
-    latest_path = results_dir / f"latest_{args.mode}.json"
-    with open(latest_path, "w") as f:
-        json.dump(summary, f, indent=2)
-    
-    print(f"💾 Latest results saved to {latest_path}")
+    # Save latest if using auto
+    if latest_path:
+        with open(latest_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        print(f"💾 Latest results saved to {latest_path}")
+
 
 if __name__ == "__main__":
+    print("🧪 Comprehensive Service Testing Suite")
+    print("=" * 40)
+    print("🎯 Modes: mock (safe) → free → limited → full (expensive)")
+    print("🔧 Services: SolanaFM (free), Birdeye, Chainbase, GOplus, etc.")
+    print("💡 Use --help for all options")
+    print()
+    
     asyncio.run(main())
