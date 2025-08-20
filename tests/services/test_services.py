@@ -385,7 +385,7 @@ class ComprehensiveServiceTester:
                 start_time = time.time()
                 
                 try:
-                    token_info = await client.get_token_info("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
+                    token_info = await client.get_token_info(self.test_tokens["solana"][1])
                     token_time = time.time() - start_time
                     
                     if token_info:
@@ -467,9 +467,9 @@ class ComprehensiveServiceTester:
                 start_time = time.time()
                 
                 try:
-                    pairs_data = await client.get_token_pairs(self.test_tokens["solana"][0])  # WSOL
+                    pairs_data = await client.get_token_pairs(self.test_tokens["solana"][1])
                     pairs_time = time.time() - start_time
-                    
+
                     if pairs_data and pairs_data.get("pairs"):
                         pairs_count = len(pairs_data["pairs"])
                         print(f"         ✅ Found {pairs_count} trading pairs ({pairs_time:.3f}s)")
@@ -563,8 +563,8 @@ class ComprehensiveServiceTester:
                 start_time = time.time()
                 
                 try:
-                    test_addresses = self.test_tokens["solana"][:2]  # Test first 2 tokens
-                    multi_results = await client.get_tokens_by_address(test_addresses)
+                    test_addresses = self.test_tokens["ethereum"][:2]
+                    multi_results = await client.get_tokens_by_addresses(test_addresses, "ethereum")
                     multi_time = time.time() - start_time
                     
                     if multi_results and len(multi_results) > 0:
@@ -1482,9 +1482,12 @@ class ComprehensiveServiceTester:
             print(f"   • Mock testing complete - ready for free API testing")
             print(f"   • Run with --mode free to test external APIs")
         
-        if float(summary['estimated_cost'].replace('$', '')) > 0:
-            print(f"   • Monitor API usage in your dashboards")
-            print(f"   • Consider implementing rate limiting for production")
+        try:
+            if float(summary['estimated_cost'].replace('$', '')) > 0:
+                print(f"   • Monitor API usage in your dashboards")
+                print(f"   • Consider implementing rate limiting for production")
+        except ValueError:
+            pass
         
         # Service-specific recommendations
         failed_services = [name for name, stats in service_summary.items() if stats['successful'] == 0]
@@ -1504,244 +1507,6 @@ class ComprehensiveServiceTester:
             print(f"   • These services are ready for production use")
         
         print(f"="*80)
-
-
-async def main():
-    """🚀 Main function with comprehensive argument handling"""
-    parser = argparse.ArgumentParser(
-        description="🧪 Comprehensive Service Testing Suite",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python -m tests.services.test_services --mode free
-  python -m tests.services.test_services --mode limited --service birdeye
-  python -m tests.services.test_services --solanafm-only
-  python -m tests.services.test_services --goplus-only --mode limited
-  python -m tests.services.test_services --mode full --confirm
-        """
-    )
-    
-    parser.add_argument("--mode", choices=['mock', 'free', 'limited', 'full'], 
-                       default='mock', help="Testing mode")
-    parser.add_argument("--url", default="http://localhost:8000", 
-                       help="Base URL for testing")
-    parser.add_argument("--service", choices=['helius', 'birdeye', 'chainbase', 'solanafm', 'goplus', 'blowfish', 'dataimpulse'],
-                       help="Test only specific service")
-    parser.add_argument("--solanafm-only", action="store_true",
-                       help="Test only SolanaFM services (FREE)")
-    parser.add_argument("--goplus-only", action="store_true",
-                       help="Test only GOplus services")
-    parser.add_argument("--birdeye-only", action="store_true",
-                       help="Test only Birdeye services")
-    parser.add_argument("--chainbase-only", action="store_true",
-                       help="Test only Chainbase services")
-    parser.add_argument("--confirm", action="store_true",
-                       help="Auto-confirm paid testing (use carefully!)")
-    parser.add_argument("--save-results", default="auto",
-                       help="Save results to file (auto/path/none)")
-    parser.add_argument("--start-server", action="store_true",
-                       help="Try to start the server if not running")
-    
-    args = parser.parse_args()
-    
-    # Convert string to enum
-    mode_map = {
-        'mock': TestMode.MOCK_ONLY,
-        'free': TestMode.FREE_APIS, 
-        'limited': TestMode.LIMITED_PAID,
-        'full': TestMode.FULL_TESTING
-    }
-    
-    tester = ComprehensiveServiceTester(
-        base_url=args.url,
-        mode=mode_map[args.mode]
-    )
-    
-    # Handle service-specific testing
-    if args.solanafm_only:
-        print(f"📊 SolanaFM-only testing mode (FREE)")
-        start_time = time.time()
-        
-        results = await tester._test_solanafm_comprehensive()
-        total_time = time.time() - start_time
-        
-        summary = {
-            "mode": "solanafm_only",
-            "total_time": round(total_time, 2),
-            "total_tests": len(results),
-            "successful": len([r for r in results if r.success]),
-            "failed": len([r for r in results if not r.success]),
-            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
-            "estimated_cost": "FREE",
-            "category_breakdown": {"free": len(results), "paid": 0, "premium": 0},
-            "service_summary": {"solanafm": {
-                "total": len(results),
-                "successful": len([r for r in results if r.success]),
-                "failed": len([r for r in results if not r.success]),
-                "cost": 0.0,
-                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
-            }},
-            "detailed_results": [r.to_dict() for r in results],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        tester.print_comprehensive_summary(summary)
-        
-        if args.save_results != "none":
-            await save_results(summary, "solanafm_test", args.save_results)
-        
-        return
-    
-    if args.goplus_only:
-        if args.mode == 'mock':
-            print(f"⚠️ GOplus testing requires at least 'limited' mode")
-            print(f"   Use --mode limited for minimal GOplus testing")
-            return
-        
-        print(f"🔒 GOplus-only testing mode")
-        start_time = time.time()
-        
-        results = await tester._test_goplus_api_calls()
-        total_time = time.time() - start_time
-        
-        summary = {
-            "mode": "goplus_only",
-            "total_time": round(total_time, 2),
-            "total_tests": len(results),
-            "successful": len([r for r in results if r.success]),
-            "failed": len([r for r in results if not r.success]),
-            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
-            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
-            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
-            "service_summary": {"goplus": {
-                "total": len(results),
-                "successful": len([r for r in results if r.success]),
-                "failed": len([r for r in results if not r.success]),
-                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
-                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
-            }},
-            "detailed_results": [r.to_dict() for r in results],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        tester.print_comprehensive_summary(summary)
-        
-        if args.save_results != "none":
-            await save_results(summary, "goplus_test", args.save_results)
-        
-        return
-    
-    if args.birdeye_only:
-        if args.mode == 'mock':
-            print(f"⚠️ Birdeye testing requires at least 'limited' mode")
-            return
-        
-        print(f"🦅 Birdeye-only testing mode")
-        start_time = time.time()
-        
-        results = await tester._test_birdeye_api_calls()
-        total_time = time.time() - start_time
-        
-        summary = {
-            "mode": "birdeye_only", 
-            "total_time": round(total_time, 2),
-            "total_tests": len(results),
-            "successful": len([r for r in results if r.success]),
-            "failed": len([r for r in results if not r.success]),
-            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
-            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
-            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
-            "service_summary": {"birdeye": {
-                "total": len(results),
-                "successful": len([r for r in results if r.success]),
-                "failed": len([r for r in results if not r.success]),
-                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
-                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
-            }},
-            "detailed_results": [r.to_dict() for r in results],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        tester.print_comprehensive_summary(summary)
-        
-        if args.save_results != "none":
-            await save_results(summary, "birdeye_test", args.save_results)
-        
-        return
-    
-    if args.chainbase_only:
-        if args.mode == 'mock':
-            print(f"⚠️ Chainbase testing requires at least 'limited' mode")
-            return
-        
-        print(f"🔗 Chainbase-only testing mode")
-        start_time = time.time()
-        
-        results = await tester._test_chainbase_api_calls()
-        total_time = time.time() - start_time
-        
-        summary = {
-            "mode": "chainbase_only",
-            "total_time": round(total_time, 2),
-            "total_tests": len(results),
-            "successful": len([r for r in results if r.success]),
-            "failed": len([r for r in results if not r.success]),
-            "success_rate": round((len([r for r in results if r.success]) / len(results)) * 100, 1) if results else 0,
-            "estimated_cost": f"${sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results):.3f}",
-            "category_breakdown": {"free": 0, "paid": len(results), "premium": 0},
-            "service_summary": {"chainbase": {
-                "total": len(results),
-                "successful": len([r for r in results if r.success]),
-                "failed": len([r for r in results if not r.success]),
-                "cost": sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results),
-                "avg_response_time": sum(r.response_time for r in results if r.success) / max(len([r for r in results if r.success]), 1)
-            }},
-            "detailed_results": [r.to_dict() for r in results],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        tester.print_comprehensive_summary(summary)
-        
-        if args.save_results != "none":
-            await save_results(summary, "chainbase_test", args.save_results)
-        
-        return
-    
-    # Check if server needs to be started for mock mode
-    if args.mode == 'mock' and args.start_server:
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(f"{args.url}/health", timeout=aiohttp.ClientTimeout(total=2)) as response:
-                    pass  # Server is running
-        except:
-            print(f"🚀 Starting FastAPI server...")
-            import subprocess
-            
-            try:
-                server_process = subprocess.Popen([
-                    "python", "-m", "uvicorn", "app.main:app", 
-                    "--host", "0.0.0.0", "--port", "8000"
-                ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-                await asyncio.sleep(3)
-                print(f"   ✅ Server started")
-            except Exception as e:
-                print(f"   ❌ Could not start server: {e}")
-    
-    # Auto-confirm for paid testing if flag is set
-    if args.confirm and args.mode in ['limited', 'full']:
-        # Temporarily override the confirmation method
-        original_confirm = tester._confirm_paid_testing
-        tester._confirm_paid_testing = lambda: asyncio.sleep(0.1) or True
-    
-    # Run comprehensive tests
-    summary = await tester.run_comprehensive_tests()
-    tester.print_comprehensive_summary(summary)
-    
-    # Save results
-    if args.save_results != "none":
-        await save_results(summary, f"service_test_{args.mode}", args.save_results)
-
 
 async def save_results(summary: Dict[str, Any], filename_prefix: str, save_option: str):
     """💾 Save test results to file"""
@@ -1774,6 +1539,373 @@ async def save_results(summary: Dict[str, Any], filename_prefix: str, save_optio
             json.dump(summary, f, indent=2)
         print(f"💾 Latest results saved to {latest_path}")
 
+
+async def main():
+    """🚀 Main function"""
+    parser = argparse.ArgumentParser(
+        description="🧪 Comprehensive Service Testing Suite (Now with DexScreener!)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python -m tests.services.test_services --mode free
+  python -m tests.services.test_services --dexscreener-only
+  python -m tests.services.test_services --solanafm-only
+  python -m tests.services.test_services --goplus-only --mode limited
+  python -m tests.services.test_services --mode full --confirm
+        """
+    )
+    
+    parser.add_argument("--mode", choices=['mock', 'free', 'limited', 'full'], 
+                       default='mock', help="Testing mode")
+    parser.add_argument("--url", default="http://localhost:8000", 
+                       help="Base URL for testing")
+    
+    # Service-specific flags
+    parser.add_argument("--solanafm-only", action="store_true",
+                       help="Test only SolanaFM services (FREE)")
+    parser.add_argument("--dexscreener-only", action="store_true",
+                       help="Test only DexScreener services (FREE)")
+    parser.add_argument("--goplus-only", action="store_true",
+                       help="Test only GOplus services")
+    parser.add_argument("--birdeye-only", action="store_true",
+                       help="Test only Birdeye services")
+    parser.add_argument("--chainbase-only", action="store_true",
+                       help="Test only Chainbase services")
+    parser.add_argument("--helius-only", action="store_true",
+                       help="Test only Helius services")
+    parser.add_argument("--free-only", action="store_true",
+                       help="Test only FREE services (SolanaFM + DexScreener)")
+    
+    # Other options
+    parser.add_argument("--confirm", action="store_true",
+                       help="Auto-confirm paid testing (use carefully!)")
+    parser.add_argument("--save-results", default="auto",
+                       help="Save results to file (auto/path/none)")
+    parser.add_argument("--start-server", action="store_true",
+                       help="Try to start the server if not running")
+    
+    args = parser.parse_args()
+    
+    # Convert string to enum
+    mode_map = {
+        'mock': TestMode.MOCK_ONLY,
+        'free': TestMode.FREE_APIS, 
+        'limited': TestMode.LIMITED_PAID,
+        'full': TestMode.FULL_TESTING
+    }
+    
+    tester = ComprehensiveServiceTester(
+        base_url=args.url,
+        mode=mode_map[args.mode]
+    )
+    
+    # Handle DexScreener-only testing
+    if args.dexscreener_only:
+        await handle_dexscreener_only_testing(tester, args)
+        return
+    
+    # Handle other service-specific testing
+    if args.solanafm_only:
+        await handle_solanafm_only_testing(tester, args)
+        return
+    
+    if args.free_only:
+        await handle_free_only_testing(tester, args)
+        return
+    
+    if args.goplus_only:
+        await handle_goplus_only_testing(tester, args)
+        return
+    
+    if args.birdeye_only:
+        await handle_birdeye_only_testing(tester, args)
+        return
+    
+    if args.chainbase_only:
+        await handle_chainbase_only_testing(tester, args)
+        return
+    
+    if args.helius_only:
+        await handle_helius_only_testing(tester, args)
+        return
+    
+    # Auto-confirm for paid testing if flag is set
+    if args.confirm and args.mode in ['limited', 'full']:
+        # Temporarily override the confirmation method
+        original_confirm = tester._confirm_paid_testing
+        async def auto_confirm():
+            await asyncio.sleep(0.1)
+            return True
+        tester._confirm_paid_testing = auto_confirm
+    
+    # Run comprehensive tests
+    summary = await tester.run_comprehensive_tests()
+    tester.print_comprehensive_summary(summary)
+    
+    # Save results
+    if args.save_results != "none":
+        await save_results(summary, f"service_test_{args.mode}", args.save_results)
+
+
+async def handle_dexscreener_only_testing(tester: ComprehensiveServiceTester, args):
+    """🔍 Handle DexScreener-only testing"""
+    print(f"🔍 DexScreener-only testing mode (FREE)")
+    print(f"=" * 60)
+    print(f"🎯 Testing DexScreener API comprehensively")
+    print(f"💰 Cost: FREE (No API key required)")
+    print(f"🌐 Coverage: Multi-chain DEX data")
+    print(f"=" * 60)
+    
+    start_time = time.time()
+    
+    try:
+        results = await tester._test_dexscreener_comprehensive()
+        total_time = time.time() - start_time
+        
+        # Generate summary
+        successful_results = [r for r in results if r.success]
+        failed_results = [r for r in results if not r.success]
+        
+        summary = {
+            "mode": "dexscreener_only",
+            "total_time": round(total_time, 2),
+            "total_tests": len(results),
+            "successful": len(successful_results),
+            "failed": len(failed_results),
+            "success_rate": round((len(successful_results) / len(results)) * 100, 1) if results else 0,
+            "estimated_cost": "FREE",
+            "category_breakdown": {"free": len(results), "paid": 0, "premium": 0},
+            "service_summary": {
+                "dexscreener": {
+                    "total": len(results),
+                    "successful": len(successful_results),
+                    "failed": len(failed_results),
+                    "cost": 0.0,
+                    "avg_response_time": sum(r.response_time for r in successful_results) / max(len(successful_results), 1)
+                }
+            },
+            "detailed_results": [r.to_dict() for r in results],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        summary = create_service_summary("dexscreener_only", results, total_time, paid=False)
+        tester.print_comprehensive_summary(summary)
+        
+        # Save results
+        if args.save_results != "none":
+            await save_results(summary, "dexscreener_test", args.save_results)
+            
+    except Exception as e:
+        print(f"❌ DexScreener testing failed: {str(e)}")
+        return
+
+async def handle_solanafm_only_testing(tester: ComprehensiveServiceTester, args):
+    """📊 Handle SolanaFM-only testing"""
+    print(f"📊 SolanaFM-only testing mode (FREE)")
+    start_time = time.time()
+    
+    results = await tester._test_solanafm_comprehensive()
+    total_time = time.time() - start_time
+    
+    summary = create_service_summary("solanafm_only", results, total_time)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "solanafm_test", args.save_results)
+
+
+async def handle_free_only_testing(tester: ComprehensiveServiceTester, args):
+    """💚 Handle free services only testing"""
+    print(f"💚 Free services only testing mode (SolanaFM + DexScreener)")
+    start_time = time.time()
+    
+    # Temporarily set mode to free APIs
+    original_mode = tester.mode
+    tester.mode = TestMode.FREE_APIS
+    
+    results = await tester.test_free_services()
+    total_time = time.time() - start_time
+    
+    # Restore original mode
+    tester.mode = original_mode
+    
+    summary = create_multi_service_summary("free_only", results, total_time)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "free_services_test", args.save_results)
+
+
+async def handle_goplus_only_testing(tester: ComprehensiveServiceTester, args):
+    """🔒 Handle GOplus-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ GOplus testing requires at least 'limited' mode")
+        print(f"   Use --mode limited for minimal GOplus testing")
+        return
+    
+    print(f"🔒 GOplus-only testing mode")
+    start_time = time.time()
+    
+    results = await tester._test_goplus_api_calls()
+    total_time = time.time() - start_time
+    
+    summary = create_service_summary("goplus_only", results, total_time, paid=True)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "goplus_test", args.save_results)
+
+
+async def handle_birdeye_only_testing(tester: ComprehensiveServiceTester, args):
+    """🦅 Handle Birdeye-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ Birdeye testing requires at least 'limited' mode")
+        return
+    
+    print(f"🦅 Birdeye-only testing mode")
+    start_time = time.time()
+    
+    results = await tester._test_birdeye_api_calls()
+    total_time = time.time() - start_time
+    
+    summary = create_service_summary("birdeye_only", results, total_time, paid=True)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "birdeye_test", args.save_results)
+
+
+async def handle_chainbase_only_testing(tester: ComprehensiveServiceTester, args):
+    """🔗 Handle Chainbase-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ Chainbase testing requires at least 'limited' mode")
+        return
+    
+    print(f"🔗 Chainbase-only testing mode")
+    start_time = time.time()
+    
+    results = await tester._test_chainbase_api_calls()
+    total_time = time.time() - start_time
+    
+    summary = create_service_summary("chainbase_only", results, total_time, paid=True)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "chainbase_test", args.save_results)
+
+
+async def handle_helius_only_testing(tester: ComprehensiveServiceTester, args):
+    """🌞 Handle Helius-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ Helius testing requires at least 'limited' mode")
+        return
+    
+    print(f"🌞 Helius-only testing mode")
+    start_time = time.time()
+    
+    results = await tester._test_helius_api_calls()
+    total_time = time.time() - start_time
+    
+    summary = create_service_summary("helius_only", results, total_time, paid=True)
+    tester.print_comprehensive_summary(summary)
+    
+    if args.save_results != "none":
+        await save_results(summary, "helius_test", args.save_results)
+
+
+def create_service_summary(mode: str, results: List[TestResult], total_time: float, paid: bool = False) -> Dict[str, Any]:
+    """Create a summary for single service testing"""
+    successful_results = [r for r in results if r.success]
+    failed_results = [r for r in results if not r.success]
+    
+    # Calculate cost
+    if paid:
+        total_cost = sum(float(r.cost_estimate.replace('$', '').replace('FREE', '0')) for r in results)
+        cost_display = f"${total_cost:.3f}"
+    else:
+        cost_display = "FREE"
+    
+    service_name = results[0].service if results else "unknown"
+    
+    return {
+        "mode": mode,
+        "total_time": round(total_time, 2),
+        "total_tests": len(results),
+        "successful": len(successful_results),
+        "failed": len(failed_results),
+        "success_rate": round((len(successful_results) / len(results)) * 100, 1) if results else 0,
+        "estimated_cost": cost_display,
+        "category_breakdown": {
+            "free": len(results) if not paid else 0, 
+            "paid": len(results) if paid else 0, 
+            "premium": 0
+        },
+        "service_summary": {
+            service_name: {
+                "total": len(results),
+                "successful": len(successful_results),
+                "failed": len(failed_results),
+                "cost": float(cost_display.replace('$', '').replace('FREE', '0')),
+                "avg_response_time": sum(r.response_time for r in successful_results) / max(len(successful_results), 1)
+            }
+        },
+        "detailed_results": [r.to_dict() for r in results],
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+def create_multi_service_summary(mode: str, results: List[TestResult], total_time: float) -> Dict[str, Any]:
+    """Create a summary for multiple service testing"""
+    successful_results = [r for r in results if r.success]
+    failed_results = [r for r in results if not r.success]
+    
+    # Build service summary
+    service_summary = {}
+    for result in results:
+        service_name = result.service
+        if service_name not in service_summary:
+            service_summary[service_name] = {
+                "total": 0, "successful": 0, "failed": 0, "cost": 0.0, "avg_response_time": 0.0
+            }
+        
+        service_summary[service_name]["total"] += 1
+        if result.success:
+            service_summary[service_name]["successful"] += 1
+        else:
+            service_summary[service_name]["failed"] += 1
+    
+    # Calculate average response times
+    for service_name in service_summary:
+        service_results = [r for r in results if r.service == service_name and r.success]
+        if service_results:
+            avg_time = sum(r.response_time for r in service_results) / len(service_results)
+            service_summary[service_name]["avg_response_time"] = avg_time
+    
+    return {
+        "mode": mode,
+        "total_time": round(total_time, 2),
+        "total_tests": len(results),
+        "successful": len(successful_results),
+        "failed": len(failed_results),
+        "success_rate": round((len(successful_results) / len(results)) * 100, 1) if results else 0,
+        "estimated_cost": "FREE",
+        "category_breakdown": {"free": len(results), "paid": 0, "premium": 0},
+        "service_summary": service_summary,
+        "detailed_results": [r.to_dict() for r in results],
+        "timestamp": datetime.now().isoformat()
+    }
+
+
+if __name__ == "__main__":
+    print("🧪 Comprehensive Service Testing Suite")
+    print("=" * 40)
+    print("🎯 Modes: mock (safe) → free → limited → full (expensive)")
+    print("🔧 Services: SolanaFM (free), DexScreener (free), Birdeye, Chainbase, GOplus, etc.")
+    print("🔍 NEW: --dexscreener-only flag for testing DexScreener API only!")
+    print("💡 Use --help for all options")
+    print()
+    
+    asyncio.run(main())
 
 if __name__ == "__main__":
     print("🧪 Comprehensive Service Testing Suite")

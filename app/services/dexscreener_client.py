@@ -64,9 +64,7 @@ class DexScreenerClient:
         
         url = f"{self.base_url}{endpoint}"
         headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "User-Agent": "Solana-Token-Analysis/1.0",
+            "Accept": "*/*",
             **kwargs.pop("headers", {})
         }
         
@@ -110,7 +108,6 @@ class DexScreenerClient:
     
     async def get_token_pairs(self, token_address: str, chain: str = "solana") -> Dict[str, Any]:
         """Get trading pairs for a token"""
-
         try:
             endpoint = f"/tokens/v1/{chain}/{token_address}"
             
@@ -120,7 +117,7 @@ class DexScreenerClient:
                 logger.debug(f"No trading pairs found for {token_address}")
                 return None
             
-            return {"paris": response}
+            return {"pairs": response}
             
         except DexScreenerAPIError:
             raise

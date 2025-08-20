@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     SOLANAFM_BASE_URL: str = "https://api.solana.fm"
 
     # DexScreener
-    DEXSCREENER_BASE_URL: str = "https://api.dexscreener.com/latest/dex/tokens"
+    DEXSCREENER_BASE_URL: str = "https://api.dexscreener.com"
 
     # PumpFun API
     PUMPFUN_API_KEY: Optional[str] = None
