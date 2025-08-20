@@ -146,7 +146,6 @@ class GOplusClient:
                         if isinstance(response_data, dict):
                             error_code = response_data.get('code')
                             if error_code != 1:
-                                print(response_data)
                                 error_msg = response_data.get('message', 'Unknown API error')
                                 logger.error(f"GOplus API error (code {error_code}): {error_msg}")
                                 
@@ -219,7 +218,7 @@ class GOplusClient:
                 # GOplus returns results keyed by contract address
                 token_results = response["result"].get(token_address.lower()) or response["result"].get(token_address)
                 if token_results:
-                    return self._parse_security_response(token_results, token_address, chain)
+                    return token_results
             
             logger.warning(f"No results returned for {token_address} on chain {chain_id}")
             return None
@@ -227,42 +226,6 @@ class GOplusClient:
         except Exception as e:
             logger.error(f"Error analyzing token security for {token_address} with GOplus: {str(e)}")
             return None
-    
-    def _parse_security_response(self, token_results: Dict[str, Any], token_address: str, chain: str) -> Dict[str, Any]:
-        """Parse GOplus security response"""
-        security_analysis = {
-            "token_address": token_address,
-            "chain": chain,
-            "is_honeypot": token_results.get("is_honeypot", "0") == "1",
-            "is_blacklisted": token_results.get("is_blacklisted", "0") == "1",
-            "is_whitelisted": token_results.get("is_whitelisted", "0") == "1",
-            "is_proxy": token_results.get("is_proxy", "0") == "1",
-            "buy_tax": token_results.get("buy_tax"),
-            "sell_tax": token_results.get("sell_tax"),
-            "slippage_modifiable": token_results.get("slippage_modifiable", "0") == "1",
-            "trading_cooldown": token_results.get("trading_cooldown", "0") == "1",
-            "transfer_pausable": token_results.get("transfer_pausable", "0") == "1",
-            "can_take_back_ownership": token_results.get("can_take_back_ownership", "0") == "1",
-            "owner_change_balance": token_results.get("owner_change_balance", "0") == "1",
-            "hidden_owner": token_results.get("hidden_owner", "0") == "1",
-            "selfdestruct": token_results.get("selfdestruct", "0") == "1",
-            "external_call": token_results.get("external_call", "0") == "1",
-            "gas_abuse": token_results.get("gas_abuse", "0") == "1",
-            "anti_whale_modifiable": token_results.get("anti_whale_modifiable", "0") == "1",
-            "metadata": {
-                "token_name": token_results.get("token_name"),
-                "token_symbol": token_results.get("token_symbol"),
-                "total_supply": token_results.get("total_supply"),
-                "holder_count": token_results.get("holder_count"),
-                "creator_address": token_results.get("creator_address"),
-                "creator_balance": token_results.get("creator_balance"),
-                "creator_percent": token_results.get("creator_percent")
-            },
-            "warnings": self._extract_security_warnings(token_results),
-            "last_updated": token_results.get("update_time"),
-        }
-        
-        return security_analysis
     
     def _extract_security_warnings(self, token_results: Dict[str, Any]) -> List[str]:
         """Extract security warnings from token results"""
@@ -340,13 +303,15 @@ class GOplusClient:
     # SUPPORTED CHAINS
     # ==============================================
     
-    async def get_supported_chains(self) -> List[Dict[str, Any]]:
+    async def get_supported_chains(self, name: str) -> List[Dict[str, Any]]:
         """Get supported chains"""
         try:
             endpoint = "/api/v1/supported_chains"
-            response = await self._request("GET", endpoint)
-            # print(response)
-            
+            params = {
+                "name": name
+            }
+            response = await self._request("GET", endpoint, params=params)
+
             if response and response.get("result"):
                 return response["result"]
             

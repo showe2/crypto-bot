@@ -1033,8 +1033,7 @@ class ComprehensiveServiceTester:
             async with GOplusClient() as client:
                 # Test token security analysis
                 test_scenarios = [
-                    ("0xA0b86a33E6411E1e2d088c4dDfC1B8F31Efa6a95", "ethereum", "ELF Token"),
-                    ("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "ethereum", "WETH"),
+                    ("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "1", "USDT"),
                 ]
                 
                 for token_address, chain, token_name in test_scenarios:
@@ -1046,14 +1045,6 @@ class ComprehensiveServiceTester:
                         security_time = time.time() - start_time
                         
                         if security_result:
-                            is_honeypot = security_result.get("is_honeypot", False)
-                            is_blacklisted = security_result.get("is_blacklisted", False)
-                            
-                            status = "🟢 Safe"
-                            if is_honeypot or is_blacklisted:
-                                status = "🔴 Risky"
-                            
-                            print(f"            ✅ Security: {status} ({security_time:.3f}s)")
                             results.append(TestResult(
                                 service="goplus",
                                 endpoint="/api/v1/token_security",
@@ -1063,7 +1054,6 @@ class ComprehensiveServiceTester:
                                 category=ServiceCategory.PAID,
                                 data_size=len(str(security_result))
                             ))
-                            break  # Success, no need to test more
                         else:
                             print(f"            ⚠️ No security data ({security_time:.3f}s)")
                             results.append(TestResult(
@@ -1088,11 +1078,94 @@ class ComprehensiveServiceTester:
                             category=ServiceCategory.PAID,
                             error=str(e)
                         ))
-                        
-                        if "authentication" in str(e).lower():
-                            break  # No point testing more if auth fails
                     
                     await asyncio.sleep(1)  # Rate limiting
+
+                    print(f"         💔 Testing Rug-Pull Detection for {token_name}...")
+                    start_time = time.time()
+                    
+                    try:
+                        rug_pull_result = await client.detect_rugpull(token_address, chain)
+                        rug_pull_time = time.time() - start_time
+                        
+                        if rug_pull_result:
+                            results.append(TestResult(
+                                service="goplus",
+                                endpoint="/api/v1/supported_chains/v1/rugpull_detecting",
+                                success=True,
+                                response_time=rug_pull_time,
+                                cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
+                                data_size=len(str(rug_pull_result))
+                            ))
+                        else:
+                            print(f"            ⚠️ No rug-pull data ({rug_pull_time:.3f}s)")
+                            results.append(TestResult(
+                                service="goplus",
+                                endpoint="/api/v1/supported_chains/v1/rugpull_detecting",
+                                success=False,
+                                response_time=rug_pull_time,
+                                cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
+                                error="No rug-pull data returned"
+                            ))
+                            
+                    except Exception as e:
+                        rug_pull_time = time.time() - start_time
+                        print(f"            ❌ Rug-pull detection error: {str(e)} ({rug_pull_time:.3f}s)")
+                        results.append(TestResult(
+                            service="goplus",
+                            endpoint="/api/v1/supported_chains/v1/rugpull_detecting",
+                            success=False,
+                            response_time=rug_pull_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.PAID,
+                            error=str(e)
+                        ))
+
+                    await asyncio.sleep(1)  # Rate limiting
+
+                    print(f"         ⛓️ Testing Supporting Chains for {token_name}...")
+                    start_time = time.time()
+                    
+                    try:
+                        chains_result = await client.get_supported_chains("token_security")
+                        chains_time = time.time() - start_time
+                        
+                        if chains_result:
+                            results.append(TestResult(
+                                service="goplus",
+                                endpoint="/api/v1/supported_chains",
+                                success=True,
+                                response_time=chains_time,
+                                cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
+                                data_size=len(str(chains_result))
+                            ))
+                        else:
+                            print(f"            ⚠️ No supported chains data ({chains_time:.3f}s)")
+                            results.append(TestResult(
+                                service="goplus",
+                                endpoint="/api/v1/supported_chains",
+                                success=False,
+                                response_time=chains_time,
+                                cost_estimate="$0.002",
+                                category=ServiceCategory.PAID,
+                                error="No supported chains data returned"
+                            ))
+                            
+                    except Exception as e:
+                        chains_time = time.time() - start_time
+                        print(f"            ❌ Supported chains error: {str(e)} ({chains_time:.3f}s)")
+                        results.append(TestResult(
+                            service="goplus",
+                            endpoint="/api/v1/supported_chains",
+                            success=False,
+                            response_time=chains_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.PAID,
+                            error=str(e)
+                        ))
                 
         except Exception as e:
             print(f"         ❌ GOplus client error: {str(e)}")
