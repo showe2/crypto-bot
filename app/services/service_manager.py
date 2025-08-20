@@ -8,7 +8,7 @@ from app.services.chainbase_client import ChainbaseClient, check_chainbase_healt
 from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
 from app.services.blowfish_client import BlowfishClient, check_blowfish_health
 from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
-from app.services.solscan_client import SolscanClient, check_solscan_health
+from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
 
 
@@ -22,7 +22,7 @@ class APIManager:
             "birdeye": None,
             "blowfish": None,
             "dataimpulse": None,
-            "solscan": None,
+            "solanafm": None,
             "goplus": None
         }
         self._health_cache = {}
@@ -37,7 +37,7 @@ class APIManager:
                 "birdeye": BirdeyeClient(),
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
-                "solscan": SolscanClient(),
+                "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient()
             }
             logger.info("✅ All API clients initialized (including GOplus)")
@@ -72,7 +72,7 @@ class APIManager:
             "birdeye": check_birdeye_health(),
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
-            "solscan": check_solscan_health(),
+            "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health()
         }
         
@@ -174,10 +174,10 @@ class APIManager:
             tasks["birdeye_metadata"] = self.clients["birdeye"].get_token_metadata(token_address)
             tasks["birdeye_trades"] = self.clients["birdeye"].get_token_trades(token_address, 50)
         
-        # Solscan data collection
-        if self.clients["solscan"]:
-            tasks["solscan_info"] = self.clients["solscan"].get_token_info(token_address)
-            tasks["solscan_holders"] = self.clients["solscan"].get_token_holders(token_address, 50)
+        # SolanaFM data collection (replaces Solscan)
+        if self.clients["solanafm"]:
+            tasks["solanafm_info"] = self.clients["solanafm"].get_token_info(token_address)
+            tasks["solanafm_holders"] = self.clients["solanafm"].get_token_holders(token_address, 50)
         
         # Security analysis
         if self.clients["blowfish"]:
@@ -268,7 +268,7 @@ class APIManager:
             "goplus_summary": {}  # Summary of GOplus analysis
         }
         
-        # Standardize basic info (now includes Solscan data)
+        # Standardize basic info (now includes SolanaFM data)
         for source, metadata in compiled_data["metadata"].items():
             if not metadata:
                 continue
@@ -280,14 +280,14 @@ class APIManager:
             if "decimals" in metadata and not standardized["basic_info"].get("decimals"):
                 standardized["basic_info"]["decimals"] = metadata["decimals"]
             
-            # Solscan-specific fields
-            if source == "solscan":
+            # SolanaFM-specific fields
+            if source == "solanafm":
                 if "price" in metadata:
-                    standardized["price_info"]["solscan_price"] = metadata["price"]
+                    standardized["price_info"]["solanafm_price"] = metadata["price"]
                 if "volume_24h" in metadata:
-                    standardized["trading_info"]["solscan_volume_24h"] = metadata["volume_24h"]
+                    standardized["trading_info"]["solanafm_volume_24h"] = metadata["volume_24h"]
                 if "holder_count" in metadata:
-                    standardized["holder_info"]["solscan_holder_count"] = metadata["holder_count"]
+                    standardized["holder_info"]["solanafm_holder_count"] = metadata["holder_count"]
         
         # Standardize price info
         for source, price_data in compiled_data["price_data"].items():
@@ -300,7 +300,7 @@ class APIManager:
             elif "price" in price_data:  # Other formats
                 standardized["price_info"]["current_price"] = price_data["price"]
         
-        # Standardize holder info (enhanced with Solscan data)
+        # Standardize holder info (enhanced with SolanaFM data)
         total_holders = 0
         all_holders = []
         
@@ -310,7 +310,7 @@ class APIManager:
                 
             if "total" in holder_data:
                 total_holders = max(total_holders, holder_data["total"])
-            elif source == "solscan" and "total" in holder_data:
+            elif source == "solanafm" and "total" in holder_data:
                 total_holders = max(total_holders, holder_data["total"])
             
             if "holders" in holder_data:
@@ -440,7 +440,7 @@ class APIManager:
             "birdeye": ["price_data", "trading_history", "market_data", "trending_tokens"],
             "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
-            "solscan": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"],
+            "solanafm": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"],
             "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"]
         }
         return capabilities.get(service_name, [])

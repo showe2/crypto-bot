@@ -208,13 +208,13 @@ class BirdeyeClient:
             price_info = {
                 "address": token_address,
                 "value": data.get("value") or data.get("price") or data.get("priceUsd"),
-                "updateUnixTime": data.get("updateUnixTime") or data.get("lastTradeUnixTime"),
-                "updateHumanTime": data.get("updateHumanTime") or data.get("lastTradeHumanTime"),
-                "priceChange24h": data.get("priceChange24h") or data.get("price24hChange"),
-                "priceChange24hPercent": data.get("priceChange24hPercent") or data.get("price24hChangePercent"),
+                "update_unix_time": data.get("updateUnixTime") or data.get("lastTradeUnixTime"),
+                "update_human_time": data.get("updateHumanTime") or data.get("lastTradeHumanTime"),
+                "price_change_24h": data.get("priceChange24h") or data.get("price24hChange"),
+                "price_change_24h_percent": data.get("priceChange24hPercent") or data.get("price24hChangePercent"),
                 "liquidity": data.get("liquidity") if include_liquidity else None,
-                "volume24h": data.get("v24hUSD") or data.get("volume24h"),
-                "marketCap": data.get("mc") or data.get("marketCap")
+                "volume_24h": data.get("v24hUSD") or data.get("volume24h"),
+                "market_cap": data.get("mc") or data.get("marketCap")
             }
             
             return price_info
@@ -309,15 +309,15 @@ class BirdeyeClient:
                     "symbol": token["symbol"],
                     "name": token["name"],
                     "rank": token["rank"],
-                    "updateUnixTime": data.get("updateUnixTime"),
-                    "updateHumanTime": data.get("updateTime"),
+                    "update_unix_time": data.get("updateUnixTime"),
+                    "update_human_time": data.get("updateTime"),
                     "liquidity": token["liquidity"],
                     "price": token["price"],
-                    "price24hChangePercent": token["price24hChangePercent"],
-                    "volume24h": {"USD": token["volume24hUSD"], "ChangePercent": token["volume24hChangePercent"]},
+                    "price_24h_change_percent": token["price24hChangePercent"],
+                    "volume_24h": {"USD": token["volume24hUSD"], "ChangePercent": token["volume24hChangePercent"]},
                     "fdv": token["fdv"],
-                    "marketcap": token["marketcap"],
-                    "isScaledUiToken": token["isScaledUiToken"],
+                    "market_cap": token["marketcap"],
+                    "is_scaled_ui_token": token["isScaledUiToken"],
                     "multiplier": token["multiplier"]
                 }
 
@@ -388,7 +388,7 @@ class BirdeyeClient:
             # Standardize the response format
             for point in data["items"]:
                 point_info = {
-                    "unixTime": point["unixTime"],
+                    "unix_time": point["unixTime"],
                     "value": point["value"]
                 }
 

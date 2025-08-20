@@ -40,9 +40,8 @@ class Settings(BaseSettings):
     BLOWFISH_API_KEY: Optional[str] = None
     BLOWFISH_BASE_URL: str = "https://api.blowfish.xyz"
 
-    # Solscan
-    SOLSCAN_API_KEY: Optional[str] = None
-    SOLSCAN_BASE_URL: str = "https://public-api.solscan.io"
+    # SolanaFM (replaces Solscan) - No API key required
+    SOLANAFM_BASE_URL: str = "https://api.solana.fm"
 
     # DexScreener
     DEXSCREENER_BASE_URL: str = "https://api.dexscreener.com/latest/dex/tokens"
@@ -224,7 +223,7 @@ class Settings(BaseSettings):
         keys_status = {}
         api_keys = [
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
-            'BLOWFISH_API_KEY', 'SOLSCAN_API_KEY', 'DATAIMPULSE_API_KEY',
+            'BLOWFISH_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
             'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET'
