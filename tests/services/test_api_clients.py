@@ -164,7 +164,7 @@ class TestBlowfishClient:
 
 @pytest.mark.services
 class TestSolanaFMClient:
-    """Tests for SolanaFM API client (replaces Solscan)"""
+    """Tests for SolanaFM API client (Free service, no API key required)"""
     
     @pytest.mark.asyncio
     async def test_solanafm_client_creation(self):
@@ -173,7 +173,6 @@ class TestSolanaFMClient:
         
         client = SolanaFMClient()
         assert client is not None
-        assert hasattr(client, 'api_key')
         assert hasattr(client, 'base_url')
         assert client.base_url == "https://api.solana.fm"
     
@@ -186,9 +185,10 @@ class TestSolanaFMClient:
             mock_instance = AsyncMock()
             mock_instance.health_check.return_value = {
                 "healthy": True,
-                "api_key_configured": True,
+                "api_key_configured": True,  # SolanaFM is free
                 "response_time": 0.25,
-                "test_data": {"current_slot": 123456789}
+                "test_data": {"current_slot": 123456789},
+                "note": "SolanaFM is free to use, no API key required"
             }
             MockClient.return_value.__aenter__.return_value = mock_instance
             
@@ -207,16 +207,14 @@ class TestSolanaFMClient:
         
         # Check that required methods exist
         assert hasattr(client, 'get_token_info')
-        assert hasattr(client, 'get_token_holders')
-        assert hasattr(client, 'search_tokens')
-        assert hasattr(client, 'get_network_stats')
+        assert hasattr(client, 'get_account_detail')
         assert hasattr(client, 'health_check')
     
     @pytest.mark.real_api
     @pytest.mark.solanafm
     @pytest.mark.asyncio
     async def test_solanafm_real_health_check(self):
-        """Test real SolanaFM health check"""
+        """Test real SolanaFM health check (free service)"""
         from app.services.solanafm_client import check_solanafm_health
         
         result = await check_solanafm_health()
@@ -232,34 +230,72 @@ class TestSolanaFMClient:
     @pytest.mark.real_api
     @pytest.mark.solanafm
     @pytest.mark.asyncio
-    async def test_solanafm_endpoint(self):
-        """Test SolanaFM endpoint"""
+    async def test_solanafm_token_info_endpoint(self):
+        """Test SolanaFM token info endpoint with well-known token"""
         from app.services.solanafm_client import SolanaFMClient
         
         client = SolanaFMClient()
         
         try:
-            # This endpoint should work if API key is configured
-            network_stats = await client.get_network_stats()
+            # Test with Wrapped SOL token
+            test_token = "So11111111111111111111111111111111111112"
+            token_info = await client.get_token_info(test_token)
             
-            if network_stats:
-                # Should have some network data
-                assert isinstance(network_stats, dict)
-                # Common fields in network stats
-                expected_fields = ["current_slot", "current_epoch", "total_validators"]
+            if token_info:
+                # Should have some token data
+                assert isinstance(token_info, dict)
+                # Common fields in token info
+                expected_fields = ["name", "symbol", "decimals", "token_type"]
                 # At least one field should be present
-                assert any(field in network_stats for field in expected_fields)
+                assert any(field in token_info for field in expected_fields)
+                print(f"   ✅ SolanaFM token info: {token_info.get('name', 'Unknown')} ({token_info.get('symbol', 'N/A')})")
             else:
-                # Network stats might not be available without API key
-                print("   ℹ️  Network stats not available (may require API key)")
+                # Token info might not be available for this token
+                print(f"   ℹ️  Token info not available for {test_token} (service may be limited)")
                 
         except Exception as e:
-            # This is OK - the endpoint might require authentication
+            # This is OK - the endpoint might have limitations
             error_msg = str(e).lower()
-            if "api key" in error_msg or "unauthorized" in error_msg or "forbidden" in error_msg:
-                print(f"   ℹ️  SolanaFM network stats require API key: {e}")
+            if "not found" in error_msg or "404" in error_msg:
+                print(f"   ℹ️  SolanaFM token not found in database: {e}")
+            elif "timeout" in error_msg or "connection" in error_msg:
+                print(f"   ⚠️  SolanaFM connection issue: {e}")
             else:
-                print(f"   ⚠️  SolanaFM network stats error: {e}")
+                print(f"   ⚠️  SolanaFM token info error: {e}")
+    
+    @pytest.mark.real_api
+    @pytest.mark.solanafm
+    @pytest.mark.asyncio
+    async def test_solanafm_account_detail_endpoint(self):
+        """Test SolanaFM account detail endpoint"""
+        from app.services.solanafm_client import SolanaFMClient
+        
+        client = SolanaFMClient()
+        
+        try:
+            # Test with a well-known account
+            test_account = "So11111111111111111111111111111111111112"
+            account_detail = await client.get_account_detail(test_account)
+            
+            if account_detail:
+                # Should have some account data
+                assert isinstance(account_detail, dict)
+                # Common fields in account detail
+                expected_fields = ["address", "lamports", "balance_sol", "network"]
+                # At least one field should be present
+                assert any(field in account_detail for field in expected_fields)
+                print(f"   ✅ SolanaFM account detail: {account_detail.get('friendly_name', 'Unknown')} - {account_detail.get('balance_sol', 0)} SOL")
+            else:
+                print(f"   ℹ️  Account detail not available for {test_account}")
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "not found" in error_msg or "404" in error_msg:
+                print(f"   ℹ️  SolanaFM account not found: {e}")
+            elif "timeout" in error_msg or "connection" in error_msg:
+                print(f"   ⚠️  SolanaFM connection issue: {e}")
+            else:
+                print(f"   ⚠️  SolanaFM account detail error: {e}")
 
 
 @pytest.mark.services
@@ -405,6 +441,26 @@ class TestServiceManager:
                     service_health = health["services"][service]
                     assert isinstance(service_health, dict)
                     assert "healthy" in service_health
+    
+    @pytest.mark.asyncio
+    async def test_service_manager_solanafm_integration(self):
+        """Test service manager SolanaFM integration specifically"""
+        from app.services.service_manager import APIManager
+        
+        manager = APIManager()
+        
+        # Test that SolanaFM is properly integrated
+        assert "solanafm" in manager.clients
+        
+        # Test SolanaFM data retrieval method
+        assert hasattr(manager, 'get_solanafm_data')
+        
+        # Test capabilities
+        solanafm_capabilities = manager._get_service_capabilities("solanafm")
+        expected_capabilities = ["on_chain_data", "transaction_details", "network_stats", "token_info", "account_details"]
+        
+        for capability in expected_capabilities:
+            assert capability in solanafm_capabilities
 
 
 # Pytest markers for service testing including SolanaFM

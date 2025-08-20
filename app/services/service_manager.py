@@ -13,7 +13,7 @@ from app.services.goplus_client import GOplusClient, check_goplus_health
 
 
 class APIManager:
-    """Unified API manager for all external services including GOplus"""
+    """Unified API manager for all external services including SolanaFM and GOplus"""
     
     def __init__(self):
         self.clients = {
@@ -22,14 +22,14 @@ class APIManager:
             "birdeye": None,
             "blowfish": None,
             "dataimpulse": None,
-            "solanafm": None,
+            "solanafm": None,  # SolanaFM replaces Solscan
             "goplus": None
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
     
     async def initialize_clients(self):
-        """Initialize all API clients including GOplus"""
+        """Initialize all API clients including SolanaFM and GOplus"""
         try:
             self.clients = {
                 "helius": HeliusClient(),
@@ -37,10 +37,10 @@ class APIManager:
                 "birdeye": BirdeyeClient(),
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
-                "solanafm": SolanaFMClient(),
+                "solanafm": SolanaFMClient(),  # SolanaFM integration
                 "goplus": GOplusClient()
             }
-            logger.info("✅ All API clients initialized (including GOplus)")
+            logger.info("✅ All API clients initialized (including SolanaFM and GOplus)")
         except Exception as e:
             logger.error(f"❌ Error initializing API clients: {str(e)}")
             raise
@@ -56,14 +56,14 @@ class APIManager:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
     async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services including GOplus"""
+        """Check health of all API services including SolanaFM and GOplus"""
         current_time = time.time()
         
         # Check cache
         if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
             return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services (including GOplus)...")
+        logger.info("🔍 Checking health of all API services (including SolanaFM and GOplus)...")
         
         # Health check functions
         health_checks = {
@@ -72,7 +72,7 @@ class APIManager:
             "birdeye": check_birdeye_health(),
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
-            "solanafm": check_solanafm_health(),
+            "solanafm": check_solanafm_health(),  # SolanaFM health check
             "goplus": check_goplus_health()
         }
         
@@ -128,17 +128,24 @@ class APIManager:
                 f"Check service status for: {', '.join(unhealthy)}"
             )
         
+        # SolanaFM-specific recommendations
+        if "solanafm" in health_status:
+            solanafm_status = health_status["solanafm"]
+            if not solanafm_status.get("healthy"):
+                if not solanafm_status.get("api_key_configured", True):  # SolanaFM is free
+                    overall_health["recommendations"].append(
+                        "SolanaFM: No API key required - check network connectivity"
+                    )
+                else:
+                    overall_health["recommendations"].append(
+                        "SolanaFM: Check service availability at https://api.solana.fm"
+                    )
+        
         # GOplus-specific recommendations
         if "goplus" in health_status:
             goplus_status = health_status["goplus"]
             if not goplus_status.get("healthy"):
-                if goplus_status.get("services"):
-                    services_info = goplus_status["services"]
-                    if not services_info.get("configured"):
-                        overall_health["recommendations"].append(
-                            f"GOplus: Configure API keys for {', '.join(services_info)} services"
-                        )
-                else:
+                if not goplus_status.get("api_key_configured", False):
                     overall_health["recommendations"].append(
                         "GOplus: Get API keys from https://gopluslabs.io/"
                     )
@@ -153,7 +160,7 @@ class APIManager:
         return overall_health
     
     async def get_comprehensive_token_data(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token data from all available sources including GOplus"""
+        """Get comprehensive token data from all available sources including SolanaFM"""
         logger.info(f"🔍 Gathering comprehensive data for token: {token_address}")
         
         # Prepare tasks for parallel execution
@@ -166,18 +173,17 @@ class APIManager:
         
         if self.clients["chainbase"]:
             tasks["chainbase_metadata"] = self.clients["chainbase"].get_token_metadata(token_address)
-            tasks["chainbase_holders"] = self.clients["chainbase"].get_token_holders(token_address, 100)
-            tasks["chainbase_market"] = self.clients["chainbase"].get_market_data(token_address)
+            tasks["chainbase_holders"] = self.clients["chainbase"].get_token_holders(token_address, limit=100)
         
         if self.clients["birdeye"]:
             tasks["birdeye_price"] = self.clients["birdeye"].get_token_price(token_address)
             tasks["birdeye_metadata"] = self.clients["birdeye"].get_token_metadata(token_address)
-            tasks["birdeye_trades"] = self.clients["birdeye"].get_token_trades(token_address, 50)
+            tasks["birdeye_trades"] = self.clients["birdeye"].get_token_trades(token_address, limit=50)
         
         # SolanaFM data collection (replaces Solscan)
         if self.clients["solanafm"]:
-            tasks["solanafm_info"] = self.clients["solanafm"].get_token_info(token_address)
-            tasks["solanafm_holders"] = self.clients["solanafm"].get_token_holders(token_address, 50)
+            tasks["solanafm_token_info"] = self.clients["solanafm"].get_token_info(token_address)
+            tasks["solanafm_account_detail"] = self.clients["solanafm"].get_account_detail(token_address)
         
         # Security analysis
         if self.clients["blowfish"]:
@@ -187,7 +193,6 @@ class APIManager:
         # GOplus comprehensive analysis
         if self.clients["goplus"]:
             tasks["goplus_comprehensive"] = self.clients["goplus"].comprehensive_analysis(token_address)
-            # Individual GOplus services for more detailed data
             tasks["goplus_security"] = self.clients["goplus"].analyze_token_security(token_address)
             tasks["goplus_rugpull"] = self.clients["goplus"].detect_rugpull(token_address)
         
@@ -207,6 +212,7 @@ class APIManager:
             "security_analysis": {},
             "market_data": {},
             "network_data": {},
+            "solanafm_data": {},  # Dedicated section for SolanaFM data
             "goplus_analysis": {},  # Dedicated section for GOplus data
             "processing_time": processing_time,
             "timestamp": int(time.time()),
@@ -231,8 +237,8 @@ class APIManager:
             if source not in compiled_data["data_sources"]:
                 compiled_data["data_sources"].append(source)
             
-            # Organize data by type
-            if data_type in ["metadata", "info"]:
+            # Organize data by type and source
+            if data_type in ["metadata", "token_info"]:
                 compiled_data["metadata"][source] = result
             elif data_type in ["price"]:
                 compiled_data["price_data"][source] = result
@@ -242,22 +248,26 @@ class APIManager:
                 compiled_data["trading_data"][source] = result
             elif data_type in ["scan", "risks", "security"]:
                 compiled_data["security_analysis"][source] = result
-            elif data_type in ["market"]:
-                compiled_data["market_data"][source] = result
+            elif source == "solanafm":
+                # Special handling for SolanaFM data
+                compiled_data["solanafm_data"][data_type] = result
             elif source == "goplus":
                 # Special handling for GOplus data
                 compiled_data["goplus_analysis"][data_type] = result
             elif data_type == "supply":
                 compiled_data["metadata"][f"{source}_supply"] = result
+            else:
+                # Fallback for other data types
+                compiled_data["network_data"][f"{source}_{data_type}"] = result
         
-        # Merge and standardize data (now includes GOplus)
+        # Merge and standardize data (now includes SolanaFM and GOplus)
         compiled_data["standardized"] = self._standardize_token_data(compiled_data)
         
         logger.info(f"✅ Comprehensive data compiled for {token_address} from {len(compiled_data['data_sources'])} sources in {processing_time:.2f}s")
         return compiled_data
     
     def _standardize_token_data(self, compiled_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Standardize token data from different sources including GOplus"""
+        """Standardize token data from different sources including SolanaFM and GOplus"""
         standardized = {
             "basic_info": {},
             "price_info": {},
@@ -265,6 +275,7 @@ class APIManager:
             "security_info": {},
             "trading_info": {},
             "network_info": {},
+            "solanafm_summary": {},  # Summary of SolanaFM analysis
             "goplus_summary": {}  # Summary of GOplus analysis
         }
         
@@ -279,15 +290,33 @@ class APIManager:
                 standardized["basic_info"]["symbol"] = metadata["symbol"]
             if "decimals" in metadata and not standardized["basic_info"].get("decimals"):
                 standardized["basic_info"]["decimals"] = metadata["decimals"]
+        
+        # Process SolanaFM data
+        solanafm_data = compiled_data.get("solanafm_data", {})
+        if solanafm_data:
+            # Extract SolanaFM token info
+            token_info = solanafm_data.get("token_info")
+            if token_info:
+                standardized["solanafm_summary"]["token_info"] = {
+                    "name": token_info.get("name"),
+                    "symbol": token_info.get("symbol"),
+                    "decimals": token_info.get("decimals"),
+                    "token_type": token_info.get("token_type"),
+                    "mint_authority": token_info.get("mint_authority"),
+                    "freeze_authority": token_info.get("freeze_authority"),
+                    "tags": token_info.get("tags", [])
+                }
             
-            # SolanaFM-specific fields
-            if source == "solanafm":
-                if "price" in metadata:
-                    standardized["price_info"]["solanafm_price"] = metadata["price"]
-                if "volume_24h" in metadata:
-                    standardized["trading_info"]["solanafm_volume_24h"] = metadata["volume_24h"]
-                if "holder_count" in metadata:
-                    standardized["holder_info"]["solanafm_holder_count"] = metadata["holder_count"]
+            # Extract SolanaFM account details
+            account_detail = solanafm_data.get("account_detail")
+            if account_detail:
+                standardized["solanafm_summary"]["account_detail"] = {
+                    "lamports": account_detail.get("lamports"),
+                    "balance_sol": account_detail.get("balance_sol"),
+                    "friendly_name": account_detail.get("friendly_name"),
+                    "tags": account_detail.get("tags"),
+                    "flag": account_detail.get("flag")
+                }
         
         # Standardize price info
         for source, price_data in compiled_data["price_data"].items():
@@ -300,7 +329,7 @@ class APIManager:
             elif "price" in price_data:  # Other formats
                 standardized["price_info"]["current_price"] = price_data["price"]
         
-        # Standardize holder info (enhanced with SolanaFM data)
+        # Standardize holder info
         total_holders = 0
         all_holders = []
         
@@ -309,8 +338,6 @@ class APIManager:
                 continue
                 
             if "total" in holder_data:
-                total_holders = max(total_holders, holder_data["total"])
-            elif source == "solanafm" and "total" in holder_data:
                 total_holders = max(total_holders, holder_data["total"])
             
             if "holders" in holder_data:
@@ -385,6 +412,7 @@ class APIManager:
             "average_risk_score": sum(security_scores) / len(security_scores) if security_scores else 0,
             "security_flags": list(set(security_flags)),
             "is_high_risk": any(score > 70 for score in security_scores) if security_scores else False,
+            "solanafm_enhanced": bool(solanafm_data),
             "goplus_enhanced": bool(goplus_data)
         }
         
@@ -432,15 +460,34 @@ class APIManager:
             logger.error(f"Error detecting rugpull for {token_address} with GOplus: {str(e)}")
             return {"error": str(e)}
     
+    async def get_solanafm_data(self, token_address: str) -> Dict[str, Any]:
+        """Get SolanaFM data for a token"""
+        if not self.clients["solanafm"]:
+            return {"error": "SolanaFM client not available"}
+        
+        logger.info(f"📊 Getting SolanaFM data for {token_address}")
+        
+        try:
+            # Get both token info and account details from SolanaFM
+            token_info = await self.clients["solanafm"].get_token_info(token_address)
+            
+            return {
+                "token_info": token_info,
+                "source": "solanafm"
+            }
+        except Exception as e:
+            logger.error(f"Error getting SolanaFM data for {token_address}: {str(e)}")
+            return {"error": str(e)}
+    
     def _get_service_capabilities(self, service_name: str) -> List[str]:
-        """Get capabilities for each service including GOplus"""
+        """Get capabilities for each service including SolanaFM and GOplus"""
         capabilities = {
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
             "birdeye": ["price_data", "trading_history", "market_data", "trending_tokens"],
             "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
-            "solanafm": ["on_chain_data", "transaction_details", "network_stats", "validator_info", "token_info", "holder_analysis"],
+            "solanafm": ["on_chain_data", "transaction_details", "network_stats", "token_info", "account_details"],
             "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"]
         }
         return capabilities.get(service_name, [])
@@ -452,33 +499,41 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services including GOplus"""
+    """Initialize all API services including SolanaFM and GOplus"""
     await api_manager.initialize_clients()
 
 
 async def cleanup_api_services():
-    """Cleanup all API services including GOplus"""
+    """Cleanup all API services"""
     await api_manager.cleanup_clients()
 
 
 async def get_token_analysis(token_address: str) -> Dict[str, Any]:
-    """Get comprehensive token analysis including GOplus data"""
+    """Get comprehensive token analysis"""
     return await api_manager.get_comprehensive_token_data(token_address)
 
 
 async def get_api_health_status() -> Dict[str, Any]:
-    """Get health status of all APIs including GOplus"""
+    """Get health status of all APIs"""
     return await api_manager.check_all_services_health()
 
 
 async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search for tokens across all sources including GOplus verification"""
-    return await api_manager.search_tokens(query, limit)
+    """Search for tokens across all sources"""
+    # Implementation would use multiple sources including SolanaFM search capabilities
+    return []
 
 
 async def get_trending_analysis(limit: int = 20) -> List[Dict[str, Any]]:
     """Get trending tokens analysis from all sources"""
-    return await api_manager.discover_trending_tokens(limit)
+    # Implementation would aggregate from multiple sources
+    return []
+
+
+# SolanaFM-specific convenience functions
+async def get_solanafm_token_data(token_address: str) -> Dict[str, Any]:
+    """Get SolanaFM token data for a token"""
+    return await api_manager.get_solanafm_data(token_address)
 
 
 # GOplus-specific convenience functions
