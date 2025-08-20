@@ -30,6 +30,12 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "chromadb: marks tests that require ChromaDB"
     )
+    config.addinivalue_line(
+        "markers", "services: API service tests"
+    )
+    config.addinivalue_line(
+        "markers", "health: Service health check tests"
+    )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -42,6 +48,10 @@ def pytest_collection_modifyitems(config, items):
         # Mark tests in unit folder
         if "unit" in str(item.fspath):
             item.add_marker(pytest.mark.unit)
+        
+        # Mark tests in services folder
+        if "services" in str(item.fspath):
+            item.add_marker(pytest.mark.services)
         
         # Auto-mark slow tests
         if "slow" in item.name or "integration" in str(item.fspath):

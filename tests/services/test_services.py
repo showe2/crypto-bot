@@ -156,6 +156,16 @@ class ComprehensiveServiceTester:
                 test_methods=["analyze_token_security", "detect_rugpull", "comprehensive_analysis"],
                 icon="🔒"
             ),
+            "rugcheck": ServiceConfig(
+                name="RugCheck",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.20,
+                requires_auth=True,
+                health_check_module="app.services.rugcheck_client.check_rugcheck_health",
+                client_module="app.services.rugcheck_client.RugCheckClient",
+                test_methods=["check_token", "get_token_holders", "analyze_creator"],
+                icon="🛡️"
+            ),
             "blowfish": ServiceConfig(
                 name="Blowfish",
                 category=ServiceCategory.PREMIUM,
@@ -703,6 +713,9 @@ class ComprehensiveServiceTester:
                 results.extend(api_results)
             elif service_name == "goplus":
                 api_results = await self._test_goplus_api_calls()
+                results.extend(api_results)
+            elif service_name == "rugcheck":  # Added RugCheck testing
+                api_results = await self._test_rugcheck_api_calls()
                 results.extend(api_results)
         
         return results
@@ -1317,6 +1330,123 @@ class ComprehensiveServiceTester:
         
         return results
     
+    async def _test_rugcheck_api_calls(self) -> List[TestResult]:
+        """🛡️ Test RugCheck API calls"""
+        print(f"      🛡️ Testing RugCheck API calls...")
+        results = []
+        
+        try:
+            from app.services.rugcheck_client import RugCheckClient
+            
+            async with RugCheckClient() as client:
+                # Test 1: Token security check
+                print(f"         🔍 Testing token security check...")
+                start_time = time.time()
+                
+                try:
+                    token_report = await client.check_token(self.test_tokens["solana"][0])
+                    check_time = time.time() - start_time
+
+                    if token_report:
+                        print(f"            ✅ Token check completed ({check_time:.3f}s)")
+                        
+                        results.append(TestResult(
+                            service="rugcheck",
+                            endpoint="/v1/tokens/{token_address}/report",
+                            success=True,
+                            response_time=check_time,
+                            cost_estimate="$0.002",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(token_report))
+                        ))
+                    else:
+                        print(f"            ⚠️ No token report available ({check_time:.3f}s)")
+                        results.append(TestResult(
+                            service="rugcheck",
+                            endpoint="/v1/tokens/{token_address}/report",
+                            success=False,
+                            response_time=check_time,
+                            cost_estimate="$0.002",
+                            category=ServiceCategory.PAID,
+                            error="No token report returned"
+                        ))
+                        
+                except Exception as e:
+                    check_time = time.time() - start_time
+                    print(f"            ❌ Token check error: {str(e)} ({check_time:.3f}s)")
+                    results.append(TestResult(
+                        service="rugcheck",
+                        endpoint="/v1/tokens/{token_address}/report",
+                        success=False,
+                        response_time=check_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
+                # Rate limiting between calls
+                await asyncio.sleep(1)
+                
+                # Testing trending tokens
+                print(f"         📈 Testing trending tokens...")
+                start_time = time.time()
+                
+                try:
+                    trending_tokens = await client.get_trending_tokens()
+                    trending_time = time.time() - start_time
+                    
+                    if trending_tokens and len(trending_tokens) > 0:
+                        print(f"            ✅ Trending tokens retrieved ({trending_time:.3f}s)")
+                        print(f"               Found {len(trending_tokens)} tokens")
+                        
+                        results.append(TestResult(
+                            service="rugcheck",
+                            endpoint="/v1/stats/trending",
+                            success=True,
+                            response_time=trending_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(trending_tokens))
+                        ))
+                    else:
+                        print(f"            ⚠️ No trending tokens data ({trending_time:.3f}s)")
+                        results.append(TestResult(
+                            service="rugcheck",
+                            endpoint="/v1/stats/trending",
+                            success=False,
+                            response_time=trending_time,
+                            cost_estimate="$0.001",
+                            category=ServiceCategory.PAID,
+                            error="No trending tokens data returned"
+                        ))
+                        
+                except Exception as e:
+                    trending_time = time.time() - start_time
+                    print(f"            ❌ Trending tokens error: {str(e)} ({trending_time:.3f}s)")
+                    results.append(TestResult(
+                        service="rugcheck",
+                        endpoint="/v1/stats/trending",
+                        success=False,
+                        response_time=trending_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
+        except Exception as e:
+            print(f"         ❌ RugCheck client error: {str(e)}")
+            results.append(TestResult(
+                service="rugcheck",
+                endpoint="/client_error",
+                success=False,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.PAID,
+                error=str(e)
+            ))
+        
+        return results
+    
     async def run_comprehensive_tests(self) -> Dict[str, Any]:
         """🚀 Run comprehensive test suite"""
         self.print_header()
@@ -1573,6 +1703,8 @@ Examples:
                        help="Test only Chainbase services")
     parser.add_argument("--helius-only", action="store_true",
                        help="Test only Helius services")
+    parser.add_argument("--rugcheck-only", action="store_true",
+                        help="Test only RugCheck services")
     parser.add_argument("--free-only", action="store_true",
                        help="Test only FREE services (SolanaFM + DexScreener)")
     
@@ -1627,6 +1759,10 @@ Examples:
     
     if args.helius_only:
         await handle_helius_only_testing(tester, args)
+        return
+    
+    if args.rugcheck_only:
+        await handle_rugcheck_only_testing(tester, args)
         return
     
     # Auto-confirm for paid testing if flag is set
@@ -1812,6 +1948,37 @@ async def handle_helius_only_testing(tester: ComprehensiveServiceTester, args):
     if args.save_results != "none":
         await save_results(summary, "helius_test", args.save_results)
 
+async def handle_rugcheck_only_testing(tester: ComprehensiveServiceTester, args):
+    """🛡️ Handle RugCheck-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ RugCheck testing requires at least 'limited' mode")
+        print(f"   Use --mode limited for minimal RugCheck testing")
+        return
+    
+    print(f"🛡️ RugCheck-only testing mode")
+    print(f"=" * 60)
+    print(f"🎯 Testing RugCheck API comprehensively")
+    print(f"💰 Cost: Paid service - token security analysis")
+    print(f"🔍 Coverage: Rug detection, security analysis, holder analysis")
+    print(f"=" * 60)
+    
+    start_time = time.time()
+    
+    try:
+        results = await tester._test_rugcheck_api_calls()
+        total_time = time.time() - start_time
+        
+        summary = create_service_summary("rugcheck_only", results, total_time, paid=True)
+        tester.print_comprehensive_summary(summary)
+        
+        # Save results
+        if args.save_results != "none":
+            await save_results(summary, "rugcheck_test", args.save_results)
+            
+    except Exception as e:
+        print(f"❌ RugCheck testing failed: {str(e)}")
+        return
+
 
 def create_service_summary(mode: str, results: List[TestResult], total_time: float, paid: bool = False) -> Dict[str, Any]:
     """Create a summary for single service testing"""
@@ -1901,7 +2068,7 @@ if __name__ == "__main__":
     print("=" * 40)
     print("🎯 Modes: mock (safe) → free → limited → full (expensive)")
     print("🔧 Services: SolanaFM (free), DexScreener (free), Birdeye, Chainbase, GOplus, etc.")
-    print("🔍 NEW: --dexscreener-only flag for testing DexScreener API only!")
+    print("🔍 --dexscreener-only flag for testing DexScreener API only!")
     print("💡 Use --help for all options")
     print()
     

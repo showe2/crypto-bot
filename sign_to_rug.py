@@ -11,23 +11,11 @@ from solders.system_program import TransferParams, transfer
 from solders.transaction import Transaction
 import base58
 
-# # Load private key from environment variable
-# load_dotenv()
-# PRIVATE_KEY = os.getenv("SOLANA_PRIVATE_KEY")
-# if not PRIVATE_KEY:
-#   raise ValueError("Please set the SOLANA_PRIVATE_KEY environment variable.")
-
-PRIVATE_KEY_JSON = [217,80,175,155,90,193,90,100,8,86,124,24,55,235,241,97,241,198,3,29,41,149,38,238,218,142,180,29,172,9,9,193,81,28,116,57,112,108,76,110,123,5,54,184,194,224,218,76,172,182,91,163,53,130,91,167,248,22,208,37,109,137,159,198]
-PRIVATE_KEY="5oyP6rBbSKMoM5oQSKAW7ZeZMoqGvQ1EQSqpoVZ9GUCRbstopcd7u62pzySg3d51wNwx8DHpVAyxSA9mjYGYqUde"
-
-# Parse the JSON array string → list of ints → bytes
-try:
-    secret_key_bytes = bytes(PRIVATE_KEY_JSON)
-except Exception as e:
-    raise ValueError("SOLANA_PRIVATE_KEY must be a valid JSON array of numbers") from e
-
-# Create wallet (Keypair) from raw secret key bytes
-wallet: Keypair = Keypair.from_bytes(secret_key_bytes)
+# Load private key from environment variable
+load_dotenv()
+PRIVATE_KEY = os.getenv("SOLANA_PRIVATE_KEY")
+if not PRIVATE_KEY:
+  raise ValueError("Please set the SOLANA_PRIVATE_KEY environment variable.")
 
 wallet: Keypair = Keypair.from_base58_string(PRIVATE_KEY)
 

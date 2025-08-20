@@ -11,10 +11,11 @@ from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse
 from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
 from app.services.dexscreener_client import DexScreenerClient, check_dexscreener_health
+from app.services.rugcheck_client import RugCheckClient, check_rugcheck_health
 
 
 class APIManager:
-    """Unified API manager for all external services including DexScreener"""
+    """Unified API manager for all external services including RugCheck"""
     
     def __init__(self):
         self.clients = {
@@ -25,13 +26,14 @@ class APIManager:
             "dataimpulse": None,
             "solanafm": None,
             "goplus": None,
-            "dexscreener": None  # Added DexScreener
+            "dexscreener": None,
+            "rugcheck": None  # Added RugCheck
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
     
     async def initialize_clients(self):
-        """Initialize all API clients including DexScreener"""
+        """Initialize all API clients including RugCheck"""
         try:
             self.clients = {
                 "helius": HeliusClient(),
@@ -41,9 +43,10 @@ class APIManager:
                 "dataimpulse": DataImpulseClient(),
                 "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient(),
-                "dexscreener": DexScreenerClient()  # Added DexScreener
+                "dexscreener": DexScreenerClient(),
+                "rugcheck": RugCheckClient()  # Added RugCheck
             }
-            logger.info("✅ All API clients initialized (including DexScreener)")
+            logger.info("✅ All API clients initialized (including RugCheck)")
         except Exception as e:
             logger.error(f"❌ Error initializing API clients: {str(e)}")
             raise
@@ -59,14 +62,14 @@ class APIManager:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
     async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services including DexScreener"""
+        """Check health of all API services including RugCheck"""
         current_time = time.time()
         
         # Check cache
         if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
             return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services (including DexScreener)...")
+        logger.info("🔍 Checking health of all API services (including RugCheck)...")
         
         # Health check functions
         health_checks = {
@@ -77,7 +80,8 @@ class APIManager:
             "dataimpulse": check_dataimpulse_health(),
             "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health(),
-            "dexscreener": check_dexscreener_health()  # Added DexScreener
+            "dexscreener": check_dexscreener_health(),
+            "rugcheck": check_rugcheck_health()  # Added RugCheck
         }
         
         # Run all health checks concurrently
@@ -120,7 +124,7 @@ class APIManager:
         # Add service-specific recommendations
         if configured_services < total_services:
             missing_keys = [name for name, status in health_status.items() 
-                           if not status.get("api_key_configured", False) and name not in ["solanafm", "dexscreener"]]  # Exclude free services
+                           if not status.get("api_key_configured", False) and name not in ["solanafm", "dexscreener"]]
             if missing_keys:
                 overall_health["recommendations"].append(
                     f"Configure API keys for: {', '.join(missing_keys)}"
@@ -153,7 +157,7 @@ class APIManager:
         return overall_health
     
     async def get_comprehensive_token_data(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token data from all available sources including DexScreener"""
+        """Get comprehensive token data from all available sources including RugCheck"""
         logger.info(f"🔍 Gathering comprehensive data for token: {token_address}")
         
         # Prepare tasks for parallel execution
@@ -193,6 +197,11 @@ class APIManager:
             tasks["goplus_security"] = self.clients["goplus"].analyze_token_security(token_address)
             tasks["goplus_rugpull"] = self.clients["goplus"].detect_rugpull(token_address)
         
+        # RugCheck security analysis
+        if self.clients["rugcheck"]:
+            tasks["rugcheck_report"] = self.clients["rugcheck"].check_token(token_address)
+            tasks["rugcheck_holders"] = self.clients["rugcheck"].get_token_holders(token_address, limit=50)
+        
         # Execute all tasks concurrently
         start_time = time.time()
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -211,7 +220,8 @@ class APIManager:
             "network_data": {},
             "solanafm_data": {},
             "goplus_analysis": {},
-            "dexscreener_data": {},  # Added DexScreener section
+            "dexscreener_data": {},
+            "rugcheck_data": {},  # Added RugCheck section
             "processing_time": processing_time,
             "timestamp": int(time.time()),
             "errors": []
@@ -254,19 +264,21 @@ class APIManager:
                 compiled_data["goplus_analysis"][data_type] = result
             elif source == "dexscreener":
                 compiled_data["dexscreener_data"][data_type] = result
+            elif source == "rugcheck":  # RugCheck data
+                compiled_data["rugcheck_data"][data_type] = result
             elif data_type == "supply":
                 compiled_data["metadata"][f"{source}_supply"] = result
             else:
                 compiled_data["network_data"][f"{source}_{data_type}"] = result
         
-        # Merge and standardize data (now includes DexScreener)
+        # Merge and standardize data (now includes RugCheck)
         compiled_data["standardized"] = self._standardize_token_data(compiled_data)
         
         logger.info(f"✅ Comprehensive data compiled for {token_address} from {len(compiled_data['data_sources'])} sources in {processing_time:.2f}s")
         return compiled_data
     
     def _standardize_token_data(self, compiled_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Standardize token data from different sources including DexScreener"""
+        """Standardize token data from different sources including RugCheck"""
         standardized = {
             "basic_info": {},
             "price_info": {},
@@ -276,7 +288,8 @@ class APIManager:
             "network_info": {},
             "solanafm_summary": {},
             "goplus_summary": {},
-            "dexscreener_summary": {}  # Added DexScreener summary
+            "dexscreener_summary": {},
+            "rugcheck_summary": {}  # Added RugCheck summary
         }
         
         # Standardize basic info
@@ -290,6 +303,29 @@ class APIManager:
                 standardized["basic_info"]["symbol"] = metadata["symbol"]
             if "decimals" in metadata and not standardized["basic_info"].get("decimals"):
                 standardized["basic_info"]["decimals"] = metadata["decimals"]
+        
+        # Process RugCheck data
+        rugcheck_data = compiled_data.get("rugcheck_data", {})
+        if rugcheck_data:
+            report_data = rugcheck_data.get("report")
+            if report_data:
+                standardized["rugcheck_summary"] = {
+                    "score": report_data.get("score"),
+                    "is_scam": report_data.get("is_scam", False),
+                    "is_honeypot": report_data.get("is_honeypot", False),
+                    "risks": report_data.get("risks", []),
+                    "creator_analysis": report_data.get("creator_analysis", {}),
+                    "liquidity_analysis": report_data.get("liquidity_analysis", {}),
+                    "last_updated": report_data.get("last_updated")
+                }
+            
+            holders_data = rugcheck_data.get("holders")
+            if holders_data:
+                standardized["rugcheck_summary"]["holders_analysis"] = {
+                    "total_holders": holders_data.get("total_holders"),
+                    "distribution": holders_data.get("distribution", {}),
+                    "suspicious_holders": len(holders_data.get("suspicious_holders", []))
+                }
         
         # Process DexScreener data
         dexscreener_data = compiled_data.get("dexscreener_data", {})
@@ -377,13 +413,15 @@ class APIManager:
             
             if "holders" in holder_data:
                 all_holders.extend(holder_data["holders"])
+            elif "top_holders" in holder_data:  # RugCheck format
+                all_holders.extend(holder_data["top_holders"])
         
         standardized["holder_info"] = {
             "total_holders": total_holders,
             "top_holders": all_holders[:20] if all_holders else []
         }
         
-        # Standardize security info (includes GOplus)
+        # Standardize security info (includes GOplus and RugCheck)
         security_scores = []
         security_flags = []
         
@@ -397,6 +435,21 @@ class APIManager:
                 security_flags.extend(security_data["security_flags"])
             if "is_scam" in security_data and security_data["is_scam"]:
                 security_flags.append("potential_scam")
+        
+        # Add RugCheck security data
+        if rugcheck_data.get("report"):
+            rugcheck_report = rugcheck_data["report"]
+            if rugcheck_report.get("score"):
+                # Convert RugCheck score (0-100, higher=safer) to risk score (0-100, higher=riskier)
+                rugcheck_risk_score = 100 - rugcheck_report["score"]
+                security_scores.append(rugcheck_risk_score)
+            
+            if rugcheck_report.get("is_scam"):
+                security_flags.append("rugcheck_scam")
+            if rugcheck_report.get("is_honeypot"):
+                security_flags.append("rugcheck_honeypot")
+            if rugcheck_report.get("risks"):
+                security_flags.extend([f"rugcheck_{risk}" for risk in rugcheck_report["risks"]])
         
         # Process GOplus analysis
         goplus_data = compiled_data.get("goplus_analysis", {})
@@ -445,13 +498,14 @@ class APIManager:
             "is_high_risk": any(score > 70 for score in security_scores) if security_scores else False,
             "solanafm_enhanced": bool(solanafm_data),
             "goplus_enhanced": bool(goplus_data),
-            "dexscreener_enhanced": bool(dexscreener_data)  # Added DexScreener flag
+            "dexscreener_enhanced": bool(dexscreener_data),
+            "rugcheck_enhanced": bool(rugcheck_data)  # Added RugCheck flag
         }
         
         return standardized
     
     def _get_service_capabilities(self, service_name: str) -> List[str]:
-        """Get capabilities for each service including DexScreener"""
+        """Get capabilities for each service including RugCheck"""
         capabilities = {
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
@@ -460,7 +514,8 @@ class APIManager:
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
             "solanafm": ["on_chain_data", "transaction_details", "network_stats", "token_info", "account_details"],
             "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"],
-            "dexscreener": ["dex_data", "trading_pairs", "price_discovery", "liquidity_analysis", "free_access"]  # Added DexScreener
+            "dexscreener": ["dex_data", "trading_pairs", "price_discovery", "liquidity_analysis", "free_access"],
+            "rugcheck": ["rug_detection", "token_security", "creator_analysis", "holder_analysis", "scam_detection"]  # Added RugCheck
         }
         return capabilities.get(service_name, [])
 
@@ -471,7 +526,7 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services including DexScreener"""
+    """Initialize all API services including RugCheck"""
     await api_manager.initialize_clients()
 
 
@@ -491,7 +546,7 @@ async def get_api_health_status() -> Dict[str, Any]:
 
 
 async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search for tokens across all sources including DexScreener"""
+    """Search for tokens across all sources including RugCheck"""
     results = []
     
     # Use DexScreener for search (free)
@@ -519,13 +574,96 @@ async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]
         except Exception as e:
             logger.error(f"DexScreener search failed: {str(e)}")
     
+    # Use RugCheck for search (if available)
+    if api_manager.clients.get("rugcheck"):
+        try:
+            rugcheck_results = await api_manager.clients["rugcheck"].search_tokens(query, limit)
+            
+            # Convert RugCheck results to standard format
+            for token in rugcheck_results[:limit]:
+                result = {
+                    "address": token.get("token_address"),
+                    "name": token.get("name"),
+                    "symbol": token.get("symbol"),
+                    "score": token.get("score"),
+                    "risk_level": token.get("risk_level"),
+                    "is_verified": token.get("is_verified"),
+                    "market_cap": token.get("market_cap"),
+                    "holder_count": token.get("holder_count"),
+                    "source": "rugcheck",
+                    "last_checked": token.get("last_checked")
+                }
+                results.append(result)
+                
+        except Exception as e:
+            logger.error(f"RugCheck search failed: {str(e)}")
+    
     return results
 
 
 async def get_trending_analysis(limit: int = 20) -> List[Dict[str, Any]]:
     """Get trending tokens analysis from all sources"""
-    # Implementation would aggregate from multiple sources including DexScreener
+    # Implementation would aggregate from multiple sources including RugCheck
     return []
+
+
+# RugCheck-specific convenience functions
+async def get_rugcheck_token_data(token_address: str) -> Dict[str, Any]:
+    """Get RugCheck token data for a token"""
+    if not api_manager.clients.get("rugcheck"):
+        return {"error": "RugCheck client not available"}
+    
+    try:
+        token_report = await api_manager.clients["rugcheck"].check_token(token_address)
+        return {
+            "token_report": token_report,
+            "source": "rugcheck",
+            "cost": "PAID"
+        }
+    except Exception as e:
+        logger.error(f"Error getting RugCheck data for {token_address}: {str(e)}")
+        return {"error": str(e)}
+
+
+async def get_rugcheck_creator_analysis(creator_address: str) -> Dict[str, Any]:
+    """Get RugCheck creator analysis"""
+    if not api_manager.clients.get("rugcheck"):
+        return {"error": "RugCheck client not available"}
+    
+    try:
+        creator_analysis = await api_manager.clients["rugcheck"].analyze_creator(creator_address)
+        return {
+            "creator_analysis": creator_analysis,
+            "source": "rugcheck",
+            "cost": "PAID"
+        }
+    except Exception as e:
+        logger.error(f"Error getting RugCheck creator analysis for {creator_address}: {str(e)}")
+        return {"error": str(e)}
+
+
+async def get_trending_rugs() -> List[Dict[str, Any]]:
+    """Get trending rug pulls from RugCheck"""
+    if not api_manager.clients.get("rugcheck"):
+        return []
+    
+    try:
+        return await api_manager.clients["rugcheck"].get_trending_rugs()
+    except Exception as e:
+        logger.error(f"RugCheck trending rugs failed: {str(e)}")
+        return []
+
+
+async def search_rugcheck_tokens(query: str) -> List[Dict[str, Any]]:
+    """Search RugCheck for tokens"""
+    if not api_manager.clients.get("rugcheck"):
+        return []
+    
+    try:
+        return await api_manager.clients["rugcheck"].search_tokens(query)
+    except Exception as e:
+        logger.error(f"RugCheck search failed for '{query}': {str(e)}")
+        return []
 
 
 # DexScreener-specific convenience functions

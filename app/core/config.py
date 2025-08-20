@@ -50,7 +50,7 @@ class Settings(BaseSettings):
     PUMPFUN_API_KEY: Optional[str] = None
 
     # RugCheck API
-    RUGCHECK_API_KEY: Optional[str] = None
+    RUGCHECK_BASE_URL: str = "https://api.rugcheck.xyz"
 
     # GOplus API - Simplified to single APP Key + APP Secret pair
     GOPLUS_APP_KEY: Optional[str] = None
@@ -225,7 +225,7 @@ class Settings(BaseSettings):
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
             'BLOWFISH_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
-            'PUMPFUN_API_KEY', 'RUGCHECK_API_KEY',
+            'PUMPFUN_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET'
         ]
         
