@@ -10,10 +10,11 @@ from app.services.blowfish_client import BlowfishClient, check_blowfish_health
 from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
 from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
+from app.services.dexscreener_client import DexScreenerClient, check_dexscreener_health
 
 
 class APIManager:
-    """Unified API manager for all external services including SolanaFM and GOplus"""
+    """Unified API manager for all external services including DexScreener"""
     
     def __init__(self):
         self.clients = {
@@ -22,14 +23,15 @@ class APIManager:
             "birdeye": None,
             "blowfish": None,
             "dataimpulse": None,
-            "solanafm": None,  # SolanaFM replaces Solscan
-            "goplus": None
+            "solanafm": None,
+            "goplus": None,
+            "dexscreener": None  # Added DexScreener
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
     
     async def initialize_clients(self):
-        """Initialize all API clients including SolanaFM and GOplus"""
+        """Initialize all API clients including DexScreener"""
         try:
             self.clients = {
                 "helius": HeliusClient(),
@@ -37,10 +39,11 @@ class APIManager:
                 "birdeye": BirdeyeClient(),
                 "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
-                "solanafm": SolanaFMClient(),  # SolanaFM integration
-                "goplus": GOplusClient()
+                "solanafm": SolanaFMClient(),
+                "goplus": GOplusClient(),
+                "dexscreener": DexScreenerClient()  # Added DexScreener
             }
-            logger.info("✅ All API clients initialized (including SolanaFM and GOplus)")
+            logger.info("✅ All API clients initialized (including DexScreener)")
         except Exception as e:
             logger.error(f"❌ Error initializing API clients: {str(e)}")
             raise
@@ -56,14 +59,14 @@ class APIManager:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
     async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services including SolanaFM and GOplus"""
+        """Check health of all API services including DexScreener"""
         current_time = time.time()
         
         # Check cache
         if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
             return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services (including SolanaFM and GOplus)...")
+        logger.info("🔍 Checking health of all API services (including DexScreener)...")
         
         # Health check functions
         health_checks = {
@@ -72,8 +75,9 @@ class APIManager:
             "birdeye": check_birdeye_health(),
             "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
-            "solanafm": check_solanafm_health(),  # SolanaFM health check
-            "goplus": check_goplus_health()
+            "solanafm": check_solanafm_health(),
+            "goplus": check_goplus_health(),
+            "dexscreener": check_dexscreener_health()  # Added DexScreener
         }
         
         # Run all health checks concurrently
@@ -116,10 +120,11 @@ class APIManager:
         # Add service-specific recommendations
         if configured_services < total_services:
             missing_keys = [name for name, status in health_status.items() 
-                           if not status.get("api_key_configured", False)]
-            overall_health["recommendations"].append(
-                f"Configure API keys for: {', '.join(missing_keys)}"
-            )
+                           if not status.get("api_key_configured", False) and name not in ["solanafm", "dexscreener"]]  # Exclude free services
+            if missing_keys:
+                overall_health["recommendations"].append(
+                    f"Configure API keys for: {', '.join(missing_keys)}"
+                )
         
         if healthy_services < total_services:
             unhealthy = [name for name, status in health_status.items() 
@@ -128,26 +133,14 @@ class APIManager:
                 f"Check service status for: {', '.join(unhealthy)}"
             )
         
-        # SolanaFM-specific recommendations
-        if "solanafm" in health_status:
-            solanafm_status = health_status["solanafm"]
-            if not solanafm_status.get("healthy"):
-                if not solanafm_status.get("api_key_configured", True):  # SolanaFM is free
+        # Free services recommendations
+        free_services = ["solanafm", "dexscreener"]
+        for service in free_services:
+            if service in health_status:
+                service_status = health_status[service]
+                if not service_status.get("healthy"):
                     overall_health["recommendations"].append(
-                        "SolanaFM: No API key required - check network connectivity"
-                    )
-                else:
-                    overall_health["recommendations"].append(
-                        "SolanaFM: Check service availability at https://api.solana.fm"
-                    )
-        
-        # GOplus-specific recommendations
-        if "goplus" in health_status:
-            goplus_status = health_status["goplus"]
-            if not goplus_status.get("healthy"):
-                if not goplus_status.get("api_key_configured", False):
-                    overall_health["recommendations"].append(
-                        "GOplus: Get API keys from https://gopluslabs.io/"
+                        f"{service.upper()}: Free service - check network connectivity"
                     )
         
         # Cache results
@@ -160,7 +153,7 @@ class APIManager:
         return overall_health
     
     async def get_comprehensive_token_data(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive token data from all available sources including SolanaFM"""
+        """Get comprehensive token data from all available sources including DexScreener"""
         logger.info(f"🔍 Gathering comprehensive data for token: {token_address}")
         
         # Prepare tasks for parallel execution
@@ -180,10 +173,14 @@ class APIManager:
             tasks["birdeye_metadata"] = self.clients["birdeye"].get_token_metadata(token_address)
             tasks["birdeye_trades"] = self.clients["birdeye"].get_token_trades(token_address, limit=50)
         
-        # SolanaFM data collection (replaces Solscan)
+        # SolanaFM data collection
         if self.clients["solanafm"]:
             tasks["solanafm_token_info"] = self.clients["solanafm"].get_token_info(token_address)
             tasks["solanafm_account_detail"] = self.clients["solanafm"].get_account_detail(token_address)
+        
+        # DexScreener data collection (FREE)
+        if self.clients["dexscreener"]:
+            tasks["dexscreener_pairs"] = self.clients["dexscreener"].get_token_pairs(token_address)
         
         # Security analysis
         if self.clients["blowfish"]:
@@ -212,8 +209,9 @@ class APIManager:
             "security_analysis": {},
             "market_data": {},
             "network_data": {},
-            "solanafm_data": {},  # Dedicated section for SolanaFM data
-            "goplus_analysis": {},  # Dedicated section for GOplus data
+            "solanafm_data": {},
+            "goplus_analysis": {},
+            "dexscreener_data": {},  # Added DexScreener section
             "processing_time": processing_time,
             "timestamp": int(time.time()),
             "errors": []
@@ -248,26 +246,27 @@ class APIManager:
                 compiled_data["trading_data"][source] = result
             elif data_type in ["scan", "risks", "security"]:
                 compiled_data["security_analysis"][source] = result
+            elif data_type in ["pairs"]:  # DexScreener pairs data
+                compiled_data["dexscreener_data"][data_type] = result
             elif source == "solanafm":
-                # Special handling for SolanaFM data
                 compiled_data["solanafm_data"][data_type] = result
             elif source == "goplus":
-                # Special handling for GOplus data
                 compiled_data["goplus_analysis"][data_type] = result
+            elif source == "dexscreener":
+                compiled_data["dexscreener_data"][data_type] = result
             elif data_type == "supply":
                 compiled_data["metadata"][f"{source}_supply"] = result
             else:
-                # Fallback for other data types
                 compiled_data["network_data"][f"{source}_{data_type}"] = result
         
-        # Merge and standardize data (now includes SolanaFM and GOplus)
+        # Merge and standardize data (now includes DexScreener)
         compiled_data["standardized"] = self._standardize_token_data(compiled_data)
         
         logger.info(f"✅ Comprehensive data compiled for {token_address} from {len(compiled_data['data_sources'])} sources in {processing_time:.2f}s")
         return compiled_data
     
     def _standardize_token_data(self, compiled_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Standardize token data from different sources including SolanaFM and GOplus"""
+        """Standardize token data from different sources including DexScreener"""
         standardized = {
             "basic_info": {},
             "price_info": {},
@@ -275,11 +274,12 @@ class APIManager:
             "security_info": {},
             "trading_info": {},
             "network_info": {},
-            "solanafm_summary": {},  # Summary of SolanaFM analysis
-            "goplus_summary": {}  # Summary of GOplus analysis
+            "solanafm_summary": {},
+            "goplus_summary": {},
+            "dexscreener_summary": {}  # Added DexScreener summary
         }
         
-        # Standardize basic info (now includes SolanaFM data)
+        # Standardize basic info
         for source, metadata in compiled_data["metadata"].items():
             if not metadata:
                 continue
@@ -291,10 +291,44 @@ class APIManager:
             if "decimals" in metadata and not standardized["basic_info"].get("decimals"):
                 standardized["basic_info"]["decimals"] = metadata["decimals"]
         
+        # Process DexScreener data
+        dexscreener_data = compiled_data.get("dexscreener_data", {})
+        if dexscreener_data:
+            pairs_data = dexscreener_data.get("pairs")
+            if pairs_data and pairs_data.get("pairs"):
+                pairs = pairs_data["pairs"]
+                
+                # Extract summary from DexScreener pairs
+                standardized["dexscreener_summary"] = {
+                    "pairs_count": len(pairs),
+                    "total_liquidity_usd": sum(
+                        float(pair.get("liquidity", {}).get("usd", 0) or 0) 
+                        for pair in pairs
+                    ),
+                    "total_volume_24h": sum(
+                        float(pair.get("volume", {}).get("24h", 0) or 0)
+                        for pair in pairs
+                    ),
+                    "best_price_usd": None,
+                    "active_dexes": list(set(pair.get("dex_id") for pair in pairs if pair.get("dex_id"))),
+                    "chains": list(set(pair.get("chain_id") for pair in pairs if pair.get("chain_id")))
+                }
+                
+                # Find best price (highest liquidity pair)
+                best_pair = max(pairs, key=lambda p: float(p.get("liquidity", {}).get("usd", 0) or 0))
+                if best_pair:
+                    standardized["dexscreener_summary"]["best_price_usd"] = best_pair.get("price_usd")
+                    
+                    # Use DexScreener price if no other price data available
+                    if not standardized["price_info"].get("current_price") and best_pair.get("price_usd"):
+                        standardized["price_info"]["current_price"] = best_pair["price_usd"]
+                        standardized["price_info"]["price_change_24h"] = best_pair.get("price_change", {}).get("24h")
+                        standardized["price_info"]["volume_24h"] = best_pair.get("volume", {}).get("24h")
+                        standardized["price_info"]["source"] = "dexscreener"
+        
         # Process SolanaFM data
         solanafm_data = compiled_data.get("solanafm_data", {})
         if solanafm_data:
-            # Extract SolanaFM token info
             token_info = solanafm_data.get("token_info")
             if token_info:
                 standardized["solanafm_summary"]["token_info"] = {
@@ -307,7 +341,6 @@ class APIManager:
                     "tags": token_info.get("tags", [])
                 }
             
-            # Extract SolanaFM account details
             account_detail = solanafm_data.get("account_detail")
             if account_detail:
                 standardized["solanafm_summary"]["account_detail"] = {
@@ -318,7 +351,7 @@ class APIManager:
                     "flag": account_detail.get("flag")
                 }
         
-        # Standardize price info
+        # Standardize price info (now includes DexScreener)
         for source, price_data in compiled_data["price_data"].items():
             if not price_data:
                 continue
@@ -326,8 +359,10 @@ class APIManager:
             if "value" in price_data:  # Birdeye format
                 standardized["price_info"]["current_price"] = price_data["value"]
                 standardized["price_info"]["price_change_24h"] = price_data.get("priceChange24hPercent")
+                standardized["price_info"]["source"] = source
             elif "price" in price_data:  # Other formats
                 standardized["price_info"]["current_price"] = price_data["price"]
+                standardized["price_info"]["source"] = source
         
         # Standardize holder info
         total_holders = 0
@@ -348,7 +383,7 @@ class APIManager:
             "top_holders": all_holders[:20] if all_holders else []
         }
         
-        # Standardize security info (now includes GOplus)
+        # Standardize security info (includes GOplus)
         security_scores = []
         security_flags = []
         
@@ -366,7 +401,6 @@ class APIManager:
         # Process GOplus analysis
         goplus_data = compiled_data.get("goplus_analysis", {})
         if goplus_data:
-            # Extract GOplus comprehensive analysis
             comprehensive = goplus_data.get("comprehensive")
             if comprehensive and comprehensive.get("overall_assessment"):
                 assessment = comprehensive["overall_assessment"]
@@ -379,11 +413,9 @@ class APIManager:
                     "services_used": comprehensive.get("services_used", [])
                 }
                 
-                # Add GOplus risk score to overall security assessment
                 if assessment.get("risk_score"):
                     security_scores.append(assessment["risk_score"])
             
-            # Extract specific GOplus security data
             security_analysis = goplus_data.get("security")
             if security_analysis:
                 goplus_security = {
@@ -398,7 +430,6 @@ class APIManager:
                 }
                 standardized["goplus_summary"]["security_details"] = goplus_security
             
-            # Extract GOplus rugpull data
             rugpull_analysis = goplus_data.get("rugpull")
             if rugpull_analysis:
                 standardized["goplus_summary"]["rugpull_risk"] = {
@@ -413,74 +444,14 @@ class APIManager:
             "security_flags": list(set(security_flags)),
             "is_high_risk": any(score > 70 for score in security_scores) if security_scores else False,
             "solanafm_enhanced": bool(solanafm_data),
-            "goplus_enhanced": bool(goplus_data)
+            "goplus_enhanced": bool(goplus_data),
+            "dexscreener_enhanced": bool(dexscreener_data)  # Added DexScreener flag
         }
         
         return standardized
     
-    async def get_goplus_analysis(self, token_address: str) -> Dict[str, Any]:
-        """Get comprehensive GOplus analysis for a token"""
-        if not self.clients["goplus"]:
-            return {"error": "GOplus client not available"}
-        
-        logger.info(f"🔒 Running GOplus analysis for {token_address}")
-        
-        try:
-            comprehensive_analysis = await self.clients["goplus"].comprehensive_analysis(token_address)
-            return comprehensive_analysis
-        except Exception as e:
-            logger.error(f"Error getting GOplus analysis for {token_address}: {str(e)}")
-            return {"error": str(e)}
-    
-    async def simulate_transaction_goplus(self, transaction_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Simulate transaction using GOplus"""
-        if not self.clients["goplus"]:
-            return {"error": "GOplus client not available"}
-        
-        logger.info("🎯 Simulating transaction with GOplus")
-        
-        try:
-            simulation_result = await self.clients["goplus"].simulate_transaction(transaction_data)
-            return simulation_result
-        except Exception as e:
-            logger.error(f"Error simulating transaction with GOplus: {str(e)}")
-            return {"error": str(e)}
-    
-    async def detect_rugpull_goplus(self, token_address: str) -> Dict[str, Any]:
-        """Detect rugpull using GOplus"""
-        if not self.clients["goplus"]:
-            return {"error": "GOplus client not available"}
-        
-        logger.info(f"🚨 Detecting rugpull risk for {token_address} with GOplus")
-        
-        try:
-            rugpull_analysis = await self.clients["goplus"].detect_rugpull(token_address)
-            return rugpull_analysis
-        except Exception as e:
-            logger.error(f"Error detecting rugpull for {token_address} with GOplus: {str(e)}")
-            return {"error": str(e)}
-    
-    async def get_solanafm_data(self, token_address: str) -> Dict[str, Any]:
-        """Get SolanaFM data for a token"""
-        if not self.clients["solanafm"]:
-            return {"error": "SolanaFM client not available"}
-        
-        logger.info(f"📊 Getting SolanaFM data for {token_address}")
-        
-        try:
-            # Get both token info and account details from SolanaFM
-            token_info = await self.clients["solanafm"].get_token_info(token_address)
-            
-            return {
-                "token_info": token_info,
-                "source": "solanafm"
-            }
-        except Exception as e:
-            logger.error(f"Error getting SolanaFM data for {token_address}: {str(e)}")
-            return {"error": str(e)}
-    
     def _get_service_capabilities(self, service_name: str) -> List[str]:
-        """Get capabilities for each service including SolanaFM and GOplus"""
+        """Get capabilities for each service including DexScreener"""
         capabilities = {
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
@@ -488,7 +459,8 @@ class APIManager:
             "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
             "solanafm": ["on_chain_data", "transaction_details", "network_stats", "token_info", "account_details"],
-            "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"]
+            "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"],
+            "dexscreener": ["dex_data", "trading_pairs", "price_discovery", "liquidity_analysis", "free_access"]  # Added DexScreener
         }
         return capabilities.get(service_name, [])
 
@@ -499,7 +471,7 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services including SolanaFM and GOplus"""
+    """Initialize all API services including DexScreener"""
     await api_manager.initialize_clients()
 
 
@@ -519,34 +491,68 @@ async def get_api_health_status() -> Dict[str, Any]:
 
 
 async def search_for_tokens(query: str, limit: int = 20) -> List[Dict[str, Any]]:
-    """Search for tokens across all sources"""
-    # Implementation would use multiple sources including SolanaFM search capabilities
-    return []
+    """Search for tokens across all sources including DexScreener"""
+    results = []
+    
+    # Use DexScreener for search (free)
+    if api_manager.clients.get("dexscreener"):
+        try:
+            dexscreener_results = await api_manager.clients["dexscreener"].search_pairs(query)
+            
+            # Convert DexScreener results to standard format
+            for pair in dexscreener_results[:limit]:
+                result = {
+                    "address": pair.get("base_token", {}).get("address"),
+                    "name": pair.get("base_token", {}).get("name"),
+                    "symbol": pair.get("base_token", {}).get("symbol"),
+                    "price_usd": pair.get("price_usd"),
+                    "volume_24h": pair.get("volume_24h"),
+                    "liquidity_usd": pair.get("liquidity_usd"),
+                    "market_cap": pair.get("market_cap"),
+                    "source": "dexscreener",
+                    "pair_address": pair.get("pair_address"),
+                    "dex_id": pair.get("dex_id"),
+                    "chain_id": pair.get("chain_id")
+                }
+                results.append(result)
+                
+        except Exception as e:
+            logger.error(f"DexScreener search failed: {str(e)}")
+    
+    return results
 
 
 async def get_trending_analysis(limit: int = 20) -> List[Dict[str, Any]]:
     """Get trending tokens analysis from all sources"""
-    # Implementation would aggregate from multiple sources
+    # Implementation would aggregate from multiple sources including DexScreener
     return []
 
 
-# SolanaFM-specific convenience functions
-async def get_solanafm_token_data(token_address: str) -> Dict[str, Any]:
-    """Get SolanaFM token data for a token"""
-    return await api_manager.get_solanafm_data(token_address)
+# DexScreener-specific convenience functions
+async def get_dexscreener_token_data(token_address: str) -> Dict[str, Any]:
+    """Get DexScreener token data for a token"""
+    if not api_manager.clients.get("dexscreener"):
+        return {"error": "DexScreener client not available"}
+    
+    try:
+        pairs_data = await api_manager.clients["dexscreener"].get_token_pairs(token_address)
+        return {
+            "pairs_data": pairs_data,
+            "source": "dexscreener",
+            "cost": "FREE"
+        }
+    except Exception as e:
+        logger.error(f"Error getting DexScreener data for {token_address}: {str(e)}")
+        return {"error": str(e)}
 
 
-# GOplus-specific convenience functions
-async def get_goplus_comprehensive_analysis(token_address: str) -> Dict[str, Any]:
-    """Get comprehensive GOplus analysis for a token"""
-    return await api_manager.get_goplus_analysis(token_address)
-
-
-async def simulate_transaction_with_goplus(transaction_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Simulate transaction using GOplus"""
-    return await api_manager.simulate_transaction_goplus(transaction_data)
-
-
-async def detect_rugpull_with_goplus(token_address: str) -> Dict[str, Any]:
-    """Detect rugpull using GOplus"""
-    return await api_manager.detect_rugpull_goplus(token_address)
+async def search_dexscreener_pairs(query: str) -> List[Dict[str, Any]]:
+    """Search DexScreener for trading pairs"""
+    if not api_manager.clients.get("dexscreener"):
+        return []
+    
+    try:
+        return await api_manager.clients["dexscreener"].search_pairs(query)
+    except Exception as e:
+        logger.error(f"DexScreener search failed for '{query}': {str(e)}")
+        return []

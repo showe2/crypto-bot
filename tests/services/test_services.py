@@ -136,6 +136,16 @@ class ComprehensiveServiceTester:
                 test_methods=["get_token_info", "get_account_detail"],
                 icon="📊"
             ),
+            "dexscreener": ServiceConfig(
+                name="DexScreener",
+                category=ServiceCategory.FREE,
+                cost_per_1k=0.0,
+                requires_auth=False,
+                health_check_module="app.services.dexscreener_client.check_dexscreener_health",
+                client_module="app.services.dexscreener_client.DexScreenerClient",
+                test_methods=["get_token_pairs", "search_pairs", "get_pair_by_address"],
+                icon="🔍"
+            ),
             "goplus": ServiceConfig(
                 name="GOplus",
                 category=ServiceCategory.PAID,
@@ -307,8 +317,8 @@ class ComprehensiveServiceTester:
             results.extend(solanafm_results)
             
             # Test DexScreener
-            dexscreener_result = await self._test_dexscreener()
-            results.append(dexscreener_result)
+            dexscreener_results = await self._test_dexscreener_comprehensive()
+            results.extend(dexscreener_results)
         
         return results
     
@@ -443,56 +453,182 @@ class ComprehensiveServiceTester:
         
         return results
     
-    async def _test_dexscreener(self) -> TestResult:
-        """🔍 Test DexScreener API (completely free)"""
-        print(f"      🔍 Testing DexScreener...")
+    async def _test_dexscreener_comprehensive(self) -> List[TestResult]:
+        """🔍 Comprehensive DexScreener testing"""
+        print(f"   🔍 Testing DexScreener (FREE service)...")
+        results = []
         
-        start_time = time.time()
         try:
-            url = f"https://api.dexscreener.com/latest/dex/tokens/{self.test_tokens['solana'][0]}"
+            from app.services.dexscreener_client import DexScreenerClient
             
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as response:
-                    data = await response.json()
-                    response_time = time.time() - start_time
+            async with DexScreenerClient() as client:
+                # Test 1: Token pairs
+                print(f"      🪙 Testing token pairs...")
+                start_time = time.time()
+                
+                try:
+                    pairs_data = await client.get_token_pairs(self.test_tokens["solana"][0])  # WSOL
+                    pairs_time = time.time() - start_time
                     
-                    if response.status == 200 and data:
-                        pairs_count = len(data.get('pairs', []))
-                        print(f"         ✅ DexScreener: {pairs_count} trading pairs found ({response_time:.3f}s)")
+                    if pairs_data and pairs_data.get("pairs"):
+                        pairs_count = len(pairs_data["pairs"])
+                        print(f"         ✅ Found {pairs_count} trading pairs ({pairs_time:.3f}s)")
                         
-                        return TestResult(
+                        results.append(TestResult(
                             service="dexscreener",
-                            endpoint="/dex/tokens",
+                            endpoint="/tokens/v1/{chain}/{token_address}",
                             success=True,
-                            response_time=response_time,
+                            response_time=pairs_time,
                             cost_estimate="FREE",
                             category=ServiceCategory.FREE,
-                            data_size=len(str(data))
-                        )
+                            data_size=len(str(pairs_data))
+                        ))
                     else:
-                        print(f"         ⚠️ DexScreener: No data ({response_time:.3f}s)")
-                        return TestResult(
+                        print(f"         ⚠️ No trading pairs found ({pairs_time:.3f}s)")
+                        results.append(TestResult(
                             service="dexscreener",
-                            endpoint="/dex/tokens",
+                            endpoint="/tokens/v1/{chain}/{token_address}",
                             success=False,
-                            response_time=response_time,
+                            response_time=pairs_time,
                             cost_estimate="FREE",
                             category=ServiceCategory.FREE,
-                            error=f"HTTP {response.status}"
-                        )
+                            error="No trading pairs found"
+                        ))
                         
-        except Exception as e:
-            response_time = time.time() - start_time
-            print(f"         ❌ DexScreener error: {str(e)} ({response_time:.3f}s)")
-            return TestResult(
+                except Exception as e:
+                    pairs_time = time.time() - start_time
+                    print(f"         ❌ Token pairs error: {str(e)} ({pairs_time:.3f}s)")
+                    results.append(TestResult(
+                        service="dexscreener",
+                        endpoint="/tokens/v1/{chain}/{token_address}",
+                        success=False,
+                        response_time=pairs_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
+                        error=str(e)
+                    ))
+                
+                await asyncio.sleep(0.5)  # Rate limiting
+                
+                # Test 2: Search pairs
+                print(f"      🔍 Testing pair search...")
+                start_time = time.time()
+                
+                try:
+                    search_results = await client.search_pairs("USDC")
+                    search_time = time.time() - start_time
+                    
+                    if search_results and len(search_results) > 0:
+                        results_count = len(search_results)
+                        print(f"         ✅ Found {results_count} search results ({search_time:.3f}s)")
+                    
+                        results.append(TestResult(
+                            service="dexscreener",
+                            endpoint="/latest/dex/search",
+                            success=True,
+                            response_time=search_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            data_size=len(str(search_results))
+                        ))
+                    else:
+                        print(f"         ⚠️ No search results ({search_time:.3f}s)")
+                        results.append(TestResult(
+                            service="dexscreener",
+                            endpoint="/latest/dex/search",
+                            success=False,
+                            response_time=search_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            error="No search results found"
+                        ))
+                        
+                except Exception as e:
+                    search_time = time.time() - start_time
+                    print(f"         ❌ Search error: {str(e)} ({search_time:.3f}s)")
+                    results.append(TestResult(
+                        service="dexscreener",
+                        endpoint="/latest/dex/search",
+                        success=False,
+                        response_time=search_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
+                        error=str(e)
+                    ))
+                
+                await asyncio.sleep(0.5)  # Rate limiting
+                
+                # Test 3: Multiple tokens
+                print(f"      📊 Testing multiple tokens...")
+                start_time = time.time()
+                
+                try:
+                    test_addresses = self.test_tokens["solana"][:2]  # Test first 2 tokens
+                    multi_results = await client.get_tokens_by_address(test_addresses)
+                    multi_time = time.time() - start_time
+                    
+                    if multi_results and len(multi_results) > 0:
+                        tokens_with_data = len(multi_results)
+                        print(f"         ✅ Got data for {tokens_with_data} tokens ({multi_time:.3f}s)")
+                        
+                        results.append(TestResult(
+                            service="dexscreener",
+                            endpoint="/tokens/v1/{chain}/{token_adresses}",
+                            success=True,
+                            response_time=multi_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            data_size=len(str(multi_results))
+                        ))
+                    else:
+                        print(f"         ⚠️ No multi-token data ({multi_time:.3f}s)")
+                        results.append(TestResult(
+                            service="dexscreener",
+                            endpoint="/tokens/v1/{chain}/{token_adresses}",
+                            success=False,
+                            response_time=multi_time,
+                            cost_estimate="FREE",
+                            category=ServiceCategory.FREE,
+                            error="No multi-token data"
+                        ))
+                        
+                except Exception as e:
+                    multi_time = time.time() - start_time
+                    print(f"         ❌ Multi-token error: {str(e)} ({multi_time:.3f}s)")
+                    results.append(TestResult(
+                        service="dexscreener",
+                        endpoint="/tokens/v1/{chain}/{token_adresses}",
+                        success=False,
+                        response_time=multi_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.FREE,
+                        error=str(e)
+                    ))
+                
+        except ImportError:
+            print(f"      ❌ DexScreener client not available")
+            results.append(TestResult(
                 service="dexscreener",
-                endpoint="/dex/tokens",
+                endpoint="/import",
                 success=False,
-                response_time=response_time,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.FREE,
+                error="DexScreener client not available"
+            ))
+        except Exception as e:
+            print(f"      ❌ DexScreener test failed: {str(e)}")
+            results.append(TestResult(
+                service="dexscreener",
+                endpoint="/test",
+                success=False,
+                response_time=0,
                 cost_estimate="FREE",
                 category=ServiceCategory.FREE,
                 error=str(e)
-            )
+            ))
+        
+        return results
     
     async def test_paid_services(self) -> List[TestResult]:
         """💛 Test paid services with health checks and limited calls"""
