@@ -311,13 +311,10 @@ class ChainbaseClient:
         start_time = time.time()
         
         try:
-            # Use a lightweight endpoint to test connectivity
-            # Try getting metadata for a well-known token (e.g., USDC on Ethereum)
-            # This is better than a dedicated health endpoint since Chainbase may not have one
             test_endpoint = "/token/metadata"
             test_params = {
-                "chain_id": "1",  # Ethereum
-                "contract_address": "0xa0b86a33e6eb6ca9c56b91a17b6a9f3f40ad6b0e"  # USDC on Ethereum
+                "chain_id": "1",
+                "contract_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             }
             
             response = await self._request("GET", test_endpoint, params=test_params)

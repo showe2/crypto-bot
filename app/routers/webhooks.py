@@ -4,17 +4,90 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 import json
 import time
+import re
 
-# Import the webhook utilities
+# Import the webhook utilities and token analyzer
 from app.utils.webhooks import webhook_manager
 from app.utils.webhook_tasks import queue_webhook_task
+from app.services.token_analyzer import analyze_token_from_webhook
 
 router = APIRouter(prefix="/webhooks", tags=["WebHooks"])
+
+
+def extract_token_addresses(payload: Dict[str, Any]) -> list[str]:
+    """Extract potential token addresses from webhook payload"""
+    addresses = []
+    
+    # Solana address pattern (base58, 32-44 characters)
+    solana_address_pattern = re.compile(r'\b[1-9A-HJ-NP-Za-km-z]{32,44}\b')
+    
+    def extract_from_value(value):
+        if isinstance(value, str):
+            # Find addresses in string
+            matches = solana_address_pattern.findall(value)
+            addresses.extend(matches)
+        elif isinstance(value, dict):
+            # Recursively search in dictionaries
+            for v in value.values():
+                extract_from_value(v)
+        elif isinstance(value, list):
+            # Search in lists
+            for item in value:
+                extract_from_value(item)
+    
+    # Extract from payload
+    extract_from_value(payload)
+    
+    # Remove duplicates and common non-token addresses
+    unique_addresses = list(set(addresses))
+    
+    # Filter out common system addresses
+    system_addresses = {
+        "11111111111111111111111111111111",  # System Program
+        "So11111111111111111111111111111111111112",  # Wrapped SOL
+        "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
+        "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",  # Token Program
+    }
+    
+    filtered_addresses = [addr for addr in unique_addresses if addr not in system_addresses]
+    
+    return filtered_addresses[:5]  # Limit to 5 addresses to avoid overload
+
+
+async def process_webhook_analysis(token_addresses: list[str], event_type: str, payload: Dict[str, Any]):
+    """Process token analysis for webhook events in background"""
+    for token_address in token_addresses:
+        try:
+            logger.info(f"🔍 Starting webhook analysis for token: {token_address}")
+            
+            # Perform comprehensive analysis
+            analysis_result = await analyze_token_from_webhook(token_address, event_type)
+            
+            logger.info(
+                f"✅ Webhook analysis completed for {token_address}: "
+                f"Score: {analysis_result['overall_analysis']['score']}, "
+                f"Risk: {analysis_result['overall_analysis']['risk_level']}"
+            )
+            
+            # Store result in Redis for later retrieval
+            from app.utils.redis_client import get_redis_client
+            redis_client = await get_redis_client()
+            
+            cache_key = f"webhook_analysis:{token_address}:{int(time.time())}"
+            await redis_client.set(
+                cache_key, 
+                json.dumps(analysis_result, default=str), 
+                ex=3600  # Store for 1 hour
+            )
+            
+        except Exception as e:
+            logger.error(f"❌ Webhook analysis failed for {token_address}: {str(e)}")
+
 
 @router.post("/helius/mint", summary="Helius New Token Mint WebHook")
 async def helius_mint_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Ultra-fast webhook that handles both JSON objects and JSON strings from Helius
+    Ultra-fast webhook for new token mints with automatic analysis
     """
     start_time = time.time()
     
@@ -36,75 +109,68 @@ async def helius_mint_webhook(request: Request, background_tasks: BackgroundTask
             # Handle different JSON types
             if isinstance(parsed_data, dict):
                 payload = parsed_data
-                logger.info("✅ Mint: Received JSON object (normal case)")
+                logger.info("✅ Mint: Received JSON object")
                 
             elif isinstance(parsed_data, str):
-                # Helius case: JSON string that needs to be parsed again
                 logger.info("🔧 Mint: Received JSON string, attempting double parse...")
                 try:
                     payload = json.loads(parsed_data)
                     if isinstance(payload, dict):
-                        logger.info("✅ Mint: Double-parsed JSON string to object successfully")
+                        logger.info("✅ Mint: Double-parsed successfully")
                     else:
-                        logger.warning(f"⚠️ Mint: Double-parsed result is not an object: {type(payload)}")
                         payload = {"type": "HELIUS_STRING_DATA", "data": parsed_data}
                 except json.JSONDecodeError:
-                    logger.info("🔧 Mint: String is not JSON, wrapping in object")
                     payload = {"type": "HELIUS_STRING_DATA", "data": parsed_data}
                     
             elif isinstance(parsed_data, list):
-                logger.info("🔧 Mint: Received JSON array, wrapping in object")
                 payload = {"type": "HELIUS_ARRAY_DATA", "data": parsed_data}
-                
             else:
-                logger.info(f"🔧 Mint: Received JSON {type(parsed_data)}, wrapping in object")
                 payload = {"type": "HELIUS_OTHER_DATA", "data": parsed_data}
         
         except json.JSONDecodeError as e:
             logger.error(f"❌ Mint: JSON decode error: {str(e)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Invalid JSON: {str(e)}",
-                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:200]
-            }, status_code=400)
-        
-        except UnicodeDecodeError as e:
-            logger.error(f"❌ Mint: Unicode decode error: {str(e)}")
-            return JSONResponse({
-                "status": "error", 
-                "message": f"Cannot decode request body: {str(e)}"
+                "message": f"Invalid JSON: {str(e)}"
             }, status_code=400)
         
         # Validate payload is a dictionary
         if not isinstance(payload, dict):
-            logger.error(f"❌ Mint: Final payload is not a dict: {type(payload)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Payload must be a JSON object, got {type(payload).__name__}",
+                "message": f"Payload must be a JSON object"
             }, status_code=400)
         
-        # Queue for background processing using the task queue
+        # Extract token addresses from payload
+        token_addresses = extract_token_addresses(payload)
+        
+        # Queue for background processing
         await queue_webhook_task("mint", payload, priority="normal")
         
-        response_time = (time.time() - start_time) * 1000
+        # Start analysis for detected tokens in background
+        if token_addresses:
+            logger.info(f"🎯 Detected {len(token_addresses)} token addresses in mint webhook")
+            background_tasks.add_task(
+                process_webhook_analysis, 
+                token_addresses, 
+                "mint", 
+                payload
+            )
         
-        logger.info(f"✅ Mint webhook processed successfully in {response_time:.1f}ms")
-        logger.info(f"   Final payload keys: {list(payload.keys())}")
+        response_time = (time.time() - start_time) * 1000
         
         return JSONResponse({
             "status": "received",
             "message": "Processing in background",
             "response_time_ms": round(response_time, 1),
-            "payload_type": type(payload).__name__,
-            "payload_keys": list(payload.keys())
+            "tokens_detected": len(token_addresses),
+            "tokens": token_addresses[:3] if token_addresses else [],  # Return first 3 for confirmation
+            "analysis_triggered": len(token_addresses) > 0
         })
         
     except Exception as e:
         response_time = (time.time() - start_time) * 1000
-        logger.error(f"❌ Mint webhook critical error in {response_time:.1f}ms: {str(e)}")
-        
-        import traceback
-        logger.error(f"❌ Mint traceback: {traceback.format_exc()}")
+        logger.error(f"❌ Mint webhook critical error: {str(e)}")
         
         return JSONResponse({
             "status": "error",
@@ -112,16 +178,16 @@ async def helius_mint_webhook(request: Request, background_tasks: BackgroundTask
             "error_type": type(e).__name__,
             "response_time_ms": round(response_time, 1)
         }, status_code=200)  # Return 200 to prevent Helius retries
+
 
 @router.post("/helius/pool", summary="Helius New Liquidity Pool WebHook")
 async def helius_pool_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Ultra-fast pool webhook that handles both JSON objects and JSON strings from Helius
+    Ultra-fast pool webhook with automatic token analysis
     """
     start_time = time.time()
     
     try:
-        # Read raw body first
         raw_body = await request.body()
         
         if not raw_body:
@@ -130,99 +196,82 @@ async def helius_pool_webhook(request: Request, background_tasks: BackgroundTask
                 "message": "Empty request body"
             }, status_code=400)
         
-        # Parse JSON with flexible handling
+        # Parse JSON (same logic as mint webhook)
         try:
             body_str = raw_body.decode('utf-8')
             parsed_data = json.loads(body_str)
             
-            # Handle different JSON types
             if isinstance(parsed_data, dict):
                 payload = parsed_data
-                logger.info("✅ Pool: Received JSON object (normal case)")
-                
             elif isinstance(parsed_data, str):
-                logger.info("🔧 Pool: Received JSON string, attempting double parse...")
                 try:
                     payload = json.loads(parsed_data)
-                    if isinstance(payload, dict):
-                        logger.info("✅ Pool: Double-parsed JSON string to object successfully")
-                    else:
-                        logger.warning(f"⚠️ Pool: Double-parsed result is not an object: {type(payload)}")
+                    if not isinstance(payload, dict):
                         payload = {"type": "HELIUS_POOL_STRING_DATA", "data": parsed_data}
                 except json.JSONDecodeError:
-                    logger.info("🔧 Pool: String is not JSON, wrapping in object")
                     payload = {"type": "HELIUS_POOL_STRING_DATA", "data": parsed_data}
-                    
-            elif isinstance(parsed_data, list):
-                logger.info("🔧 Pool: Received JSON array, wrapping in object")
-                payload = {"type": "HELIUS_POOL_ARRAY_DATA", "data": parsed_data}
-                
             else:
-                logger.info(f"🔧 Pool: Received JSON {type(parsed_data)}, wrapping in object")
                 payload = {"type": "HELIUS_POOL_OTHER_DATA", "data": parsed_data}
         
         except json.JSONDecodeError as e:
-            logger.error(f"❌ Pool: JSON decode error: {str(e)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Invalid JSON: {str(e)}",
-                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:200]
+                "message": f"Invalid JSON: {str(e)}"
             }, status_code=400)
         
-        except UnicodeDecodeError as e:
-            logger.error(f"❌ Pool: Unicode decode error: {str(e)}")
-            return JSONResponse({
-                "status": "error", 
-                "message": f"Cannot decode request body: {str(e)}"
-            }, status_code=400)
-        
-        # Validate payload is a dictionary
         if not isinstance(payload, dict):
-            logger.error(f"❌ Pool: Final payload is not a dict: {type(payload)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Payload must be a JSON object, got {type(payload).__name__}",
+                "message": "Payload must be a JSON object"
             }, status_code=400)
         
-        # Queue for background processing using the task queue
+        # Extract token addresses
+        token_addresses = extract_token_addresses(payload)
+        
+        # Queue for background processing
         await queue_webhook_task("pool", payload, priority="normal")
         
-        response_time = (time.time() - start_time) * 1000
+        # Start analysis for detected tokens
+        if token_addresses:
+            logger.info(f"🏊 Detected {len(token_addresses)} token addresses in pool webhook")
+            background_tasks.add_task(
+                process_webhook_analysis, 
+                token_addresses, 
+                "pool", 
+                payload
+            )
         
-        logger.info(f"✅ Pool webhook processed successfully in {response_time:.1f}ms")
-        logger.info(f"   Final payload keys: {list(payload.keys())}")
+        response_time = (time.time() - start_time) * 1000
         
         return JSONResponse({
             "status": "received",
             "message": "Processing in background",
             "response_time_ms": round(response_time, 1),
-            "payload_type": type(payload).__name__,
-            "payload_keys": list(payload.keys())
+            "tokens_detected": len(token_addresses),
+            "tokens": token_addresses[:3] if token_addresses else [],
+            "analysis_triggered": len(token_addresses) > 0
         })
         
     except Exception as e:
         response_time = (time.time() - start_time) * 1000
-        logger.error(f"❌ Pool webhook critical error in {response_time:.1f}ms: {str(e)}")
-        
-        import traceback
-        logger.error(f"❌ Pool traceback: {traceback.format_exc()}")
+        logger.error(f"❌ Pool webhook critical error: {str(e)}")
         
         return JSONResponse({
             "status": "error",
             "message": "Internal server error",
             "error_type": type(e).__name__,
             "response_time_ms": round(response_time, 1)
-        }, status_code=200)  # Return 200 to prevent Helius retries
+        }, status_code=200)
+
 
 @router.post("/helius/tx", summary="Helius Large Transaction WebHook")
 async def helius_transaction_webhook(request: Request, background_tasks: BackgroundTasks):
     """
-    Ultra-fast transaction webhook that handles both JSON objects and JSON strings from Helius
+    Ultra-fast transaction webhook with token analysis
     """
     start_time = time.time()
     
     try:
-        # Read raw body first
         raw_body = await request.body()
         
         if not raw_body:
@@ -231,89 +280,72 @@ async def helius_transaction_webhook(request: Request, background_tasks: Backgro
                 "message": "Empty request body"
             }, status_code=400)
         
-        # Parse JSON with flexible handling
+        # Parse JSON (same logic as other webhooks)
         try:
             body_str = raw_body.decode('utf-8')
             parsed_data = json.loads(body_str)
             
-            # Handle different JSON types
             if isinstance(parsed_data, dict):
                 payload = parsed_data
-                logger.info("✅ TX: Received JSON object (normal case)")
-                
             elif isinstance(parsed_data, str):
-                logger.info("🔧 TX: Received JSON string, attempting double parse...")
                 try:
                     payload = json.loads(parsed_data)
-                    if isinstance(payload, dict):
-                        logger.info("✅ TX: Double-parsed JSON string to object successfully")
-                    else:
-                        logger.warning(f"⚠️ TX: Double-parsed result is not an object: {type(payload)}")
+                    if not isinstance(payload, dict):
                         payload = {"type": "HELIUS_TX_STRING_DATA", "data": parsed_data}
                 except json.JSONDecodeError:
-                    logger.info("🔧 TX: String is not JSON, wrapping in object")
                     payload = {"type": "HELIUS_TX_STRING_DATA", "data": parsed_data}
-                    
-            elif isinstance(parsed_data, list):
-                logger.info("🔧 TX: Received JSON array, wrapping in object")
-                payload = {"type": "HELIUS_TX_ARRAY_DATA", "data": parsed_data}
-                
             else:
-                logger.info(f"🔧 TX: Received JSON {type(parsed_data)}, wrapping in object")
                 payload = {"type": "HELIUS_TX_OTHER_DATA", "data": parsed_data}
         
         except json.JSONDecodeError as e:
-            logger.error(f"❌ TX: JSON decode error: {str(e)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Invalid JSON: {str(e)}",
-                "raw_body_preview": raw_body.decode('utf-8', errors='replace')[:200]
+                "message": f"Invalid JSON: {str(e)}"
             }, status_code=400)
         
-        except UnicodeDecodeError as e:
-            logger.error(f"❌ TX: Unicode decode error: {str(e)}")
-            return JSONResponse({
-                "status": "error", 
-                "message": f"Cannot decode request body: {str(e)}"
-            }, status_code=400)
-        
-        # Validate payload is a dictionary
         if not isinstance(payload, dict):
-            logger.error(f"❌ TX: Final payload is not a dict: {type(payload)}")
             return JSONResponse({
                 "status": "error",
-                "message": f"Payload must be a JSON object, got {type(payload).__name__}",
+                "message": "Payload must be a JSON object"
             }, status_code=400)
         
-        # Queue for background processing using the task queue
+        # Extract token addresses
+        token_addresses = extract_token_addresses(payload)
+        
+        # Queue for background processing
         await queue_webhook_task("transaction", payload, priority="normal")
         
-        response_time = (time.time() - start_time) * 1000
+        # Start analysis for detected tokens
+        if token_addresses:
+            logger.info(f"💸 Detected {len(token_addresses)} token addresses in transaction webhook")
+            background_tasks.add_task(
+                process_webhook_analysis, 
+                token_addresses, 
+                "transaction", 
+                payload
+            )
         
-        logger.info(f"✅ TX webhook processed successfully in {response_time:.1f}ms")
-        logger.info(f"   Final payload keys: {list(payload.keys())}")
+        response_time = (time.time() - start_time) * 1000
         
         return JSONResponse({
             "status": "received",
             "message": "Processing in background",
             "response_time_ms": round(response_time, 1),
-            "payload_type": type(payload).__name__,
-            "payload_keys": list(payload.keys())
+            "tokens_detected": len(token_addresses),
+            "tokens": token_addresses[:3] if token_addresses else [],
+            "analysis_triggered": len(token_addresses) > 0
         })
         
     except Exception as e:
         response_time = (time.time() - start_time) * 1000
-        logger.error(f"❌ TX webhook critical error in {response_time:.1f}ms: {str(e)}")
-        
-        import traceback
-        logger.error(f"❌ TX traceback: {traceback.format_exc()}")
+        logger.error(f"❌ TX webhook critical error: {str(e)}")
         
         return JSONResponse({
             "status": "error",
             "message": "Internal server error",
             "error_type": type(e).__name__,
             "response_time_ms": round(response_time, 1)
-        }, status_code=200)  # Return 200 to prevent Helius retries
+        }, status_code=200)
 
 @router.get("/status/fast", summary="Fast Webhook Status")
 async def webhook_status_fast():

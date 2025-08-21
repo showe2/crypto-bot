@@ -188,14 +188,14 @@ class BirdeyeClient:
             raise BirdeyeAPIError(f"Unexpected error: {str(e)}")
     
 
-    async def get_token_price(self, token_address: str, include_liquidity: bool = True) -> Dict[str, Any]:
+    async def get_token_price(self, token_address: str, include_liquidity: bool = True, check_liquidity: int = 100) -> Dict[str, Any]:
         """Get current token price and basic info with updated endpoints"""
         try:
             endpoint = "/defi/price"
-            querystring = {"address": token_address}
+            inc_liquidity = "true" if include_liquidity else "false"
+            querystring = {"address": token_address, "include_liquidity": inc_liquidity, "check_liquidity": check_liquidity}
             
             response = await self._request("GET", endpoint=endpoint, params=querystring)
-
             
             if not response.get("data") and not response.get("success"):
                 logger.warning(f"Birdeye API returned empty data for {token_address}")

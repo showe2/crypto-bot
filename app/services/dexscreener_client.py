@@ -227,12 +227,11 @@ class DexScreenerClient:
         try:
             start_time = time.time()
             
-            # Test with a well-known token (USDC on Solana)
-            test_token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+            test_token1 = "So11111111111111111111111111111111111111112"
+            test_token2 = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
             
             try:
-                endpoint = f"/dex/tokens/{test_token}"
-                response = await self._request("GET", endpoint)
+                response = await self.get_tokens_by_addresses([test_token1, test_token2])
                 response_time = time.time() - start_time
                 
                 return {

@@ -190,23 +190,11 @@ class GOplusClient:
     # TOKEN SECURITY API
     # ==============================================
     
-    async def analyze_token_security(self, token_address: str, chain: str = "solana") -> Dict[str, Any]:
+    async def analyze_token_security(self, token_address: str) -> Dict[str, Any]:
         """Comprehensive token security analysis"""
         try:
-            # Map chains to chain IDs
-            chain_mapping = {
-                "ethereum": "1",
-                "eth": "1", 
-                "bsc": "56",
-                "polygon": "137",
-                "solana": "101",
-                "sol": "101"
-            }
-            
-            chain_id = chain_mapping.get(chain.lower(), "1")
-            
             # Use the correct API endpoint format
-            endpoint = f"/api/v1/token_security/{chain_id}"
+            endpoint = f"/api/v1/solana/token_security"
             
             params = {
                 "contract_addresses": token_address
@@ -220,7 +208,7 @@ class GOplusClient:
                 if token_results:
                     return token_results
             
-            logger.warning(f"No results returned for {token_address} on chain {chain_id}")
+            logger.warning(f"No results returned for {token_address}")
             return None
             
         except Exception as e:

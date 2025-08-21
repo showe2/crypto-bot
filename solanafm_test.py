@@ -7,9 +7,7 @@ async def main():
 
         token_info = await client.get_token_info("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
 
-        token_holders = await client.get_token_holders("EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v")
-
-        # print(token_holders)
+        print(token_info)
 
 if __name__ == "__main__":
     asyncio.run(main())

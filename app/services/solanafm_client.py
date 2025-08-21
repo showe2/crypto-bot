@@ -201,10 +201,9 @@ class SolanaFMClient:
             
             try:
                 # Test with a well-known token address
-                test_token = "So11111111111111111111111111111111111112"  # Wrapped SOL
-                endpoint = f"/v1/tokens/{test_token}"
+                test_token = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"  # Wrapped SOL
                 
-                response = await self._request("GET", endpoint)
+                response = await self.get_token_info(test_token)
                 response_time = time.time() - start_time
                 
                 return {
@@ -213,7 +212,7 @@ class SolanaFMClient:
                     "base_url": self.base_url,
                     "response_time": response_time,
                     "test_data": response if response else "No data",
-                    "working_endpoint": endpoint,
+                    "working_endpoint": "/v1/tokens/{test_token}",
                     "note": "SolanaFM is free to use, no API key required"
                 }
                 

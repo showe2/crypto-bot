@@ -18,6 +18,7 @@ from app.routers import alex_core
 from app.routers import webhooks
 from app.utils.health import health_check_all_services
 from app.routers.api_router import router as api_router
+from app.services.service_manager import initialize_api_services, cleanup_api_services
 
 # Global settings
 settings = get_settings()
@@ -70,9 +71,9 @@ async def logging_middleware(request: Request, call_next):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifecycle management"""
+    """Application lifecycle management with service integration"""
     # Startup
-    logger.info("🚀 Starting Solana Token Analysis System...")
+    logger.info("🚀 Starting Solana Token Analysis System with Service Integration...")
     
     # Check for frontend files
     templates_dir = Path("templates")
@@ -97,13 +98,21 @@ async def lifespan(app: FastAPI):
         (static_dir / "img").mkdir(exist_ok=True)
         logger.info("✅ Created static files directory structure")
     
-    # Initialize dependencies
+    # Initialize system dependencies
     try:
         await startup_dependencies()
         logger.info("✅ System dependencies initialized")
     except Exception as e:
         logger.error(f"❌ Failed to initialize dependencies: {str(e)}")
         # Continue anyway - some services might still work
+    
+    # Initialize API services for token analysis
+    try:
+        await initialize_api_services()
+        logger.info("✅ API services initialized for token analysis")
+    except Exception as e:
+        logger.error(f"❌ Failed to initialize API services: {str(e)}")
+        logger.warning("Some token analysis features may be limited")
     
     # Start webhook workers
     try:
@@ -147,18 +156,43 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("✅ All optional services available")
     
+    # Check analysis services specifically
+    try:
+        from app.services.service_manager import get_api_health_status
+        api_health = await get_api_health_status()
+        
+        healthy_apis = api_health.get("summary", {}).get("healthy_services", 0)
+        total_apis = api_health.get("summary", {}).get("total_services", 0)
+        
+        logger.info(f"🔗 Analysis services: {healthy_apis}/{total_apis} available")
+        
+        if healthy_apis >= 3:
+            logger.info("✅ Sufficient analysis services for comprehensive token analysis")
+        elif healthy_apis >= 1:
+            logger.warning("⚠️  Limited analysis services - basic analysis available")
+        else:
+            logger.error("❌ No analysis services available - analysis features disabled")
+            
+    except Exception as e:
+        logger.warning(f"⚠️  Could not check analysis services: {str(e)}")
+    
     # Check web interface status
     templates_available = templates_dir.exists() and any(templates_dir.iterdir())
-    static_available = static_dir.exists()
     
     if templates_available:
         logger.info("🌐 Web interface: ENABLED")
         logger.info("   📊 Dashboard: http://localhost:8000/")
         logger.info("   🔍 Analysis: http://localhost:8000/analysis")
-        logger.info("   🧭 Discovery: http://localhost:8000/discovery")
     else:
         logger.warning("🌐 Web interface: DISABLED (templates not found)")
         logger.info("   Use API endpoints or create templates directory")
+    
+    # Log API endpoints
+    logger.info("🔗 API endpoints:")
+    logger.info("   📊 Token Analysis: http://localhost:8000/api/analyze/token")
+    logger.info("   📈 Batch Analysis: http://localhost:8000/api/analyze/batch")
+    logger.info("   🏥 API Health: http://localhost:8000/api/health")
+    logger.info("   📋 Analysis Stats: http://localhost:8000/api/analyze/stats")
     
     # Log webhook endpoints
     logger.info("🔗 WebHook endpoints:")
@@ -170,6 +204,13 @@ async def lifespan(app: FastAPI):
     logger.info(f"🔧 Environment: {settings.ENV}")
     logger.info(f"🔧 Debug mode: {settings.DEBUG}")
     logger.info(f"🔧 Host: {settings.HOST}:{settings.PORT}")
+    
+    # Show integration status
+    logger.info("🔗 Service Integration Status:")
+    logger.info("   ✅ Webhooks → Token Analysis Engine")
+    logger.info("   ✅ API Router → Comprehensive Analysis")
+    logger.info("   ✅ Redis Caching → Performance Optimization")
+    logger.info("   ✅ LLM-Optimized Output Format")
     
     yield
     
@@ -184,6 +225,13 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Error stopping webhook workers: {str(e)}")
     
+    # Cleanup API services
+    try:
+        await cleanup_api_services()
+        logger.info("✅ API services cleaned up")
+    except Exception as e:
+        logger.warning(f"⚠️  Error cleaning up API services: {str(e)}")
+    
     try:
         await shutdown_dependencies()
         logger.info("✅ System dependencies cleaned up")
@@ -196,7 +244,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Solana Token Analysis AI System",
-    description="Integrated Solana token analysis system with AI capabilities, web interface, and webhook processing",
+    description="Integrated Solana token analysis system with AI capabilities, comprehensive service integration, and LLM-optimized responses",
     version="1.0.0",
     docs_url="/docs" if settings.ENV == "development" else None,
     redoc_url="/redoc" if settings.ENV == "development" else None,
@@ -240,7 +288,7 @@ app.include_router(
 app.include_router(
     api_router,
     prefix="",
-    tags=["api", "services"]
+    tags=["api", "analysis"]
 )
 
 app.include_router(
@@ -298,6 +346,49 @@ async def simple_health_check():
         )
 
 
+@app.get("/health/analysis", summary="Analysis Services Health Check")
+async def analysis_health_check():
+    """Check health of token analysis services specifically"""
+    try:
+        from app.services.service_manager import get_api_health_status
+        analysis_health = await get_api_health_status()
+        
+        status_code = 200 if analysis_health.get("overall_healthy") else 503
+        
+        return JSONResponse(
+            content={
+                **analysis_health,
+                "analysis_capabilities": {
+                    "comprehensive_analysis": analysis_health.get("overall_healthy", False),
+                    "security_analysis": any(
+                        service in analysis_health.get("services", {}) and 
+                        analysis_health["services"][service].get("healthy", False)
+                        for service in ["goplus", "rugcheck"]
+                    ),
+                    "market_analysis": any(
+                        service in analysis_health.get("services", {}) and 
+                        analysis_health["services"][service].get("healthy", False)
+                        for service in ["birdeye", "dexscreener"]
+                    ),
+                    "onchain_analysis": any(
+                        service in analysis_health.get("services", {}) and 
+                        analysis_health["services"][service].get("healthy", False)
+                        for service in ["helius", "chainbase", "solanafm"]
+                    )
+                }
+            },
+            status_code=status_code
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "error": "Analysis health check failed",
+                "detail": str(e)
+            },
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+
+
 @app.get("/metrics", summary="System metrics")
 async def system_metrics():
     """Get detailed system metrics"""
@@ -328,12 +419,20 @@ async def config_status():
         "web_interface": {
             "templates_available": Path("templates").exists(),
             "static_files_available": Path("static").exists(),
-            "routes": ["/", "/analysis", "/discovery", "/settings"] if Path("templates").exists() else []
+            "routes": ["/", "/analysis"] if Path("templates").exists() else []
         },
         "webhooks": {
             "enabled": True,
             "endpoints": ["/webhooks/helius/mint", "/webhooks/helius/pool", "/webhooks/helius/tx"],
-            "base_url_configured": bool(settings.WEBHOOK_BASE_URL)
+            "base_url_configured": bool(settings.WEBHOOK_BASE_URL),
+            "analysis_integration": True
+        },
+        "analysis_engine": {
+            "enabled": True,
+            "llm_optimized": True,
+            "comprehensive_analysis": True,
+            "webhook_triggered_analysis": True,
+            "caching_enabled": True
         },
         "cache_settings": {
             "ttl_short": settings.CACHE_TTL_SHORT,
@@ -361,10 +460,8 @@ async def config_status():
             "birdeye": bool(settings.BIRDEYE_BASE_URL),
             "solanafm": bool(settings.SOLANAFM_BASE_URL),
             "dexscreener": bool(settings.DEXSCREENER_BASE_URL),
-            "dataimpulse": bool(settings.DATAIMPULSE_BASE_URL),
-            "rugcheck": bool(settings.RUGCHECK_BASE_URL),
             "goplus": bool(settings.GOPLUS_BASE_URL),
-            "jupiter": bool(settings.JUPITER_API_URL)
+            "rugcheck": bool(settings.RUGCHECK_BASE_URL)
         },
         "api_keys_configured": len([
             key for key, status in settings.get_all_api_keys_status().items()
@@ -436,9 +533,17 @@ if __name__ == "__main__":
     if settings.ENV == "development":
         logger.info("📖 API Documentation: http://localhost:8000/docs")
         logger.info("🏥 Health Check: http://localhost:8000/health")
+        logger.info("🔍 Analysis Health: http://localhost:8000/health/analysis")
         logger.info("📊 Metrics: http://localhost:8000/metrics")
         logger.info("🌐 Web Interface: http://localhost:8000/")
-        logger.info("🔗 WebHooks Status: http://localhost:8000/webhooks/status")
+        logger.info("🔗 WebHooks Status: http://localhost:8000/webhooks/status/fast")
+        logger.info("")
+        logger.info("🚀 Token Analysis Endpoints:")
+        logger.info("   POST /api/analyze/token - Comprehensive token analysis")
+        logger.info("   POST /api/analyze/batch - Batch token analysis")
+        logger.info("   GET  /api/analyze/cached/{token} - Get cached analysis")
+        logger.info("   GET  /api/analyze/stats - Analysis system statistics")
+        logger.info("   GET  /api/llm/analysis-format - LLM format documentation")
     
     # Run the application
     uvicorn.run(

@@ -110,54 +110,6 @@ class HeliusClient:
         
         return response.get("result", {})
     
-    async def get_token_metadata(self, mint_address: str) -> Dict[str, Any]:
-        """Get token metadata from Helius"""
-        try:
-            # Use getAsset method for enhanced metadata
-            result = await self._rpc_request("getAsset", [mint_address])
-            
-            if not result:
-                # Fallback to getAccountInfo
-                account_info = await self._rpc_request("getAccountInfo", [
-                    mint_address,
-                    {"encoding": "jsonParsed"}
-                ])
-                
-                if not account_info or not account_info.get("value"):
-                    return None
-                
-                # Parse mint info
-                parsed_data = account_info["value"]["data"]["parsed"]["info"]
-                return {
-                    "mint": mint_address,
-                    "supply": parsed_data.get("supply"),
-                    "decimals": parsed_data.get("decimals"),
-                    "mintAuthority": parsed_data.get("mintAuthority"),
-                    "freezeAuthority": parsed_data.get("freezeAuthority"),
-                    "isInitialized": parsed_data.get("isInitialized")
-                }
-            
-            # Parse enhanced metadata
-            metadata = {
-                "mint": mint_address,
-                "name": result.get("content", {}).get("metadata", {}).get("name"),
-                "symbol": result.get("content", {}).get("metadata", {}).get("symbol"),
-                "description": result.get("content", {}).get("metadata", {}).get("description"),
-                "image": result.get("content", {}).get("links", {}).get("image"),
-                "external_url": result.get("content", {}).get("links", {}).get("external_url"),
-                "supply": result.get("supply", {}).get("print_current_supply"),
-                "decimals": result.get("supply", {}).get("print_max_supply"),
-                "creators": result.get("creators", []),
-                "royalty": result.get("royalty", {}),
-                "attributes": result.get("content", {}).get("metadata", {}).get("attributes", [])
-            }
-            
-            return metadata
-            
-        except Exception as e:
-            logger.error(f"Error getting token metadata for {mint_address}: {str(e)}")
-            raise HeliusAPIError(f"Failed to get token metadata: {str(e)}")
-    
     async def get_token_accounts(self, mint_address: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get token accounts (holders) for a token"""
         try:

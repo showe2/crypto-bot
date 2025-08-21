@@ -68,7 +68,6 @@ async def test_goplus_authentication():
             try:
                 print(f"Analyzing token: {test_token}")
                 result = await client.detect_rugpull(test_token, "ethereum")
-                print("Result", result)
                 
                 if result:
                     print("✅ Token security analysis successful!")
