@@ -68,7 +68,7 @@ INTERACTIVE_MODE=false
 SKIP_SERVICES=()
 
 # Available services (now includes RugCheck)
-ALL_SERVICES=("helius" "birdeye" "chainbase" "blowfish" "rugcheck" "dataimpulse")
+ALL_SERVICES=("helius" "birdeye" "chainbase" "goplus" "rugcheck" "dataimpulse")
 
 # ==============================================
 # UTILITY FUNCTIONS
@@ -172,7 +172,7 @@ prompt_for_service() {
         "chainbase")
             echo -e "${BLUE}Description: Blockchain analytics and holder data${NC}"
             ;;
-        "blowfish")
+        "goplus")
             echo -e "${BLUE}Description: Security analysis and scam detection${NC}"
             ;;
         "rugcheck")
@@ -661,7 +661,7 @@ show_help() {
     echo "  --skip-service SERVICE  Skip specific service (can be used multiple times)"
     echo ""
     echo "Service Options:"
-    echo "  Available services: helius, birdeye, chainbase, blowfish, rugcheck, dataimpulse"
+    echo "  Available services: helius, birdeye, chainbase, rugcheck, dataimpulse"
     echo ""
     echo "Examples:"
     echo "  $0                              # Run full test suite"
@@ -753,7 +753,7 @@ main() {
                 mkdir -p "$TESTS_DIR/services/results"
                 
                 log_info "Running safe service tester in mock mode..."
-                log_info "Testing services: helius, birdeye, chainbase, blowfish, rugcheck, dataimpulse"
+                log_info "Testing services: helius, birdeye, chainbase, goplus, rugcheck, dataimpulse"
                 python -m tests.services.test_services --mode mock
                 
                 if [ -f "$TESTS_DIR/services/results/latest_mock.json" ]; then
@@ -809,7 +809,7 @@ main() {
                 
                 echo ""
                 echo -e "${YELLOW}This will test ALL services including RugCheck with API key${NC}"
-                echo -e "${YELLOW}Services to test: helius, birdeye, chainbase, blowfish, rugcheck, dataimpulse${NC}"
+                echo -e "${YELLOW}Services to test: helius, birdeye, chainbase, goplus, rugcheck, dataimpulse${NC}"
                 echo -e "${YELLOW}Continue with paid API testing? (yes/no):${NC}"
                 read -r confirmation
                 if [[ "$confirmation" != "yes" && "$confirmation" != "y" ]]; then

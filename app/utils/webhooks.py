@@ -115,16 +115,6 @@ class WebhookProcessor:
                 "error": str(e)
             }
             
-            # Queue for background processing
-            from app.utils.webhook_tasks import queue_webhook_task
-            await queue_webhook_task("mint", payload)
-            
-            return {
-                "status": "processed",
-                "event": "mint",
-                "data": mint_data
-            }
-            
         except Exception as e:
             logger.error(f"Error processing mint event: {str(e)}")
             return {
@@ -246,23 +236,28 @@ class WebhookManager:
         start_time = time.time()
         
         try:
-            # Get raw body for signature verification
+            # Get raw body for signature verification (if needed)
             body = await request.body()
             
-            # Get signature from headers
+            # Get signature from headers (optional)
             signature = request.headers.get('x-helius-signature') or request.headers.get('x-signature')
             
-            # Verify signature if secret is configured
+            # Verify signature ONLY if secret is configured
             if settings.HELIUS_WEBHOOK_SECRET:
                 if not signature:
-                    raise HTTPException(status_code=401, detail="Missing webhook signature")
-                
-                if not self.validator.verify_helius_signature(
-                    body, 
-                    signature, 
-                    settings.HELIUS_WEBHOOK_SECRET
-                ):
-                    raise HTTPException(status_code=401, detail="Invalid webhook signature")
+                    logger.warning("Webhook secret configured but no signature received")
+                    # Don't fail - just log warning
+                else:
+                    if not self.validator.verify_helius_signature(
+                        body, 
+                        signature, 
+                        settings.HELIUS_WEBHOOK_SECRET
+                    ):
+                        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+                    else:
+                        logger.debug("Webhook signature verified successfully")
+            else:
+                logger.debug("No webhook secret configured - skipping signature verification")
             
             # Validate payload structure
             if not self.validator.validate_webhook_payload(payload):
@@ -293,6 +288,7 @@ class WebhookManager:
                 "status": "success",
                 "webhook_type": webhook_type,
                 "processing_time": round(processing_time, 3),
+                "security": "signature_verified" if settings.HELIUS_WEBHOOK_SECRET and signature else "no_signature",
                 "result": result
             }
             

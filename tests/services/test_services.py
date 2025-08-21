@@ -166,16 +166,6 @@ class ComprehensiveServiceTester:
                 test_methods=["check_token", "get_token_holders", "analyze_creator"],
                 icon="🛡️"
             ),
-            "blowfish": ServiceConfig(
-                name="Blowfish",
-                category=ServiceCategory.PREMIUM,
-                cost_per_1k=2.00,
-                requires_auth=True,
-                health_check_module="app.services.blowfish_client.check_blowfish_health",
-                client_module="app.services.blowfish_client.BlowfishClient",
-                test_methods=["scan_token", "get_risk_indicators"],
-                icon="🐡"
-            ),
             "dataimpulse": ServiceConfig(
                 name="DataImpulse",
                 category=ServiceCategory.PREMIUM,

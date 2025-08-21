@@ -36,10 +36,6 @@ class Settings(BaseSettings):
     BIRDEYE_API_KEY: Optional[str] = None
     BIRDEYE_BASE_URL: str = "https://public-api.birdeye.so"
 
-    # Blowfish
-    BLOWFISH_API_KEY: Optional[str] = None
-    BLOWFISH_BASE_URL: str = "https://api.blowfish.xyz"
-
     # SolanaFM (replaces Solscan) - No API key required
     SOLANAFM_BASE_URL: str = "https://api.solana.fm"
 
@@ -223,8 +219,8 @@ class Settings(BaseSettings):
         keys_status = {}
         api_keys = [
             'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
-            'BLOWFISH_API_KEY', 'DATAIMPULSE_API_KEY',
-            'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
+            'DATAIMPULSE_API_KEY',
+            'MISTRAL_API_KEY', 'LLAMA_API_KEY',
             'PUMPFUN_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
             'WALLET_SECRET_KEY'

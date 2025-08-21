@@ -6,7 +6,6 @@ from loguru import logger
 from app.services.helius_client import HeliusClient, check_helius_health
 from app.services.chainbase_client import ChainbaseClient, check_chainbase_health
 from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
-from app.services.blowfish_client import BlowfishClient, check_blowfish_health
 from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
 from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
@@ -22,7 +21,6 @@ class APIManager:
             "helius": None,
             "chainbase": None,
             "birdeye": None,
-            "blowfish": None,
             "dataimpulse": None,
             "solanafm": None,
             "goplus": None,
@@ -39,7 +37,6 @@ class APIManager:
                 "helius": HeliusClient(),
                 "chainbase": ChainbaseClient(),
                 "birdeye": BirdeyeClient(),
-                "blowfish": BlowfishClient(),
                 "dataimpulse": DataImpulseClient(),
                 "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient(),
@@ -76,7 +73,6 @@ class APIManager:
             "helius": check_helius_health(),
             "chainbase": check_chainbase_health(),
             "birdeye": check_birdeye_health(),
-            "blowfish": check_blowfish_health(),
             "dataimpulse": check_dataimpulse_health(),
             "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health(),
@@ -185,11 +181,6 @@ class APIManager:
         # DexScreener data collection (FREE)
         if self.clients["dexscreener"]:
             tasks["dexscreener_pairs"] = self.clients["dexscreener"].get_token_pairs(token_address)
-        
-        # Security analysis
-        if self.clients["blowfish"]:
-            tasks["blowfish_scan"] = self.clients["blowfish"].scan_token(token_address)
-            tasks["blowfish_risks"] = self.clients["blowfish"].get_risk_indicators(token_address)
         
         # GOplus comprehensive analysis
         if self.clients["goplus"]:
@@ -510,7 +501,6 @@ class APIManager:
             "helius": ["token_metadata", "transaction_history", "account_info", "rpc_calls"],
             "chainbase": ["token_metadata", "holder_analysis", "smart_contract_analysis", "whale_tracking"],
             "birdeye": ["price_data", "trading_history", "market_data", "trending_tokens"],
-            "blowfish": ["security_analysis", "scam_detection", "risk_assessment", "transaction_simulation"],
             "dataimpulse": ["social_sentiment", "trending_analysis", "influencer_tracking", "meme_analysis"],
             "solanafm": ["on_chain_data", "transaction_details", "network_stats", "token_info", "account_details"],
             "goplus": ["transaction_simulation", "rugpull_detection", "token_security", "comprehensive_analysis", "multi_service_analysis"],

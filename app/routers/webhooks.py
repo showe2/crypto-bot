@@ -1,5 +1,5 @@
 from typing import Dict, Any
-from fastapi import APIRouter, Request, HTTPException, Depends
+from fastapi import APIRouter, Request, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from loguru import logger
 
@@ -13,7 +13,7 @@ settings = get_settings_dependency()
 
 
 @router.post("/helius/mint", summary="Helius New Token Mint WebHook")
-async def helius_mint_webhook(request: Request):
+async def helius_mint_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle Helius webhook for new token mints
     
@@ -21,29 +21,37 @@ async def helius_mint_webhook(request: Request):
     Configure this URL in your Helius dashboard: {base_url}/webhooks/helius/mint
     """
     try:
-        # Parse JSON payload
+        # Parse JSON payload FAST
         payload = await request.json()
+
+        print("Payload:", payload)
         
         logger.info(f"Received Helius mint webhook: {payload.get('type', 'unknown')}")
         
-        # Process the webhook
-        result = await process_helius_webhook(request, "mint", payload)
+        # IMMEDIATE response to prevent timeout
+        background_tasks.add_task(process_webhook_background, request, "mint", payload)
         
         return JSONResponse(
-            content=result,
+            content={"status": "received", "message": "Processing in background"},
             status_code=200
         )
         
     except ValueError as e:
         logger.error(f"Invalid JSON in mint webhook: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        return JSONResponse(
+            content={"status": "error", "message": "Invalid JSON"},
+            status_code=400
+        )
     except Exception as e:
-        logger.error(f"Mint webhook processing failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Mint webhook error: {str(e)}")
+        return JSONResponse(
+            content={"status": "error", "message": "Internal error"},
+            status_code=200  # Return 200 to prevent retries
+        )
 
 
 @router.post("/helius/pool", summary="Helius New Liquidity Pool WebHook")
-async def helius_pool_webhook(request: Request):
+async def helius_pool_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle Helius webhook for new liquidity pools
     
@@ -51,29 +59,37 @@ async def helius_pool_webhook(request: Request):
     Configure this URL in your Helius dashboard: {base_url}/webhooks/helius/pool
     """
     try:
-        # Parse JSON payload
-        payload = await request.json()
+        # Parse JSON payload FAST
+        payload = await request.json()\
+        
+        print("Payload:", payload)
         
         logger.info(f"Received Helius pool webhook: {payload.get('type', 'unknown')}")
         
-        # Process the webhook
-        result = await process_helius_webhook(request, "pool", payload)
+        # IMMEDIATE response to prevent timeout
+        background_tasks.add_task(process_webhook_background, request, "pool", payload)
         
         return JSONResponse(
-            content=result,
+            content={"status": "received", "message": "Processing in background"},
             status_code=200
         )
         
     except ValueError as e:
         logger.error(f"Invalid JSON in pool webhook: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        return JSONResponse(
+            content={"status": "error", "message": "Invalid JSON"},
+            status_code=400
+        )
     except Exception as e:
-        logger.error(f"Pool webhook processing failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Pool webhook error: {str(e)}")
+        return JSONResponse(
+            content={"status": "error", "message": "Internal error"},
+            status_code=200  # Return 200 to prevent retries
+        )
 
 
 @router.post("/helius/tx", summary="Helius Large Transaction WebHook")
-async def helius_transaction_webhook(request: Request):
+async def helius_transaction_webhook(request: Request, background_tasks: BackgroundTasks):
     """
     Handle Helius webhook for large transactions
     
@@ -81,25 +97,47 @@ async def helius_transaction_webhook(request: Request):
     Configure this URL in your Helius dashboard: {base_url}/webhooks/helius/tx
     """
     try:
-        # Parse JSON payload
+        # Parse JSON payload FAST
         payload = await request.json()
+
+        print("Payload:", payload)
         
         logger.info(f"Received Helius transaction webhook: {payload.get('type', 'unknown')}")
         
-        # Process the webhook
-        result = await process_helius_webhook(request, "tx", payload)
+        # IMMEDIATE response to prevent timeout
+        background_tasks.add_task(process_webhook_background, request, "tx", payload)
         
         return JSONResponse(
-            content=result,
+            content={"status": "received", "message": "Processing in background"},
             status_code=200
         )
         
     except ValueError as e:
         logger.error(f"Invalid JSON in transaction webhook: {str(e)}")
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        return JSONResponse(
+            content={"status": "error", "message": "Invalid JSON"},
+            status_code=400
+        )
     except Exception as e:
-        logger.error(f"Transaction webhook processing failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Transaction webhook error: {str(e)}")
+        return JSONResponse(
+            content={"status": "error", "message": "Internal error"},
+            status_code=200  # Return 200 to prevent retries
+        )
+
+
+async def process_webhook_background(request: Request, webhook_type: str, payload: dict):
+    """Process webhook in background to prevent timeouts"""
+    try:
+        logger.info(f"Background processing {webhook_type} webhook")
+        
+        # Process the webhook (this was causing timeouts before)
+        result = await process_helius_webhook(request, webhook_type, payload)
+        
+        logger.info(f"Background processing completed: {webhook_type} - {result.get('status')}")
+        
+    except Exception as e:
+        logger.error(f"Background webhook processing failed: {webhook_type} - {str(e)}")
 
 
 @router.get("/status", summary="WebHook Configuration Status")
