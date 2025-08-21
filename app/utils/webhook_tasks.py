@@ -3,11 +3,6 @@ import time
 from typing import Dict, Any, Optional
 from loguru import logger
 
-from app.core.config import get_settings
-
-settings = get_settings()
-
-
 class WebhookTaskQueue:
     """Simple async task queue for webhook event processing"""
     
@@ -139,7 +134,7 @@ class WebhookTaskQueue:
                 }
             )
             
-            # Retry logic could be added here
+            # Retry logic for failed tasks
             if task["retries"] < 3:
                 task["retries"] += 1
                 await self.queue.put(task)
@@ -149,69 +144,77 @@ class WebhookTaskQueue:
         """Background processing for mint events"""
         mint_address = payload.get("mint")
         if not mint_address:
+            logger.warning("Mint event received without mint address")
             return
-        
-        # Example background tasks:
-        # 1. Store event in database
-        # 2. Trigger token analysis
-        # 3. Send notifications
         
         logger.info(f"Background processing mint: {mint_address}")
         
-        # Simulate some processing
+        # Simulate some processing time
         await asyncio.sleep(0.1)
         
-        # Here you could:
+        # Here you would add your actual mint processing logic:
         # - Save to database
-        # - Trigger token analysis via API manager
-        # - Send Discord/Telegram notifications
+        # - Trigger token analysis
+        # - Send notifications
         # - Update cache with new token info
+        
+        logger.debug(f"Mint processing completed for: {mint_address}")
         
     async def _process_pool_background(self, payload: Dict[str, Any]):
         """Background processing for pool events"""
         pool_address = payload.get("pool")
         if not pool_address:
+            logger.warning("Pool event received without pool address")
             return
         
         logger.info(f"Background processing pool: {pool_address}")
         
-        # Simulate processing
+        # Simulate processing time
         await asyncio.sleep(0.1)
         
-        # Example tasks:
+        # Here you would add your actual pool processing logic:
         # - Analyze new trading pair
         # - Update liquidity tracking
         # - Alert for interesting pairs
+        # - Store pool data
+        
+        logger.debug(f"Pool processing completed for: {pool_address}")
         
     async def _process_transaction_background(self, payload: Dict[str, Any]):
         """Background processing for transaction events"""
         signature = payload.get("signature")
         if not signature:
+            logger.warning("Transaction event received without signature")
             return
         
         logger.info(f"Background processing transaction: {signature}")
         
-        # Simulate processing
+        # Simulate processing time
         await asyncio.sleep(0.1)
         
-        # Example tasks:
+        # Here you would add your actual transaction processing logic:
         # - Analyze whale movements
         # - Track suspicious activities
         # - Update transaction metrics
+        # - Store transaction data
+        
+        logger.debug(f"Transaction processing completed for: {signature}")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get queue statistics"""
+        total_events = self.stats["total_processed"] + self.stats["total_failed"]
+        success_rate = (
+            self.stats["total_processed"] / total_events * 100
+            if total_events > 0 else 0
+        )
+        
         return {
             "running": self.running,
             "workers_count": len(self.workers),
             "queue_size": self.queue.qsize(),
             "total_processed": self.stats["total_processed"],
             "total_failed": self.stats["total_failed"],
-            "success_rate": (
-                self.stats["total_processed"] / 
-                (self.stats["total_processed"] + self.stats["total_failed"]) * 100
-                if (self.stats["total_processed"] + self.stats["total_failed"]) > 0 else 0
-            )
+            "success_rate": round(success_rate, 2)
         }
 
 
@@ -219,15 +222,15 @@ class WebhookTaskQueue:
 webhook_task_queue = WebhookTaskQueue()
 
 
-# Convenience functions
+# Convenience functions for easy integration
 async def queue_webhook_task(event_type: str, payload: Dict[str, Any], priority: str = "normal"):
     """Queue a webhook event for background processing"""
     await webhook_task_queue.add_task(event_type, payload, priority)
 
 
-async def start_webhook_workers():
+async def start_webhook_workers(num_workers: int = 2):
     """Start webhook background workers"""
-    await webhook_task_queue.start_workers()
+    await webhook_task_queue.start_workers(num_workers)
 
 
 async def stop_webhook_workers():
@@ -238,3 +241,16 @@ async def stop_webhook_workers():
 async def get_webhook_queue_stats() -> Dict[str, Any]:
     """Get webhook queue statistics"""
     return webhook_task_queue.get_stats()
+
+
+def is_webhook_system_running() -> bool:
+    """Check if webhook system is running"""
+    return webhook_task_queue.running
+
+
+async def ensure_webhook_workers_running():
+    """Ensure webhook workers are running (auto-start if needed)"""
+    if not webhook_task_queue.running:
+        logger.info("Webhook workers not running, starting them now...")
+        await start_webhook_workers()
+    return webhook_task_queue.running

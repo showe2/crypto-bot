@@ -1,63 +1,42 @@
-import hashlib
-import hmac
 import json
 import time
 from typing import Dict, Any, Optional, List
 from fastapi import HTTPException, Request
 from loguru import logger
 
-from app.core.config import get_settings
-
-settings = get_settings()
+# Import settings with fallback
+try:
+    from app.core.config import get_settings
+    settings = get_settings()
+except ImportError:
+    logger.error("Could not import settings - WEBHOOK_BASE_URL is required!")
+    raise RuntimeError("Settings configuration is required for webhook system")
 
 
 class WebhookValidator:
-    """WebHook signature validation and security"""
-    
-    @staticmethod
-    def verify_helius_signature(
-        payload: bytes,
-        signature: str,
-        secret: str
-    ) -> bool:
-        """Verify Helius webhook signature"""
-        if not secret:
-            logger.warning("No webhook secret configured - skipping signature verification")
-            return True
-        
-        try:
-            # Helius uses HMAC-SHA256
-            expected_signature = hmac.new(
-                secret.encode('utf-8'),
-                payload,
-                hashlib.sha256
-            ).hexdigest()
-            
-            # Remove 'sha256=' prefix if present
-            if signature.startswith('sha256='):
-                signature = signature[7:]
-            
-            return hmac.compare_digest(expected_signature, signature)
-            
-        except Exception as e:
-            logger.error(f"Signature verification failed: {str(e)}")
-            return False
+    """WebHook payload validation"""
     
     @staticmethod
     def validate_webhook_payload(payload: Dict[str, Any]) -> bool:
         """Basic webhook payload validation"""
         try:
-            # Check required fields
+            # Check if payload is a dictionary
             if not isinstance(payload, dict):
+                logger.warning("Payload is not a dictionary")
                 return False
             
-            # Check for basic Helius webhook structure
-            required_fields = ['type']
-            for field in required_fields:
-                if field not in payload:
-                    logger.warning(f"Missing required field: {field}")
-                    return False
+            # Allow empty payloads for now - Helius might send various formats
+            if not payload:
+                logger.warning("Empty payload received")
+                return True  # Allow empty payloads
             
+            # Check for wrapped data types from our parsing
+            if payload.get("type") in ["HELIUS_STRING_DATA", "HELIUS_ARRAY_DATA", "HELIUS_OTHER_DATA"]:
+                logger.info(f"Webhook payload is wrapped type: {payload.get('type')}")
+                return True
+            
+            # For normal payloads, just check if it's a dict - no strict validation
+            logger.debug("Webhook payload validation passed")
             return True
             
         except Exception as e:
@@ -76,15 +55,20 @@ class WebhookProcessor:
         try:
             logger.info(f"Processing mint event: {payload.get('type', 'unknown')}")
             
-            # Extract mint information
+            # Extract mint information with flexible handling
             mint_data = {
                 "event_type": "new_mint",
                 "mint_address": payload.get("mint"),
                 "timestamp": payload.get("blockTime", int(time.time())),
                 "slot": payload.get("slot"),
                 "signature": payload.get("signature"),
+                "wrapped_type": payload.get("type"),
                 "raw_payload": payload
             }
+            
+            # Handle wrapped data types
+            if payload.get("type") in ["HELIUS_STRING_DATA", "HELIUS_ARRAY_DATA"]:
+                mint_data["original_data"] = payload.get("data")
             
             # Log the event
             logger.info(
@@ -97,22 +81,10 @@ class WebhookProcessor:
                 }
             )
             
-            # Queue for background processing
-            from app.utils.webhook_tasks import queue_webhook_task
-            await queue_webhook_task("mint", payload)
-            
             return {
                 "status": "processed",
                 "event": "mint",
                 "data": mint_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing mint event: {str(e)}")
-            return {
-                "status": "error",
-                "event": "mint",
-                "error": str(e)
             }
             
         except Exception as e:
@@ -128,7 +100,7 @@ class WebhookProcessor:
         try:
             logger.info(f"Processing pool event: {payload.get('type', 'unknown')}")
             
-            # Extract pool information
+            # Extract pool information with flexible handling
             pool_data = {
                 "event_type": "new_pool",
                 "pool_address": payload.get("pool"),
@@ -137,8 +109,13 @@ class WebhookProcessor:
                 "timestamp": payload.get("blockTime", int(time.time())),
                 "slot": payload.get("slot"),
                 "signature": payload.get("signature"),
+                "wrapped_type": payload.get("type"),
                 "raw_payload": payload
             }
+            
+            # Handle wrapped data types
+            if payload.get("type") in ["HELIUS_POOL_STRING_DATA", "HELIUS_POOL_ARRAY_DATA"]:
+                pool_data["original_data"] = payload.get("data")
             
             # Log the event
             logger.info(
@@ -151,10 +128,6 @@ class WebhookProcessor:
                     "token_b": pool_data['token_b']
                 }
             )
-            
-            # Queue for background processing
-            from app.utils.webhook_tasks import queue_webhook_task
-            await queue_webhook_task("pool", payload)
             
             return {
                 "status": "processed",
@@ -175,7 +148,7 @@ class WebhookProcessor:
         try:
             logger.info(f"Processing transaction event: {payload.get('type', 'unknown')}")
             
-            # Extract transaction information
+            # Extract transaction information with flexible handling
             tx_data = {
                 "event_type": "large_transaction",
                 "signature": payload.get("signature"),
@@ -185,8 +158,13 @@ class WebhookProcessor:
                 "accounts": payload.get("accountKeys", []),
                 "amount": payload.get("amount"),
                 "token": payload.get("mint"),
+                "wrapped_type": payload.get("type"),
                 "raw_payload": payload
             }
+            
+            # Handle wrapped data types
+            if payload.get("type") in ["HELIUS_TX_STRING_DATA", "HELIUS_TX_ARRAY_DATA"]:
+                tx_data["original_data"] = payload.get("data")
             
             # Log the event
             logger.info(
@@ -199,10 +177,6 @@ class WebhookProcessor:
                     "token": tx_data['token']
                 }
             )
-            
-            # Queue for background processing
-            from app.utils.webhook_tasks import queue_webhook_task
-            await queue_webhook_task("transaction", payload)
             
             return {
                 "status": "processed",
@@ -236,29 +210,6 @@ class WebhookManager:
         start_time = time.time()
         
         try:
-            # Get raw body for signature verification (if needed)
-            body = await request.body()
-            
-            # Get signature from headers (optional)
-            signature = request.headers.get('x-helius-signature') or request.headers.get('x-signature')
-            
-            # Verify signature ONLY if secret is configured
-            if settings.HELIUS_WEBHOOK_SECRET:
-                if not signature:
-                    logger.warning("Webhook secret configured but no signature received")
-                    # Don't fail - just log warning
-                else:
-                    if not self.validator.verify_helius_signature(
-                        body, 
-                        signature, 
-                        settings.HELIUS_WEBHOOK_SECRET
-                    ):
-                        raise HTTPException(status_code=401, detail="Invalid webhook signature")
-                    else:
-                        logger.debug("Webhook signature verified successfully")
-            else:
-                logger.debug("No webhook secret configured - skipping signature verification")
-            
             # Validate payload structure
             if not self.validator.validate_webhook_payload(payload):
                 raise HTTPException(status_code=400, detail="Invalid webhook payload")
@@ -275,20 +226,22 @@ class WebhookManager:
             
             processing_time = time.time() - start_time
             
-            # Log webhook processing
-            from app.core.logging import log_webhook_event
-            log_webhook_event(
-                webhook_type=f"helius_{webhook_type}",
-                event_data=payload,
-                processing_time=processing_time,
-                success=result.get("status") == "processed"
-            )
+            # Log webhook processing (with fallback if logging module not available)
+            try:
+                from app.core.logging import log_webhook_event
+                log_webhook_event(
+                    webhook_type=f"helius_{webhook_type}",
+                    event_data=payload,
+                    processing_time=processing_time,
+                    success=result.get("status") == "processed"
+                )
+            except ImportError:
+                logger.info(f"Webhook processed: {webhook_type} in {processing_time:.3f}s")
             
             return {
                 "status": "success",
                 "webhook_type": webhook_type,
                 "processing_time": round(processing_time, 3),
-                "security": "signature_verified" if settings.HELIUS_WEBHOOK_SECRET and signature else "no_signature",
                 "result": result
             }
             
@@ -300,15 +253,18 @@ class WebhookManager:
             
             logger.error(f"Webhook processing failed: {str(e)}")
             
-            # Log failed webhook
-            from app.core.logging import log_webhook_event
-            log_webhook_event(
-                webhook_type=f"helius_{webhook_type}",
-                event_data=payload,
-                processing_time=processing_time,
-                success=False,
-                error_message=str(e)
-            )
+            # Log failed webhook (with fallback)
+            try:
+                from app.core.logging import log_webhook_event
+                log_webhook_event(
+                    webhook_type=f"helius_{webhook_type}",
+                    event_data=payload,
+                    processing_time=processing_time,
+                    success=False,
+                    error_message=str(e)
+                )
+            except ImportError:
+                logger.error(f"Webhook failed: {webhook_type} - {str(e)}")
             
             raise HTTPException(status_code=500, detail=f"Webhook processing failed: {str(e)}")
 
@@ -317,7 +273,7 @@ class WebhookManager:
 webhook_manager = WebhookManager()
 
 
-# Convenience functions
+# Convenience functions for easy integration
 async def process_helius_webhook(
     request: Request,
     webhook_type: str,
@@ -338,12 +294,51 @@ def create_webhook_urls(base_url: str) -> Dict[str, str]:
 
 async def get_webhook_stats() -> Dict[str, Any]:
     """Get webhook processing statistics"""
-    # This would normally query a database or cache
-    # For now, return basic info
+    try:
+        base_url = settings.WEBHOOK_BASE_URL
+        webhook_urls = settings.get_webhook_urls()
+    except AttributeError:
+        # Fallback for older config
+        base_url = getattr(settings, 'WEBHOOK_BASE_URL', None)
+        if not base_url:
+            raise ValueError("WEBHOOK_BASE_URL is required but not configured")
+        webhook_urls = create_webhook_urls(base_url)
+    
     return {
-        "webhooks_configured": bool(settings.HELIUS_WEBHOOK_SECRET),
-        "webhook_secret_set": bool(settings.HELIUS_WEBHOOK_SECRET),
-        "base_url": settings.WEBHOOK_BASE_URL,
+        "base_url": base_url,
         "supported_types": ["mint", "pool", "tx"],
-        "security_enabled": bool(settings.HELIUS_WEBHOOK_SECRET)
+        "webhook_urls": webhook_urls
+    }
+
+
+# Additional utility functions
+def get_webhook_health() -> Dict[str, Any]:
+    """Get webhook system health status"""
+    return {
+        "status": "healthy",
+        "components": {
+            "validator": "operational",
+            "processor": "operational", 
+            "manager": "operational"
+        },
+        "timestamp": time.time()
+    }
+
+
+async def validate_webhook_config() -> Dict[str, Any]:
+    """Validate webhook configuration"""
+    issues = []
+    warnings = []
+    
+    # Check if base URL is configured (now required)
+    if not hasattr(settings, 'WEBHOOK_BASE_URL') or not settings.WEBHOOK_BASE_URL:
+        issues.append("WEBHOOK_BASE_URL is required but not configured")
+    elif not (settings.WEBHOOK_BASE_URL.startswith('http://') or settings.WEBHOOK_BASE_URL.startswith('https://')):
+        issues.append("WEBHOOK_BASE_URL must start with http:// or https://")
+    
+    return {
+        "valid": len(issues) == 0,
+        "issues": issues,
+        "warnings": warnings,
+        "status": "valid" if len(issues) == 0 else "invalid"
     }

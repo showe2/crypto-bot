@@ -64,8 +64,7 @@ class Settings(BaseSettings):
     # ==============================================
     QUICKNODE_WEBHOOK_SECRET: Optional[str] = None
     QUICKNODE_WEBHOOK_URL: Optional[str] = None
-    HELIUS_WEBHOOK_SECRET: Optional[str] = None
-    WEBHOOK_BASE_URL: Optional[str] = None
+    WEBHOOK_BASE_URL: str = Field(description="Base URL for webhook endpoints (REQUIRED)")
 
     # ==============================================
     # STORAGE
@@ -166,6 +165,15 @@ class Settings(BaseSettings):
             raise ValueError(f'LOG_LEVEL must be one of: {allowed}')
         return v.upper()
 
+    @validator('WEBHOOK_BASE_URL')
+    def validate_webhook_base_url(cls, v):
+        if not v:
+            raise ValueError('WEBHOOK_BASE_URL is required and cannot be empty')
+        if not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError('WEBHOOK_BASE_URL must start with http:// or https://')
+        # Remove trailing slash for consistency
+        return v.rstrip('/')
+
     @validator('CHROMA_DB_PATH', 'KNOWLEDGE_BASE_PATH', 'LOGS_DIR')
     def validate_paths(cls, v):
         path = Path(v)
@@ -203,9 +211,18 @@ class Settings(BaseSettings):
             return f"{self.HELIUS_RPC_URL}{self.HELIUS_API_KEY}"
         return self.HELIUS_RPC_URL
 
+    def get_webhook_urls(self) -> dict[str, str]:
+        """Get all webhook endpoint URLs"""
+        return {
+            "mint": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/mint",
+            "pool": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/pool",
+            "transaction": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/tx"
+        }
+
     def validate_critical_keys(self) -> list[str]:
         missing = []
         critical_keys = [
+            ('WEBHOOK_BASE_URL', 'Webhook Base URL'),
             ('HELIUS_API_KEY', 'Helius API'),
             ('MISTRAL_API_KEY', 'Mistral AI'),
             ('LLAMA_API_KEY', 'LLaMA AI'),
@@ -232,6 +249,13 @@ class Settings(BaseSettings):
                 'configured': bool(value),
                 'masked_value': f"{value[:8]}***" if value else None
             }
+        
+        # Add webhook base URL status
+        keys_status['WEBHOOK_BASE_URL'] = {
+            'configured': bool(self.WEBHOOK_BASE_URL),
+            'value': self.WEBHOOK_BASE_URL  # Not sensitive, show full URL
+        }
+        
         return keys_status
 
 @lru_cache()

@@ -333,7 +333,6 @@ async def config_status():
         "webhooks": {
             "enabled": True,
             "endpoints": ["/webhooks/helius/mint", "/webhooks/helius/pool", "/webhooks/helius/tx"],
-            "secret_configured": bool(settings.HELIUS_WEBHOOK_SECRET),
             "base_url_configured": bool(settings.WEBHOOK_BASE_URL)
         },
         "cache_settings": {
