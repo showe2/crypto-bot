@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.core.logging import setup_logging
 from app.core.dependencies import startup_dependencies, shutdown_dependencies
 from app.routers import alex_core
+from app.routers import webhooks
 from app.utils.health import health_check_all_services
 from app.routers.api_router import router as api_router
 
@@ -104,6 +105,14 @@ async def lifespan(app: FastAPI):
         logger.error(f"❌ Failed to initialize dependencies: {str(e)}")
         # Continue anyway - some services might still work
     
+    # Start webhook workers
+    try:
+        from app.utils.webhook_tasks import start_webhook_workers
+        await start_webhook_workers()
+        logger.info("✅ Webhook background workers started")
+    except Exception as e:
+        logger.warning(f"⚠️  Webhook workers failed to start: {str(e)}")
+    
     # Check all services
     health_status = await health_check_all_services()
     
@@ -151,6 +160,12 @@ async def lifespan(app: FastAPI):
         logger.warning("🌐 Web interface: DISABLED (templates not found)")
         logger.info("   Use API endpoints or create templates directory")
     
+    # Log webhook endpoints
+    logger.info("🔗 WebHook endpoints:")
+    logger.info("   📦 Mints: http://localhost:8000/webhooks/helius/mint")
+    logger.info("   🏊 Pools: http://localhost:8000/webhooks/helius/pool")
+    logger.info("   💸 Transactions: http://localhost:8000/webhooks/helius/tx")
+    
     # Log configuration summary
     logger.info(f"🔧 Environment: {settings.ENV}")
     logger.info(f"🔧 Debug mode: {settings.DEBUG}")
@@ -160,6 +175,14 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     logger.info("🛑 Stopping Token Analysis System...")
+    
+    # Stop webhook workers
+    try:
+        from app.utils.webhook_tasks import stop_webhook_workers
+        await stop_webhook_workers()
+        logger.info("✅ Webhook workers stopped")
+    except Exception as e:
+        logger.warning(f"⚠️  Error stopping webhook workers: {str(e)}")
     
     try:
         await shutdown_dependencies()
@@ -173,7 +196,7 @@ async def lifespan(app: FastAPI):
 # Create FastAPI application
 app = FastAPI(
     title="Solana Token Analysis AI System",
-    description="Integrated Solana token analysis system with AI capabilities and web interface",
+    description="Integrated Solana token analysis system with AI capabilities, web interface, and webhook processing",
     version="1.0.0",
     docs_url="/docs" if settings.ENV == "development" else None,
     redoc_url="/redoc" if settings.ENV == "development" else None,
@@ -218,6 +241,12 @@ app.include_router(
     api_router,
     prefix="",
     tags=["api", "services"]
+)
+
+app.include_router(
+    webhooks.router,
+    prefix="",
+    tags=["webhooks"]
 )
 
 # Health check endpoints (keep original simple ones)
@@ -301,6 +330,12 @@ async def config_status():
             "static_files_available": Path("static").exists(),
             "routes": ["/", "/analysis", "/discovery", "/settings"] if Path("templates").exists() else []
         },
+        "webhooks": {
+            "enabled": True,
+            "endpoints": ["/webhooks/helius/mint", "/webhooks/helius/pool", "/webhooks/helius/tx"],
+            "secret_configured": bool(settings.HELIUS_WEBHOOK_SECRET),
+            "base_url_configured": bool(settings.WEBHOOK_BASE_URL)
+        },
         "cache_settings": {
             "ttl_short": settings.CACHE_TTL_SHORT,
             "ttl_medium": settings.CACHE_TTL_MEDIUM,
@@ -326,9 +361,11 @@ async def config_status():
             "chainbase": bool(settings.CHAINBASE_BASE_URL),
             "birdeye": bool(settings.BIRDEYE_BASE_URL),
             "blowfish": bool(settings.BLOWFISH_BASE_URL),
-            "solscan": bool(settings.SOLSCAN_BASE_URL),
+            "solanafm": bool(settings.SOLANAFM_BASE_URL),
             "dexscreener": bool(settings.DEXSCREENER_BASE_URL),
             "dataimpulse": bool(settings.DATAIMPULSE_BASE_URL),
+            "rugcheck": bool(settings.RUGCHECK_BASE_URL),
+            "goplus": bool(settings.GOPLUS_BASE_URL),
             "jupiter": bool(settings.JUPITER_API_URL)
         },
         "api_keys_configured": len([
@@ -403,6 +440,7 @@ if __name__ == "__main__":
         logger.info("🏥 Health Check: http://localhost:8000/health")
         logger.info("📊 Metrics: http://localhost:8000/metrics")
         logger.info("🌐 Web Interface: http://localhost:8000/")
+        logger.info("🔗 WebHooks Status: http://localhost:8000/webhooks/status")
     
     # Run the application
     uvicorn.run(

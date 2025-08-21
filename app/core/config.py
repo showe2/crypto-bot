@@ -226,7 +226,8 @@ class Settings(BaseSettings):
             'BLOWFISH_API_KEY', 'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY', 'TELEGRAM_BOT_TOKEN',
             'PUMPFUN_API_KEY',
-            'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET'
+            'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
+            'WALLET_SECRET_KEY'
         ]
         
         for key in api_keys:
