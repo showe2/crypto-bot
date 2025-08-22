@@ -21,7 +21,7 @@ class HeliusClient:
     def __init__(self):
         self.api_key = settings.HELIUS_API_KEY
         self.rpc_url = settings.get_helius_rpc_url()
-        self.base_url = "https://api.helius.xyz/v0"
+        self.base_url = settings.HELIUS_BASE_URL
         self.session = None
         self._rate_limit_delay = 0.1  # 100ms between requests
         self._last_request_time = 0
@@ -100,9 +100,10 @@ class HeliusClient:
         
         response = await self._request(
             "POST",
-            self.rpc_url,
+            self.base_url,
             json=payload,
-            headers={"Content-Type": "application/json"}
+            headers={"Content-Type": "application/json"},
+            params={"api-key": self.api_key}
         )
         
         if "error" in response:
@@ -113,28 +114,19 @@ class HeliusClient:
     async def get_token_accounts(self, mint_address: str, limit: int = 100) -> List[Dict[str, Any]]:
         """Get token accounts (holders) for a token"""
         try:
-            result = await self._rpc_request("getTokenAccounts", [
-                mint_address,
-                {
-                    "limit": limit,
-                    "displayOptions": {
-                        "showNativeBalance": True,
-                        "showZeroBalance": False
-                    }
-                }
-            ])
+            result = await self._rpc_request("getTokenLargestAccounts", [mint_address])
             
-            if not result or "token_accounts" not in result:
+            if not result or "value" not in result:
                 return []
             
             holders = []
-            for account in result["token_accounts"]:
+            for account in result["value"]:
                 holder_info = {
                     "address": account.get("address"),
                     "amount": account.get("amount"),
                     "decimals": account.get("decimals"),
-                    "uiAmount": account.get("uiAmount"),
-                    "owner": account.get("owner")
+                    "ui_amount": account.get("uiAmount"),
+                    "ua_amount_string": account.get("uiAmountString"),
                 }
                 holders.append(holder_info)
             
@@ -143,82 +135,6 @@ class HeliusClient:
         except Exception as e:
             logger.error(f"Error getting token accounts for {mint_address}: {str(e)}")
             return []
-    
-    async def get_transaction_history(self, address: str, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get transaction history for an address"""
-        try:
-            result = await self._rpc_request("getSignaturesForAddress", [
-                address,
-                {"limit": limit}
-            ])
-            
-            if not result:
-                return []
-            
-            transactions = []
-            for tx in result:
-                tx_info = {
-                    "signature": tx.get("signature"),
-                    "slot": tx.get("slot"),
-                    "blockTime": tx.get("blockTime"),
-                    "confirmationStatus": tx.get("confirmationStatus"),
-                    "err": tx.get("err"),
-                    "memo": tx.get("memo")
-                }
-                transactions.append(tx_info)
-            
-            return transactions
-            
-        except Exception as e:
-            logger.error(f"Error getting transaction history for {address}: {str(e)}")
-            return []
-    
-    async def get_transaction_details(self, signature: str) -> Dict[str, Any]:
-        """Get detailed transaction information"""
-        try:
-            result = await self._rpc_request("getTransaction", [
-                signature,
-                {
-                    "encoding": "jsonParsed",
-                    "maxSupportedTransactionVersion": 0
-                }
-            ])
-            
-            if not result:
-                return None
-            
-            # Parse transaction details
-            transaction = {
-                "signature": signature,
-                "slot": result.get("slot"),
-                "blockTime": result.get("blockTime"),
-                "meta": result.get("meta", {}),
-                "transaction": result.get("transaction", {}),
-                "version": result.get("version")
-            }
-            
-            return transaction
-            
-        except Exception as e:
-            logger.error(f"Error getting transaction details for {signature}: {str(e)}")
-            return None
-    
-    async def get_balance(self, address: str) -> Optional[Decimal]:
-        """Get SOL balance for an address"""
-        try:
-            result = await self._rpc_request("getBalance", [address])
-            
-            if result is not None and "value" in result:
-                # Convert lamports to SOL
-                lamports = result["value"]
-                sol_balance = Decimal(lamports) / Decimal(10**9)
-                return sol_balance
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Error getting balance for {address}: {str(e)}")
-            return None
     
     async def get_token_supply(self, mint_address: str) -> Dict[str, Any]:
         """Get token supply information"""
@@ -232,76 +148,47 @@ class HeliusClient:
             return {
                 "amount": supply_info.get("amount"),
                 "decimals": supply_info.get("decimals"),
-                "uiAmount": supply_info.get("uiAmount"),
-                "uiAmountString": supply_info.get("uiAmountString")
+                "ui_amount": supply_info.get("uiAmount"),
+                "ui_amount_string": supply_info.get("uiAmountString")
             }
             
         except Exception as e:
             logger.error(f"Error getting token supply for {mint_address}: {str(e)}")
             return None
-    
-    async def get_token_price_history(self, mint_address: str, days: int = 7) -> List[Dict[str, Any]]:
-        """Get token price history (using enhanced API if available)"""
+
+    # DEPRECATED ENDPOINT
+    async def get_token_metadata(self, mint_addresses: List[str]) -> List[Dict[str, Any]]:
+        """Get token metadata by mint [DEPRECATED]"""
         try:
-            # Use enhanced API endpoint
-            url = f"{self.base_url}/token-metadata"
-            params = {
-                "api-key": self.api_key,
-                "mint": mint_address,
-                "includeOffChain": "true"
+            url = f"https://api.helius.xyz/v0/token-metadata"
+
+            payload = {
+                "mintAccounts": mint_addresses,
+                "includeOffChain": False,
+                "disableCache": False
             }
-            
-            response = await self._request("GET", url, params=params)
-            
-            # This is a simplified response, actual implementation would depend on Helius enhanced API
-            return response.get("priceHistory", [])
+
+            response = await self._request("POST", url, headers={"Content-Type": "application/json"}, json=payload, params={"api-key":self.api_key})
+
+            return response[0]
             
         except Exception as e:
-            logger.warning(f"Price history not available for {mint_address}: {str(e)}")
-            return []
-    
-    async def get_nft_events(self, mint_address: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get NFT events (if token is NFT)"""
-        try:
-            url = f"{self.base_url}/nft-events"
-            params = {
-                "api-key": self.api_key,
-                "accounts": [mint_address],
-                "limit": limit
-            }
-            
-            response = await self._request("GET", url, params=params)
-            return response.get("result", [])
-            
-        except Exception as e:
-            logger.warning(f"NFT events not available for {mint_address}: {str(e)}")
-            return []
-    
-    async def search_tokens(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for tokens by name or symbol"""
-        try:
-            url = f"{self.base_url}/token-metadata"
-            params = {
-                "api-key": self.api_key,
-                "query": query,
-                "limit": limit
-            }
-            
-            response = await self._request("GET", url, params=params)
-            return response.get("result", [])
-            
-        except Exception as e:
-            logger.warning(f"Token search failed for query '{query}': {str(e)}")
-            return []
+            logger.warning(f"Token metadata endpoint failed: {str(e)}")
+            return {}
     
     async def health_check(self) -> Dict[str, Any]:
         """Check Helius API health"""
         try:
             # Simple health check using getHealth RPC method
             result = await self._rpc_request("getHealth")
-            
+
+            health_check = False
+
+            if result["result"] == "ok":
+                health_check = True
+
             return {
-                "healthy": True,
+                "healthy": health_check,
                 "api_key_configured": bool(self.api_key),
                 "rpc_url": self.rpc_url,
                 "response_time": time.time(),

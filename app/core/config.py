@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     # Helius
     HELIUS_API_KEY: Optional[str] = None
     HELIUS_RPC_URL: str = "https://rpc.helius.xyz/?api-key="
+    HELIUS_BASE_URL: str = "https://mainnet.helius-rpc.com"
 
     # Chainbase
     CHAINBASE_API_KEY: Optional[str] = None
