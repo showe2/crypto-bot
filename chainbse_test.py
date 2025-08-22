@@ -4,13 +4,11 @@ from app.services.chainbase_client import ChainbaseClient
 async def main():
     async with ChainbaseClient() as client:
         metadata = await client.get_token_metadata(
-            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-            "ethereum"
+            "So11111111111111111111111111111111111111112",
         )
 
         holders = await client.get_token_holders(
-            "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
-            "ethereum",
+            "So11111111111111111111111111111111111111112",
             limit=1
         )
         print(metadata, "\n\n\n", holders)

@@ -111,7 +111,7 @@ class HeliusClient:
         
         return response.get("result", {})
     
-    async def get_token_accounts(self, mint_address: str, limit: int = 100) -> List[Dict[str, Any]]:
+    async def get_token_accounts(self, mint_address: str) -> List[Dict[str, Any]]:
         """Get token accounts (holders) for a token"""
         try:
             result = await self._rpc_request("getTokenLargestAccounts", [mint_address])

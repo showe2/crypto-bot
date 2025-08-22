@@ -10,10 +10,11 @@ from app.utils.cache import cache_manager
 
 
 class TokenAnalyzer:
-    """Main token analyzer that coordinates all services with robust error handling"""
+    """Token analyzer with Helius service integration following existing patterns"""
     
     def __init__(self):
         self.services = {
+            "helius": True,
             "chainbase": True,
             "birdeye": True,
             "solanafm": True,
@@ -23,15 +24,13 @@ class TokenAnalyzer:
         }
     
     async def analyze_token_comprehensive(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
-        """
-        Comprehensive token analysis using all available services with error skipping
-        """
+        """Comprehensive token analysis"""
         start_time = time.time()
         analysis_id = f"analysis_{int(time.time())}_{token_address[:8]}"
         
         logger.info(f"🔍 Starting comprehensive analysis for {token_address} from {source_event}")
         
-        # Initialize response structure with ALL required keys
+        # Initialize response structure
         analysis_response = {
             "analysis_id": analysis_id,
             "token_address": token_address,
@@ -61,10 +60,90 @@ class TokenAnalyzer:
             logger.warning(f"Cache retrieval failed: {str(e)}")
             analysis_response["warnings"].append(f"Cache retrieval failed: {str(e)}")
         
-        # Prepare service tasks with individual error handling
+        # STEP 1: Handle Birdeye separately with sequential processing (RATE LIMIT FIX)
+        birdeye_data = {}
+        if api_manager.clients.get("birdeye"):
+            try:
+                logger.info("🔧 Processing Birdeye requests sequentially (rate limit fix)")
+                birdeye_client = api_manager.clients["birdeye"]
+                
+                # Call price endpoint first
+                try:
+                    price_data = await birdeye_client.get_token_price(
+                        token_address,
+                        include_liquidity=True,
+                        check_liquidity=100
+                    )
+                    if price_data:
+                        birdeye_data["price"] = price_data
+                        logger.info("✅ Birdeye price data collected")
+                    else:
+                        logger.warning("⚠️ Birdeye price endpoint returned no data")
+                except Exception as e:
+                    error_msg = f"Birdeye price endpoint failed: {str(e)}"
+                    logger.warning(f"❌ {error_msg}")
+                    analysis_response["warnings"].append(error_msg)
+                
+                # Wait before next Birdeye call (CRITICAL FOR RATE LIMITING)
+                await asyncio.sleep(1.0)  # 1 second delay between Birdeye calls
+                
+                # Call trades endpoint second
+                try:
+                    trades_data = await birdeye_client.get_token_trades(
+                        token_address,
+                        sort_type="desc",
+                        limit=20
+                    )
+                    if trades_data:
+                        birdeye_data["trades"] = trades_data
+                        logger.info("✅ Birdeye trades data collected")
+                    else:
+                        logger.warning("⚠️ Birdeye trades endpoint returned no data")
+                except Exception as e:
+                    error_msg = f"Birdeye trades endpoint failed: {str(e)}"
+                    logger.warning(f"❌ {error_msg}")
+                    analysis_response["warnings"].append(error_msg)
+                
+                # Store Birdeye data if we got anything
+                if birdeye_data:
+                    analysis_response["service_responses"]["birdeye"] = birdeye_data
+                    analysis_response["data_sources"].append("birdeye")
+                    analysis_response["metadata"]["services_attempted"] += 1
+                    logger.info(f"✅ Birdeye sequential processing completed: {list(birdeye_data.keys())}")
+                else:
+                    analysis_response["warnings"].append("Birdeye: No data collected from any endpoint")
+                    
+            except Exception as e:
+                error_msg = f"Birdeye sequential processing failed: {str(e)}"
+                logger.error(f"❌ {error_msg}")
+                analysis_response["errors"].append(error_msg)
+        else:
+            analysis_response["warnings"].append("Birdeye client not available")
+        
+        # STEP 2: Prepare tasks for all other services (parallel execution)
         service_tasks = {}
         
-        # Chainbase - Holder analysis (ignore if no data returned)
+        # HELIUS - On-chain data
+        if api_manager.clients.get("helius"):
+            try:
+                service_tasks["helius_supply"] = self._safe_service_call(
+                    api_manager.clients["helius"].get_token_supply, 
+                    token_address
+                )
+                service_tasks["helius_accounts"] = self._safe_service_call(
+                    api_manager.clients["helius"].get_token_accounts, 
+                    token_address
+                )
+                service_tasks["helius_metadata"] = self._safe_service_call(
+                    api_manager.clients["helius"].get_token_metadata, 
+                    [token_address]
+                )
+                analysis_response["metadata"]["services_attempted"] += 1
+                logger.info("🔗 Helius tasks prepared")
+            except Exception as e:
+                analysis_response["warnings"].append(f"Helius initialization failed: {str(e)}")
+        
+        # Chainbase - Holder analysis
         if api_manager.clients.get("chainbase"):
             try:
                 service_tasks["chainbase_metadata"] = self._safe_service_call(
@@ -76,38 +155,9 @@ class TokenAnalyzer:
                     token_address, "solana", 50
                 )
                 analysis_response["metadata"]["services_attempted"] += 1
-                logger.info("🔧 Chainbase tasks prepared (may return empty data - this is normal)")
+                logger.info("🔧 Chainbase tasks prepared")
             except Exception as e:
                 analysis_response["warnings"].append(f"Chainbase initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("Chainbase client not available")
-        
-        # Birdeye - Price and market data (ensure token_address is properly passed)
-        if api_manager.clients.get("birdeye"):
-            try:
-                # Debug: Ensure we have a valid token address
-                logger.info(f"🔧 Preparing Birdeye calls for token: {token_address}")
-                
-                # Call with explicit parameters to avoid parameter issues
-                service_tasks["birdeye_price"] = self._safe_service_call(
-                    api_manager.clients["birdeye"].get_token_price, 
-                    token_address,
-                    include_liquidity=True,
-                    check_liquidity=100
-                )
-                await asyncio.sleep(1)
-                service_tasks["birdeye_trades"] = self._safe_service_call(
-                    api_manager.clients["birdeye"].get_token_trades,
-                    token_address,
-                    sort_type="desc",
-                    limit=20
-                )
-                analysis_response["metadata"]["services_attempted"] += 1
-                logger.info("🔧 Birdeye tasks prepared with explicit parameters")
-            except Exception as e:
-                analysis_response["errors"].append(f"Birdeye initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("Birdeye client not available")
         
         # SolanaFM - On-chain data
         if api_manager.clients.get("solanafm"):
@@ -119,10 +169,8 @@ class TokenAnalyzer:
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"SolanaFM initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("SolanaFM client not available")
         
-        # DexScreener - Trading pairs (FREE)
+        # DexScreener - Trading pairs
         if api_manager.clients.get("dexscreener"):
             try:
                 service_tasks["dexscreener_pairs"] = self._safe_service_call(
@@ -132,8 +180,6 @@ class TokenAnalyzer:
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"DexScreener initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("DexScreener client not available")
         
         # GOplus - Security analysis
         if api_manager.clients.get("goplus"):
@@ -149,8 +195,6 @@ class TokenAnalyzer:
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"GOplus initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("GOplus client not available")
         
         # RugCheck - Security analysis
         if api_manager.clients.get("rugcheck"):
@@ -162,112 +206,69 @@ class TokenAnalyzer:
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"RugCheck initialization failed: {str(e)}")
-        else:
-            analysis_response["warnings"].append("RugCheck client not available")
         
-        # Execute all service calls concurrently with timeout
-        logger.info(f"🚀 Executing {len(service_tasks)} service calls concurrently")
-        
-        try:
-            # Set a reasonable timeout for all operations
-            results = await asyncio.wait_for(
-                asyncio.gather(*service_tasks.values(), return_exceptions=True),
-                timeout=30.0  # 30 second timeout
-            )
-        except asyncio.TimeoutError:
-            logger.warning("Service calls timed out after 30 seconds, proceeding with partial data")
-            analysis_response["warnings"].append("Service calls timed out after 30 seconds")
-            results = [None] * len(service_tasks)
-        except Exception as e:
-            logger.error(f"Critical error during service execution: {str(e)}")
-            analysis_response["errors"].append(f"Service execution failed: {str(e)}")
-            results = [None] * len(service_tasks)
-        
-        # Process results with robust error handling
-        task_names = list(service_tasks.keys())
-        successful_services = 0
-        
-        for i, task_name in enumerate(task_names):
+        # STEP 3: Execute all other services concurrently (excluding Birdeye which was already processed)
+        if service_tasks:
+            logger.info(f"🚀 Executing {len(service_tasks)} other service calls concurrently")
+            
             try:
-                result = results[i] if i < len(results) else None
-                service_name = task_name.split("_")[0]
-                
-                if isinstance(result, Exception):
-                    error_msg = f"{task_name}: {str(result)}"
+                results = await asyncio.wait_for(
+                    asyncio.gather(*service_tasks.values(), return_exceptions=True),
+                    timeout=25.0  # Reduced timeout since Birdeye is already done
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Other services timed out after 25 seconds")
+                analysis_response["warnings"].append("Some services timed out")
+                results = [None] * len(service_tasks)
+            except Exception as e:
+                logger.error(f"Critical error during service execution: {str(e)}")
+                analysis_response["errors"].append(f"Service execution failed: {str(e)}")
+                results = [None] * len(service_tasks)
+            
+            # Process other services results
+            task_names = list(service_tasks.keys())
+            for i, task_name in enumerate(task_names):
+                try:
+                    result = results[i] if i < len(results) else None
+                    service_name = task_name.split("_")[0]
+                    
+                    if isinstance(result, Exception):
+                        analysis_response["errors"].append(f"{task_name}: {str(result)}")
+                        continue
+                    
+                    if result is None:
+                        analysis_response["warnings"].append(f"{task_name}: No data returned")
+                        continue
+                    
+                    # Store service response
+                    if service_name not in analysis_response["service_responses"]:
+                        analysis_response["service_responses"][service_name] = {}
+                    
+                    analysis_response["service_responses"][service_name][task_name.split("_", 1)[1]] = result
+                    
+                    # Track data sources
+                    if service_name not in analysis_response["data_sources"]:
+                        analysis_response["data_sources"].append(service_name)
+                    
+                    logger.debug(f"✅ Successfully processed {task_name}")
+                    
+                except Exception as e:
+                    error_msg = f"Error processing {task_name}: {str(e)}"
                     analysis_response["errors"].append(error_msg)
                     logger.warning(f"❌ {error_msg}")
-                    continue
-                
-                if result is None:
-                    analysis_response["warnings"].append(f"{task_name}: No data returned")
-                    continue
-                
-                # Store service response
-                if service_name not in analysis_response["service_responses"]:
-                    analysis_response["service_responses"][service_name] = {}
-                
-                analysis_response["service_responses"][service_name][task_name.split("_", 1)[1]] = result
-                
-                # Track data sources
-                if service_name not in analysis_response["data_sources"]:
-                    analysis_response["data_sources"].append(service_name)
-                    successful_services += 1
-                
-                logger.debug(f"✅ Successfully processed {task_name}")
-                
-            except Exception as e:
-                error_msg = f"Error processing {task_name}: {str(e)}"
-                analysis_response["errors"].append(error_msg)
-                logger.warning(f"❌ {error_msg}")
         
-        # Add emergency data collection if all else fails
-        if len(analysis_response["data_sources"]) == 0:
-            logger.warning("🆘 No data sources available - attempting emergency data collection")
-            
-            # Try to get at least basic token validation
-            try:
-                from app.utils.validation import solana_validator
-                validation_result = solana_validator.validate_token_mint(token_address)
-                
-                if validation_result.valid:
-                    analysis_response["service_responses"]["validation"] = {
-                        "address_valid": True,
-                        "normalized_address": validation_result.normalized_data.get("address", token_address)
-                    }
-                    analysis_response["data_sources"].append("validation")
-                    successful_services += 1
-                    logger.info("✅ Emergency validation data collected")
-                    
-            except Exception as e:
-                logger.warning(f"Emergency validation failed: {str(e)}")
-            
-            # Try to extract basic info from token address format
-            try:
-                analysis_response["service_responses"]["address_analysis"] = {
-                    "address_length": len(token_address),
-                    "appears_valid": len(token_address) in [43, 44],
-                    "address_type": "likely_token" if len(token_address) == 44 else "unknown"
-                }
-                analysis_response["data_sources"].append("address_analysis")
-                successful_services += 1
-                logger.info("✅ Emergency address analysis completed")
-                
-            except Exception as e:
-                logger.warning(f"Emergency address analysis failed: {str(e)}")
-        
-        analysis_response["metadata"]["services_successful"] = successful_services
+        # Continue with rest of the analysis (same as before)
+        analysis_response["metadata"]["services_successful"] = len(analysis_response["data_sources"])
         analysis_response["metadata"]["data_sources_available"] = len(analysis_response["data_sources"])
         
-        # Generate overall analysis even with limited data
+        # Generate overall analysis
         try:
             analysis_response["overall_analysis"] = await self._generate_overall_analysis(
                 analysis_response["service_responses"], token_address
             )
             
-            # Map to analysis_summary for API router compatibility
             analysis_response["analysis_summary"] = analysis_response["overall_analysis"]
             
-            # Add risk_assessment section for API router
             analysis_response["risk_assessment"] = {
                 "risk_category": analysis_response["overall_analysis"]["risk_level"],
                 "risk_score": analysis_response["overall_analysis"]["score"],
@@ -279,14 +280,12 @@ class TokenAnalyzer:
             logger.error(f"Overall analysis generation failed: {str(e)}")
             analysis_response["errors"].append(f"Analysis generation failed: {str(e)}")
             
-            # Provide fallback analysis
             fallback_analysis = self._create_fallback_analysis(
                 analysis_response["data_sources"], len(analysis_response["errors"])
             )
             analysis_response["overall_analysis"] = fallback_analysis
             analysis_response["analysis_summary"] = fallback_analysis
             
-            # Add fallback risk_assessment
             analysis_response["risk_assessment"] = {
                 "risk_category": fallback_analysis["risk_level"],
                 "risk_score": fallback_analysis["score"],
@@ -297,35 +296,36 @@ class TokenAnalyzer:
         processing_time = time.time() - start_time
         analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
         
-        # Cache the result with shorter TTL if many errors
+        # Cache the result
         try:
-            cache_ttl = 120 if len(analysis_response["errors"]) > 3 else (300 if source_event == "webhook" else 120)
+            cache_ttl = 300 if source_event == "webhook" else 120
             await cache_manager.set(cache_key, analysis_response, ttl=cache_ttl, namespace="analysis")
             logger.debug(f"Analysis cached with TTL {cache_ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
         
-        # Log completion with summary
+        # Log completion
         error_count = len(analysis_response["errors"])
         warning_count = len(analysis_response["warnings"])
         data_sources = len(analysis_response["data_sources"])
         
+        birdeye_included = "birdeye" in analysis_response["data_sources"]
+        helius_included = "helius" in analysis_response["data_sources"]
+        
         logger.info(
             f"✅ Analysis COMPLETED for {token_address} in {processing_time:.2f}s "
-            f"(sources: {data_sources}, errors: {error_count}, warnings: {warning_count})"
+            f"(sources: {data_sources}, Birdeye: {'✅' if birdeye_included else '❌'}, "
+            f"Helius: {'✅' if helius_included else '❌'}, errors: {error_count}, warnings: {warning_count})"
         )
         
-        # Always return data, even if incomplete
         return analysis_response
     
-    # Keep the original _safe_service_call for non-Birdeye services
     async def _safe_service_call(self, service_func, *args, **kwargs):
-        """Execute service call with comprehensive error handling and detailed logging"""
+        """Execute service call with comprehensive error handling"""
         service_name = service_func.__name__
         
         try:
-            # Call the function with proper parameter unpacking
             if kwargs:
                 result = await service_func(*args, **kwargs)
             else:
@@ -335,107 +335,16 @@ class TokenAnalyzer:
                 logger.info(f"✅ {service_name} returned data successfully")
                 return result
             else:
-                logger.warning(f"⚠️  {service_name} returned None - this is normal for some services")
+                logger.warning(f"⚠️  {service_name} returned None")
                 return None
                 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"❌ {service_name} failed: {error_msg}")
-            
-            # Log specific error types for debugging
-            if "address is required" in error_msg.lower():
-                logger.error(f"   🐛 Address parameter issue in {service_name}")
-                logger.error(f"   🐛 Args received: {args}")
-                logger.error(f"   🐛 Kwargs received: {kwargs}")
-            elif "400" in error_msg:
-                logger.error(f"   🐛 400 Bad Request in {service_name} - check parameters")
-            elif "404" in error_msg:
-                logger.warning(f"   ℹ️  404 Not Found in {service_name} - endpoint may not exist")
-            elif "timeout" in error_msg.lower():
-                logger.warning(f"   ⏰ Timeout in {service_name}")
-            
-            # Return None instead of raising to allow other services to continue
+            logger.error(f"❌ {service_name} failed: {str(e)}")
             return None
-        
-    def _create_fallback_analysis(self, data_sources: List[str], error_count: int) -> Dict[str, Any]:
-        """Create a fallback analysis when main analysis fails - ENSURE we always get SOME data"""
-        
-        logger.warning(f"🆘 Creating fallback analysis with {len(data_sources)} sources and {error_count} errors")
-        
-        # More aggressive scoring to ensure we get meaningful data
-        if len(data_sources) >= 2:
-            score = 55.0  # Better score with multiple sources
-            risk_level = "medium"
-            confidence = 70.0
-            recommendation = "caution"
-        elif len(data_sources) >= 1:
-            score = 45.0  # Moderate score with single source
-            risk_level = "medium"
-            confidence = 50.0
-            recommendation = "caution"
-        else:
-            score = 35.0  # Still provide reasonable score even with no data
-            risk_level = "high"
-            confidence = 25.0
-            recommendation = "avoid"
-        
-        # Less harsh penalty for errors to ensure usable data
-        if error_count > 8:
-            confidence = max(20.0, confidence - 15.0)
-            score = max(25.0, score - 10.0)
-        elif error_count > 5:
-            confidence = max(25.0, confidence - 10.0)
-            score = max(30.0, score - 5.0)
-        
-        # Provide meaningful positive signals even in fallback
-        positive_signals = []
-        if len(data_sources) > 0:
-            positive_signals.append("Analysis completed with available data")
-        if error_count < 5:
-            positive_signals.append("Most services responded normally")
-        
-        # Add at least one positive signal to avoid empty analysis
-        if not positive_signals:
-            positive_signals.append("Token address format validated successfully")
-        
-        risk_factors = []
-        if error_count > 5:
-            risk_factors.append(f"High service error rate ({error_count} errors)")
-        if len(data_sources) < 2:
-            risk_factors.append(f"Limited data sources available ({len(data_sources)})")
-        
-        # Add at least one risk factor for completeness
-        if not risk_factors:
-            risk_factors.append("Analysis based on limited external data")
-        
-        return {
-            "score": score,
-            "risk_level": risk_level,
-            "recommendation": recommendation,
-            "confidence": confidence,
-            "confidence_score": confidence,  # API router expects this key
-            "data_quality": "limited" if len(data_sources) > 0 else "minimal",
-            "summary": f"Fallback analysis completed. {len(data_sources)} data sources provided information despite service issues.",
-            "positive_signals": positive_signals,
-            "risk_factors": risk_factors,
-            "metadata_quality": max(10, len(data_sources) * 15),  # Ensure some metadata quality
-            "price_available": len(data_sources) > 0,  # Assume some price data if any source worked
-            "security_checked": len(data_sources) > 1,  # Assume security check if multiple sources
-            "services_responded": len(data_sources),
-            "data_completeness": max(20.0, len(data_sources) * 25.0),  # More generous completeness
-            "fallback_analysis": True,
-            "analysis_notes": [
-                "This is a fallback analysis due to service limitations",
-                "Recommendations are conservative due to limited data",
-                f"Successfully processed {len(data_sources)} out of attempted services"
-            ],
-            "analysis_completed": True
-        }
     
     async def _generate_overall_analysis(self, service_responses: Dict[str, Any], token_address: str) -> Dict[str, Any]:
-        """Generate overall analysis from all service responses with error resilience"""
+        """Generate overall analysis from all service responses including Helius"""
         
-        # Initialize analysis components with defaults
         scores = []
         risk_factors = []
         positive_signals = []
@@ -443,170 +352,125 @@ class TokenAnalyzer:
         price_available = False
         security_checked = False
         
-        # Process each service response with individual error handling
-        data_quality_score = 0
-        total_services = len(service_responses)
-        
-        # Chainbase data processing (ignore if no data - this is normal)
-        try:
-            if "chainbase" in service_responses:
-                chainbase_data = service_responses["chainbase"]
-                logger.debug(f"Chainbase data received: {bool(chainbase_data)}")
+        # Process Helius data first (high priority)
+        helius_data = service_responses.get("helius", {})
+        if helius_data:
+            logger.debug("Processing Helius data for analysis")
+            
+            # Process supply data
+            supply_data = helius_data.get("supply")
+            if supply_data:
+                positive_signals.append("Helius: Token supply data available")
+                scores.append(70)
                 
-                # Only process if we actually have data
-                if chainbase_data and any(chainbase_data.values()):
-                    if chainbase_data.get("holders"):
-                        holders = chainbase_data["holders"]
-                        if isinstance(holders, dict) and holders.get("holders"):
-                            holder_count = len(holders["holders"])
-                            if holder_count > 100:
-                                positive_signals.append(f"Good holder distribution ({holder_count} holders)")
-                                scores.append(70)
-                            elif holder_count > 10:
-                                scores.append(50)
-                            else:
-                                risk_factors.append("Low holder count")
-                                scores.append(20)
-                            data_quality_score += 25
-                    
-                    if chainbase_data.get("metadata"):
-                        metadata_quality += 30
-                        logger.debug("Chainbase metadata found")
-                    
-                    logger.info("✅ Chainbase data processed successfully")
-                else:
-                    logger.info("ℹ️  Chainbase returned no data (this is normal for some tokens)")
-        except Exception as e:
-            logger.debug(f"Error processing Chainbase data: {str(e)} (ignoring as requested)")
-        
-        # Birdeye data processing
-        try:
-            if "birdeye" in service_responses:
-                birdeye_data = service_responses["birdeye"]
-                if birdeye_data and birdeye_data.get("price"):
-                    price_data = birdeye_data["price"]
-                    price_available = True
-                    data_quality_score += 20
-                    
-                    # Analyze price data
-                    if price_data.get("value") and float(price_data["value"]) > 0:
-                        positive_signals.append("Token has market price")
-                        scores.append(60)
-                    
-                    # Volume analysis
-                    volume_24h = price_data.get("volume_24h")
-                    if volume_24h and float(volume_24h) > 1000:  # $1000+ daily volume
-                        positive_signals.append("Good trading volume")
-                        scores.append(65)
-                    elif volume_24h and float(volume_24h) > 100:
-                        scores.append(45)
-                    else:
-                        risk_factors.append("Low trading volume")
-                        scores.append(25)
-        except Exception as e:
-            logger.debug(f"Error processing Birdeye data: {str(e)}")
-        
-        # SolanaFM data processing
-        try:
-            if "solanafm" in service_responses:
-                solanafm_data = service_responses["solanafm"]
-                if solanafm_data and solanafm_data.get("token"):
-                    token_info = solanafm_data["token"]
-                    if token_info and token_info.get("name") and token_info.get("symbol"):
-                        metadata_quality += 20
-                        positive_signals.append("Complete token information")
-                data_quality_score += 15
-        except Exception as e:
-            logger.debug(f"Error processing SolanaFM data: {str(e)}")
-        
-        # DexScreener data processing
-        try:
-            if "dexscreener" in service_responses:
-                dexscreener_data = service_responses["dexscreener"]
-                if dexscreener_data and dexscreener_data.get("pairs"):
-                    pairs_data = dexscreener_data["pairs"]
-                    if pairs_data and pairs_data.get("pairs"):
-                        pairs_count = len(pairs_data["pairs"])
-                        if pairs_count > 0:
-                            positive_signals.append(f"Trading on {pairs_count} DEX(es)")
-                            scores.append(55)
-                            data_quality_score += 20
-        except Exception as e:
-            logger.debug(f"Error processing DexScreener data: {str(e)}")
-        
-        # GOplus security analysis
-        try:
-            if "goplus" in service_responses:
-                goplus_data = service_responses["goplus"]
-                security_checked = True
-                
-                if goplus_data and goplus_data.get("security"):
-                    security_data = goplus_data["security"]
-                    
-                    # Check for honeypot
-                    if security_data.get("is_honeypot") == "1":
-                        risk_factors.append("GOplus: Potential honeypot detected")
-                        scores.append(5)
-                    else:
-                        scores.append(60)
-                    
-                    # Check taxes
-                    buy_tax = security_data.get("buy_tax")
-                    sell_tax = security_data.get("sell_tax")
-                    
-                    if buy_tax and float(buy_tax) > 10:
-                        risk_factors.append(f"High buy tax: {buy_tax}%")
+                # Check supply characteristics
+                ui_amount = supply_data.get("ui_amount")
+                if ui_amount:
+                    supply_amount = float(ui_amount)
+                    if supply_amount > 1_000_000_000:  # 1B+ tokens
+                        risk_factors.append("Very high token supply")
                         scores.append(30)
-                    
-                    if sell_tax and float(sell_tax) > 10:
-                        risk_factors.append(f"High sell tax: {sell_tax}%")
-                        scores.append(20)
-                    
-                    if not any("GOplus:" in rf for rf in risk_factors):
-                        positive_signals.append("GOplus: No major security issues")
+                    elif supply_amount < 1_000_000:  # < 1M tokens
+                        positive_signals.append("Limited token supply")
+                        scores.append(75)
+            
+            # Process accounts (holders) data
+            accounts_data = helius_data.get("accounts")
+            if accounts_data and len(accounts_data) > 0:
+                holder_count = len(accounts_data)
+                positive_signals.append(f"Helius: {holder_count} token holders found")
                 
-                data_quality_score += 25
-        except Exception as e:
-            logger.debug(f"Error processing GOplus data: {str(e)}")
-        
-        # RugCheck analysis
-        try:
-            if "rugcheck" in service_responses:
-                rugcheck_data = service_responses["rugcheck"]
-                security_checked = True
+                if holder_count > 1000:
+                    positive_signals.append("Good holder distribution")
+                    scores.append(75)
+                elif holder_count > 100:
+                    scores.append(60)
+                elif holder_count < 10:
+                    risk_factors.append("Very low holder count")
+                    scores.append(25)
+                else:
+                    scores.append(45)
                 
-                if rugcheck_data and rugcheck_data.get("report"):
-                    report = rugcheck_data["report"]
-                    
-                    # RugCheck score (0-100, higher is safer)
-                    rugcheck_score = report.get("score")
-                    if rugcheck_score is not None:
-                        if rugcheck_score > 80:
-                            positive_signals.append(f"RugCheck: High safety score ({rugcheck_score})")
-                            scores.append(80)
-                        elif rugcheck_score > 60:
-                            scores.append(65)
-                        elif rugcheck_score > 40:
-                            scores.append(45)
-                            risk_factors.append(f"RugCheck: Moderate risk (score: {rugcheck_score})")
-                        else:
-                            risk_factors.append(f"RugCheck: High risk (score: {rugcheck_score})")
-                            scores.append(20)
-                    
-                    # Check for rug status
-                    if report.get("rugged"):
-                        risk_factors.append("RugCheck: Token flagged as rugged")
-                        scores.append(5)
-                    
-                    data_quality_score += 25
-        except Exception as e:
-            logger.debug(f"Error processing RugCheck data: {str(e)}")
+                # Analyze concentration if we have enough data
+                if len(accounts_data) >= 10:
+                    total_amount = sum(float(acc.get("ui_amount", 0)) for acc in accounts_data)
+                    if total_amount > 0:
+                        top_10_amount = sum(float(acc.get("ui_amount", 0)) for acc in accounts_data[:10])
+                        concentration_percentage = (top_10_amount / total_amount) * 100
+                        
+                        if concentration_percentage > 80:
+                            risk_factors.append("High concentration: Top 10 holders own >80%")
+                            scores.append(25)
+                        elif concentration_percentage < 50:
+                            positive_signals.append("Good distribution: Top 10 holders own <50%")
+                            scores.append(70)
+            
+            # Process metadata
+            metadata = helius_data.get("metadata")
+            if metadata and isinstance(metadata, dict):
+                if metadata.get("name") and metadata.get("symbol"):
+                    positive_signals.append("Helius: Complete token metadata")
+                    metadata_quality += 30
+                    scores.append(65)
+                else:
+                    risk_factors.append("Incomplete token metadata")
+                    scores.append(35)
         
-        # Calculate overall score with fallback
+        # Process other services (existing logic)
+        # Birdeye data processing
+        birdeye_data = service_responses.get("birdeye", {})
+        if birdeye_data:
+            price_data = birdeye_data.get("price")
+            if price_data:
+                price_available = True
+                
+                if price_data.get("value") and float(price_data["value"]) > 0:
+                    positive_signals.append("Birdeye: Token has market price")
+                    scores.append(60)
+                
+                volume_24h = price_data.get("volume_24h")
+                if volume_24h and float(volume_24h) > 1000:
+                    positive_signals.append("Birdeye: Good trading volume")
+                    scores.append(65)
+                elif volume_24h and float(volume_24h) > 100:
+                    scores.append(45)
+                else:
+                    risk_factors.append("Low trading volume")
+                    scores.append(25)
+        
+        # Security analysis
+        goplus_data = service_responses.get("goplus", {})
+        if goplus_data:
+            security_checked = True
+            security_analysis = goplus_data.get("security")
+            if security_analysis:
+                if security_analysis.get("is_honeypot") == "1":
+                    risk_factors.append("GOplus: Potential honeypot")
+                    scores.append(5)
+                else:
+                    scores.append(60)
+        
+        rugcheck_data = service_responses.get("rugcheck", {})
+        if rugcheck_data:
+            security_checked = True
+            report = rugcheck_data.get("report")
+            if report:
+                rugcheck_score = report.get("score")
+                if rugcheck_score is not None:
+                    if rugcheck_score > 80:
+                        positive_signals.append(f"RugCheck: High safety score ({rugcheck_score})")
+                        scores.append(80)
+                    elif rugcheck_score > 60:
+                        scores.append(65)
+                    else:
+                        risk_factors.append(f"RugCheck: Risk detected (score: {rugcheck_score})")
+                        scores.append(30)
+        
+        # Calculate overall score
         if scores:
             overall_score = sum(scores) / len(scores)
         else:
-            overall_score = 30  # Default low score if no data
+            overall_score = 30
             risk_factors.append("No scoring data available")
         
         # Determine risk level
@@ -623,35 +487,32 @@ class TokenAnalyzer:
             risk_level = "critical"
             recommendation = "avoid"
         
-        # Data quality assessment
-        if data_quality_score >= 80:
-            data_quality = "excellent"
-        elif data_quality_score >= 60:
-            data_quality = "good"
-        elif data_quality_score >= 40:
-            data_quality = "moderate"
-        else:
-            data_quality = "poor"
+        # Calculate confidence
+        base_confidence = len(service_responses) * 15
+        helius_bonus = 20 if helius_data else 0
+        security_bonus = 15 if security_checked else 0
+        price_bonus = 10 if price_available else 0
         
-        # Confidence calculation
-        confidence = min(100, data_quality_score + (10 if security_checked else 0) + (10 if price_available else 0))
+        confidence = min(100, base_confidence + helius_bonus + security_bonus + price_bonus)
         
         # Generate summary
         summary_parts = []
+        if helius_data:
+            summary_parts.append("Helius on-chain data analyzed")
         if positive_signals:
-            summary_parts.append(f"Positives: {', '.join(positive_signals[:3])}")
+            summary_parts.append(f"Positives: {', '.join(positive_signals[:2])}")
         if risk_factors:
-            summary_parts.append(f"Risks: {', '.join(risk_factors[:3])}")
+            summary_parts.append(f"Risks: {', '.join(risk_factors[:2])}")
         
-        summary = "; ".join(summary_parts) if summary_parts else "Limited data available for analysis"
+        summary = "; ".join(summary_parts) if summary_parts else "Limited data available"
         
         return {
             "score": round(overall_score, 1),
             "risk_level": risk_level,
             "recommendation": recommendation,
             "confidence": round(confidence, 1),
-            "confidence_score": round(confidence, 1),  # API router expects this key
-            "data_quality": data_quality,
+            "confidence_score": round(confidence, 1),
+            "data_quality": "excellent" if helius_data else "good",
             "summary": summary,
             "positive_signals": positive_signals,
             "risk_factors": risk_factors,
@@ -659,7 +520,74 @@ class TokenAnalyzer:
             "price_available": price_available,
             "security_checked": security_checked,
             "services_responded": len(service_responses),
-            "data_completeness": round(data_quality_score, 1),
+            "helius_data_available": bool(helius_data),
+            "analysis_completed": True
+        }
+    
+    def _create_fallback_analysis(self, data_sources: List[str], error_count: int) -> Dict[str, Any]:
+        """Create a fallback analysis when main analysis fails"""
+        
+        logger.warning(f"🆘 Creating fallback analysis with {len(data_sources)} sources and {error_count} errors")
+        
+        # Better scoring if Helius data is available
+        if "helius" in data_sources:
+            score = 55.0
+            confidence = 70.0
+            risk_level = "medium"
+            recommendation = "caution"
+        elif len(data_sources) >= 2:
+            score = 50.0
+            confidence = 60.0
+            risk_level = "medium"
+            recommendation = "caution"
+        elif len(data_sources) >= 1:
+            score = 45.0
+            confidence = 45.0
+            risk_level = "medium"
+            recommendation = "caution"
+        else:
+            score = 35.0
+            confidence = 25.0
+            risk_level = "high"
+            recommendation = "avoid"
+        
+        # Adjust for errors
+        if error_count > 5:
+            confidence = max(20.0, confidence - 15.0)
+            score = max(25.0, score - 10.0)
+        
+        positive_signals = []
+        if "helius" in data_sources:
+            positive_signals.append("Helius on-chain data available")
+        if len(data_sources) > 0:
+            positive_signals.append("Analysis completed with available data")
+        if not positive_signals:
+            positive_signals.append("Token address format validated")
+        
+        risk_factors = []
+        if error_count > 3:
+            risk_factors.append(f"High service error rate ({error_count} errors)")
+        if "helius" not in data_sources:
+            risk_factors.append("Limited on-chain data available")
+        if not risk_factors:
+            risk_factors.append("Analysis based on limited external data")
+        
+        return {
+            "score": score,
+            "risk_level": risk_level,
+            "recommendation": recommendation,
+            "confidence": confidence,
+            "confidence_score": confidence,
+            "data_quality": "limited",
+            "summary": f"Fallback analysis. {len(data_sources)} data sources processed. " + 
+                      ("Helius data included." if "helius" in data_sources else "No Helius data."),
+            "positive_signals": positive_signals,
+            "risk_factors": risk_factors,
+            "metadata_quality": max(10, len(data_sources) * 15),
+            "price_available": len(data_sources) > 0,
+            "security_checked": len(data_sources) > 1,
+            "services_responded": len(data_sources),
+            "helius_data_available": "helius" in data_sources,
             "analysis_completed": True
         }
 

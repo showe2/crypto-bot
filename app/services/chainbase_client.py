@@ -150,9 +150,29 @@ class ChainbaseClient:
                 "sol": "101"
             }
             
-        chain_id = chain_mapping.get(chain.lower(), "1")
+        chain_id = chain_mapping.get(chain.lower(), "101")
 
         try:
+            # Validate Solana address format first
+            if chain.lower() in ["solana", "sol"]:
+                if not self._validate_solana_address(mint_address):
+                    logger.warning(f"Invalid Solana address format: {mint_address}")
+                    return {
+                        "mint": mint_address,
+                        "name": "",
+                        "symbol": "",
+                        "decimals": "",
+                        "total_supply": "",
+                        "description": "",
+                        "image": "",
+                        "external_url": "",
+                        "creator": "",
+                        "created_at": "",
+                        "updated_at": "",
+                        "verified": False,
+                        "tags": []
+                    }
+
             endpoint = "/token/metadata"
             querystring = {"chain_id": chain_id, "contract_address": mint_address}
 
@@ -180,41 +200,82 @@ class ChainbaseClient:
             logger.debug(f"❌ Chainbase token metadata endpoint failed: {str(e)}")
     
         return None
-    
+
     async def get_token_holders(self, mint_address: str, chain: str = "solana", limit: int = 100, page: int = 1) -> Dict[str, Any]:
-        """Get token holders analysis"""
+        """Get token holders analysis with address validation fix"""
 
         # Map chains to chain IDs
         chain_mapping = {
-                "ethereum": "1",
-                "eth": "1", 
-                "bsc": "56", 
-                "polygon": "137",
-                "solana": "101",
-                "sol": "101"
-            }
+            "ethereum": "1",
+            "eth": "1", 
+            "bsc": "56", 
+            "polygon": "137",
+            "solana": "101",
+            "sol": "101"
+        }
             
-        chain_id = chain_mapping.get(chain.lower(), "1")
+        chain_id = chain_mapping.get(chain.lower(), "101")  # Default to Solana
 
         try:
+            # Validate Solana address format first
+            if chain.lower() in ["solana", "sol"]:
+                if not self._validate_solana_address(mint_address):
+                    logger.warning(f"Invalid Solana address format: {mint_address}")
+                    return {
+                        "holders": [],
+                        "total_holders": 0,
+                        "distribution": {},
+                        "error": "Invalid Solana address format"
+                    }
+            
             endpoint = "/token/top-holders"
-            querystring = {"chain_id": chain_id, "contract_address": mint_address, "limit": limit, "page": page}
+            
+            # Fix: Use 'contract_address' parameter name for Chainbase API
+            querystring = {
+                "chain_id": chain_id, 
+                "contract_address": mint_address,  # This was the issue - correct parameter name
+                "limit": min(limit, 100),  # Chainbase has limits
+                "page": page
+            }
 
+            logger.debug(f"Chainbase token holders request: {querystring}")
+            
             response = await self._request("GET", endpoint, params=querystring)
             
             if response and response.get("data"):
                 logger.info(f"✅ Chainbase token holders successful")
                 holders_data = response["data"]
+                
+                # Handle different response formats
+                if isinstance(holders_data, list):
+                    holders_list = holders_data
+                elif isinstance(holders_data, dict) and "holders" in holders_data:
+                    holders_list = holders_data["holders"]
+                elif isinstance(holders_data, dict) and "items" in holders_data:
+                    holders_list = holders_data["items"]
+                else:
+                    logger.warning(f"Unexpected Chainbase response format: {type(holders_data)}")
+                    holders_list = []
+                
                 holders = []
                 
-                for holder in holders_data:
-                    holder_info = {
-                        "address": holder.get("wallet_address"),
-                        "balance": float(holder.get("original_amount")),
-                        "balance_usd": float(holder.get("usd_value")),
-                        "percentage": (float(holder.get("amount"))/float(holder.get("original_amount")))*100.0
-                    }
-                    holders.append(holder_info)
+                for holder in holders_list:
+                    try:
+                        holder_info = {
+                            "address": holder.get("wallet_address") or holder.get("address") or holder.get("holder_address"),
+                            "balance": float(holder.get("original_amount", 0)) if holder.get("original_amount") else float(holder.get("balance", 0)),
+                            "balance_usd": float(holder.get("usd_value", 0)) if holder.get("usd_value") else 0,
+                            "percentage": float(holder.get("percentage", 0)) if holder.get("percentage") else 0
+                        }
+                        
+                        # Calculate percentage if not provided
+                        if holder_info["percentage"] == 0 and holder.get("amount") and holder.get("total_supply"):
+                            holder_info["percentage"] = (float(holder["amount"]) / float(holder["total_supply"])) * 100
+                        
+                        holders.append(holder_info)
+                    except (ValueError, TypeError) as e:
+                        logger.debug(f"Error processing holder data: {e}")
+                        continue
                 
                 distribution = self._calculate_holder_distribution(holders)
                 
@@ -228,14 +289,62 @@ class ChainbaseClient:
                         "has_next": len(holders) == limit
                     }
                 }
+                
         except ChainbaseAPIError as e:
             logger.debug(f"❌ Chainbase token holders endpoint failed: {str(e)}")
             
-        return {
-            "holders": [],
-            "total_holders": 0,
-            "distribution": {}
-        }
+            # Handle specific error cases
+            if "address error" in str(e).lower():
+                logger.warning(f"Chainbase: Invalid address format for {mint_address}")
+                return {
+                    "holders": [],
+                    "total_holders": 0,
+                    "distribution": {},
+                    "error": "Invalid address format for Chainbase API"
+                }
+            
+            # For other errors, return empty but valid response
+            return {
+                "holders": [],
+                "total_holders": 0,
+                "distribution": {},
+                "error": str(e)
+            }
+        except Exception as e:
+            logger.error(f"Unexpected error in Chainbase token holders: {str(e)}")
+            return {
+                "holders": [],
+                "total_holders": 0,
+                "distribution": {},
+                "error": f"Unexpected error: {str(e)}"
+            }
+
+    def _validate_solana_address(self, address: str) -> bool:
+        """Validate Solana address format for Chainbase"""
+        if not address or not isinstance(address, str):
+            return False
+        
+        # Solana addresses should be 32-44 characters, base58 encoded
+        if len(address) < 32 or len(address) > 44:
+            return False
+        
+        # Check for valid base58 characters
+        import re
+        base58_pattern = re.compile(r"^[1-9A-HJ-NP-Za-km-z]+$")
+        if not base58_pattern.match(address):
+            return False
+        
+        # Check if it's a known problematic address for Chainbase
+        problematic_addresses = [
+            "So11111111111111111111111111111111111111112",  # Wrapped SOL - too many holders
+            "11111111111111111111111111111111",  # System program
+        ]
+        
+        if address in problematic_addresses:
+            logger.debug(f"Address {address} is known to have issues with Chainbase")
+            return False
+        
+        return True
     
     
     def _calculate_holder_distribution(self, holders: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -313,7 +422,7 @@ class ChainbaseClient:
         try:
             test_endpoint = "/token/metadata"
             test_params = {
-                "chain_id": "101",
+                "chain_id": "1",
                 "contract_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             }
             

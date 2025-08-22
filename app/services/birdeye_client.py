@@ -21,42 +21,26 @@ class BirdeyeAPIError(Exception):
 
 
 class BirdeyeClient:
-    """Birdeye API client for price data, volumes, and historical data"""
+    """Enhanced Birdeye API client with improved rate limiting"""
     
     def __init__(self):
         self.api_key = settings.BIRDEYE_API_KEY
         self.base_url = settings.BIRDEYE_BASE_URL
         self.session = None
-        self._rate_limit_delay = 0.5  # Increased to 500ms to avoid rate limits
+        self._rate_limit_delay = 1.0  # Increased to 1 second to handle rate limits better
         self._last_request_time = 0
+        self._request_lock = asyncio.Lock()  # Add lock for sequential requests
         self.timeout = settings.API_TIMEOUT
         
-        # Updated API endpoints based on current Birdeye API documentation
-        self.api_endpoints = {
-            "multi_price": "/defi/multi_price"
-        }
+        # Track request timing for better rate limiting
+        self._request_times = []
+        self._max_requests_per_second = 1  # Conservative rate limit
         
-        # Log API key status (masked for security)
         if self.api_key:
             masked_key = f"{self.api_key[:8]}***{self.api_key[-4:]}" if len(self.api_key) > 12 else f"{self.api_key[:4]}***"
-            logger.debug(f"Birdeye API key configured: {masked_key} (length: {len(self.api_key)})")
+            logger.debug(f"Birdeye API key configured: {masked_key}")
         else:
-            logger.debug("Birdeye API key not configured - check BIRDEYE_API_KEY in .env file")
-        
-        logger.debug(f"Birdeye base URL: {self.base_url}")
-    
-    async def __aenter__(self):
-        """Async context manager entry"""
-        if not self.session:
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            self.session = aiohttp.ClientSession(timeout=timeout)
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit"""
-        if self.session:
-            await self.session.close()
-            self.session = None
+            logger.debug("Birdeye API key not configured")
     
     async def _ensure_session(self):
         """Ensure session is available"""
@@ -64,48 +48,36 @@ class BirdeyeClient:
             timeout = aiohttp.ClientTimeout(total=self.timeout)
             self.session = aiohttp.ClientSession(timeout=timeout)
     
-    async def _rate_limit(self):
-        """Simple rate limiting with increased delay"""
-        current_time = time.time()
-        time_since_last = current_time - self._last_request_time
-        
-        if time_since_last < self._rate_limit_delay:
-            await asyncio.sleep(self._rate_limit_delay - time_since_last)
-        
-        self._last_request_time = time.time()
-    
-    def _validate_solana_address(self, address: str) -> bool:
-        """Validate Solana address format"""
-        if not address or not isinstance(address, str):
-            return False
-        
-        # Solana addresses are base58 encoded, typically 44 characters (32-44 range)
-        if len(address) < 32 or len(address) > 44:
-            logger.debug(f"Address length invalid: {len(address)} (expected 32-44)")
-            return False
-        
-        # Check for valid base58 characters (Bitcoin alphabet)
-        import re
-        base58_pattern = re.compile(r"^[1-9A-HJ-NP-Za-km-z]+$")
-        if not base58_pattern.match(address):
-            logger.debug(f"Address contains invalid base58 characters")
-            return False
+    async def _smart_rate_limit(self):
+        """Smart rate limiting that adapts to API responses"""
+        async with self._request_lock:
+            current_time = time.time()
             
-        # Additional check - most Solana addresses are exactly 44 characters
-        if len(address) == 44:
-            logger.debug(f"Address format valid: {address[:8]}...{address[-4:]} (length: {len(address)})")
-            return True
-        elif len(address) == 43:
-            logger.debug(f"Address format likely valid: {address[:8]}...{address[-4:]} (length: {len(address)})")
-            return True
-        else:
-            logger.debug(f"Address length unusual but might be valid: {len(address)}")
-            return True  # Allow it through, let the API decide
+            # Clean old request times (older than 1 second)
+            self._request_times = [t for t in self._request_times if current_time - t < 1.0]
+            
+            # If we've made too many requests in the last second, wait
+            if len(self._request_times) >= self._max_requests_per_second:
+                sleep_time = 1.0 - (current_time - self._request_times[0])
+                if sleep_time > 0:
+                    logger.debug(f"Birdeye rate limiting: sleeping {sleep_time:.2f}s")
+                    await asyncio.sleep(sleep_time)
+            
+            # Additional delay based on last request
+            time_since_last = current_time - self._last_request_time
+            if time_since_last < self._rate_limit_delay:
+                additional_sleep = self._rate_limit_delay - time_since_last
+                logger.debug(f"Birdeye additional delay: {additional_sleep:.2f}s")
+                await asyncio.sleep(additional_sleep)
+            
+            # Record this request
+            self._request_times.append(time.time())
+            self._last_request_time = time.time()
     
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
-        """Make HTTP request to Birdeye API"""
+        """Make HTTP request with enhanced rate limiting"""
         await self._ensure_session()
-        await self._rate_limit()
+        await self._smart_rate_limit()
 
         # Setup headers
         headers = {
@@ -117,17 +89,12 @@ class BirdeyeClient:
         # Add API key if available
         if self.api_key:
             headers["X-API-KEY"] = self.api_key
-            logger.debug(f"Using API key: {self.api_key[:8]}*** (length: {len(self.api_key)})")
-        else:
-            logger.debug("No API key configured, trying without authentication")
         
-        url = self.base_url+endpoint
+        url = self.base_url + endpoint
         params = kwargs.pop("params", {})
         json_data = kwargs.pop("json", None)
         
         logger.debug(f"Birdeye {method} {endpoint}")
-        logger.debug(f"Full URL: {url}")
-        logger.debug(f"Params: {params}")
         
         try:
             async with self.session.request(
@@ -139,40 +106,41 @@ class BirdeyeClient:
                 **kwargs
             ) as response:
                 
-                logger.debug(f"Response status: {response.status}")
+                logger.debug(f"Birdeye response status: {response.status}")
                 content_type = response.headers.get("content-type", "").lower()
-                logger.debug(f"Content type: {content_type}")
                 
                 if response.status == 200:
                     if "application/json" in content_type:
                         response_data = await response.json()
                         logger.info(f"✅ Birdeye {method} {endpoint} successful")
-                        logger.debug(f"Response data keys: {list(response_data.keys()) if isinstance(response_data, dict) else 'Not a dict'}")
                         return response_data
                     else:
                         text_response = await response.text()
                         logger.error(f"Unexpected content type: {content_type}")
-                        logger.debug(f"Response content: {text_response[:300]}")
-                        raise BirdeyeAPIError(f"Expected JSON, got {content_type}. Response: {text_response[:200]}")
-                        
-                elif response.status == 401:
-                    error_text = await response.text()
-                    logger.error(f"401 Authentication failed")
-                    logger.error(f"Request URL: {url}")
-                    logger.error(f"Response text: {error_text[:500]}")
-                    
-                    if self.api_key:
-                        raise BirdeyeAPIError(f"Authentication failed: Invalid API key. Response: {error_text[:200]}")
-                    else:
-                        raise BirdeyeAPIError(f"Authentication required: API key needed. Response: {error_text[:200]}")
+                        raise BirdeyeAPIError(f"Expected JSON, got {content_type}")
                         
                 elif response.status == 429:
-                    retry_after = int(response.headers.get("Retry-After", 2))
-                    logger.warning(f"Birdeye rate limited, waiting {retry_after}s")
-                    await asyncio.sleep(retry_after)
-                    # Retry once
-                    return await self._request(method, endpoint, **kwargs)
+                    # Rate limited - increase delay and retry
+                    retry_after = int(response.headers.get("Retry-After", 3))
+                    logger.warning(f"Birdeye rate limited, waiting {retry_after}s and increasing delay")
                     
+                    # Increase rate limit delay for future requests
+                    self._rate_limit_delay = min(2.0, self._rate_limit_delay * 1.5)
+                    self._max_requests_per_second = max(0.5, self._max_requests_per_second * 0.8)
+                    
+                    await asyncio.sleep(retry_after)
+                    # Retry once with new rate limits
+                    return await self._request(method, endpoint, params=params, json=json_data, **kwargs)
+                    
+                elif response.status == 401:
+                    error_text = await response.text()
+                    logger.error(f"401 Authentication failed: {error_text[:500]}")
+                    
+                    if self.api_key:
+                        raise BirdeyeAPIError(f"Authentication failed: Invalid API key")
+                    else:
+                        raise BirdeyeAPIError(f"Authentication required: API key needed")
+                        
                 else:
                     error_text = await response.text()
                     logger.error(f"Birdeye API error {response.status}: {error_text[:500]}")
@@ -187,9 +155,51 @@ class BirdeyeClient:
         except Exception as e:
             raise BirdeyeAPIError(f"Unexpected error: {str(e)}")
     
-
+    async def get_multiple_data_sequential(self, token_address: str) -> Dict[str, Any]:
+        """Get multiple data points from Birdeye with proper sequential processing"""
+        logger.info(f"🔧 Birdeye sequential data collection for {token_address}")
+        
+        results = {
+            "token_address": token_address,
+            "timestamp": time.time(),
+            "data_collected": [],
+            "errors": []
+        }
+        
+        # Define the sequence of calls
+        sequential_calls = [
+            ("price", lambda: self.get_token_price(token_address, include_liquidity=True, check_liquidity=100)),
+            ("trades", lambda: self.get_token_trades(token_address, sort_type="desc", limit=20))
+        ]
+        
+        for call_name, call_func in sequential_calls:
+            try:
+                logger.debug(f"Birdeye calling {call_name} endpoint")
+                data = await call_func()
+                
+                if data:
+                    results[call_name] = data
+                    results["data_collected"].append(call_name)
+                    logger.info(f"✅ Birdeye {call_name} data collected")
+                else:
+                    logger.warning(f"⚠️ Birdeye {call_name} returned no data")
+                    results["errors"].append(f"{call_name}: No data returned")
+                
+                # Wait between calls if we have more calls to make
+                if call_name != sequential_calls[-1][0]:  # Not the last call
+                    await asyncio.sleep(1.2)  # Slightly longer delay between different endpoints
+                    
+            except Exception as e:
+                error_msg = f"Birdeye {call_name} failed: {str(e)}"
+                logger.warning(f"❌ {error_msg}")
+                results["errors"].append(error_msg)
+        
+        logger.info(f"✅ Birdeye sequential collection completed: {len(results['data_collected'])} datasets")
+        return results
+    
+    # Your existing methods remain the same, just use the improved _request method
     async def get_token_price(self, token_address: str, include_liquidity: bool = True, check_liquidity: int = 100) -> Dict[str, Any]:
-        """Get current token price and basic info with updated endpoints"""
+        """Get current token price and basic info with improved rate limiting"""
         try:
             endpoint = "/defi/price"
             inc_liquidity = "true" if include_liquidity else "false"
@@ -220,49 +230,13 @@ class BirdeyeClient:
             return price_info
             
         except BirdeyeAPIError:
-            # Re-raise Birdeye specific errors
             raise
         except Exception as e:
             logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
             return None
-        
     
-    #UNAVAILABLE - REQUIRES PLAN UPGRADE
-    async def get_token_metadata(self, token_address: str) -> Dict[str, Any]:
-        """Get token metadata (simplified version to avoid API calls)"""
-        try:
-            endpoint = "/defi/v3/token/meta-data/single"
-            querystring = {"address": token_address}
-            
-            response = await self._request("GET", endpoint=endpoint, params=querystring)
-            
-            if not response.get("data") and not response.get("success"):
-                logger.warning(f"Birdeye API returned empty data for {token_address}")
-                return None
-            
-            # Handle different response formats
-            data = response.get("data", response)
-
-            # Standardize the response format
-            metadata_info = {
-                "address": token_address,
-                "symbol": data["symbol"],
-                "name": data["name"],
-                "extensions": data["extensions"]
-            }
-            
-            return metadata_info
-            
-        except BirdeyeAPIError:
-            # Re-raise Birdeye specific errors
-            raise
-        except Exception as e:
-            logger.error(f"Error getting token metadata from Birdeye for {token_address}: {str(e)}")
-            return None
-    
-
     async def get_token_trades(self, token_address: str, sort_type: str = "desc", limit: int = 50) -> List[Dict[str, Any]]:
-        """Get recent token trades"""
+        """Get recent token trades with improved rate limiting"""
         try:
             endpoint = "/defi/v3/token/txs"
             querystring = {"address": token_address, "sort_type": sort_type, "limit": limit}
@@ -279,10 +253,9 @@ class BirdeyeClient:
             return data
             
         except BirdeyeAPIError:
-            # Re-raise Birdeye specific errors
             raise
         except Exception as e:
-            logger.error(f"Error getting token price from Birdeye for {token_address}: {str(e)}")
+            logger.error(f"Error getting token trades from Birdeye for {token_address}: {str(e)}")
             return None
         
     
@@ -481,3 +454,10 @@ async def check_birdeye_health() -> Dict[str, Any]:
     """Check Birdeye service health"""
     async with BirdeyeClient() as client:
         return await client.health_check()
+    
+
+# Convenience function for token analyzer
+async def get_birdeye_data_sequential(token_address: str) -> Dict[str, Any]:
+    """Get Birdeye data with proper sequential processing"""
+    async with BirdeyeClient() as client:
+        return await client.get_multiple_data_sequential(token_address)
