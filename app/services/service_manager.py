@@ -41,7 +41,7 @@ class APIManager:
                 "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient(),
                 "dexscreener": DexScreenerClient(),
-                "rugcheck": RugCheckClient()  # Added RugCheck
+                "rugcheck": RugCheckClient()
             }
             logger.info("✅ All API clients initialized (including RugCheck)")
         except Exception as e:

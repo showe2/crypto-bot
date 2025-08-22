@@ -313,7 +313,7 @@ class ChainbaseClient:
         try:
             test_endpoint = "/token/metadata"
             test_params = {
-                "chain_id": "1",
+                "chain_id": "101",
                 "contract_address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
             }
             

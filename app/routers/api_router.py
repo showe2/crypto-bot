@@ -74,7 +74,7 @@ async def analyze_token_endpoint(
         # Log successful analysis
         logger.info(
             f"✅ API analysis completed for {token_address} in {analysis_result['metadata']['processing_time_seconds']}s "
-            f"(confidence: {analysis_result['analysis_summary']['confidence_score']}%, "
+            f"(confidence: {analysis_result['overall_analysis']['confidence_score']}%, "
             f"risk: {analysis_result['risk_assessment']['risk_category']})"
         )
         
@@ -378,7 +378,7 @@ async def explain_analysis_result(
     """
     try:
         # Validate analysis data structure
-        required_keys = ["metadata", "analysis_summary", "risk_assessment"]
+        required_keys = ["metadata", "overall_analysis", "risk_assessment"]
         missing_keys = [key for key in required_keys if key not in analysis_data]
         
         if missing_keys:
@@ -389,7 +389,7 @@ async def explain_analysis_result(
         
         # Extract key information for explanation
         token_address = analysis_data.get("metadata", {}).get("token_address", "Unknown")
-        confidence = analysis_data.get("analysis_summary", {}).get("confidence_score", 0)
+        confidence = analysis_data.get("overall_analysis", {}).get("confidence_score", 0)
         risk_level = analysis_data.get("risk_assessment", {}).get("risk_category", "unknown")
         
         # Generate explanation based on focus area

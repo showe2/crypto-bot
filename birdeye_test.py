@@ -7,15 +7,17 @@ async def main():
             "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
         )
 
+        await asyncio.sleep(5)
+
         # UNAVAILABLE - REQUIRES PLAN UPGRADE
         # metadata = await client.get_token_metadata(
         #     "So11111111111111111111111111111111111111112",
         # )
 
-        # trades = await client.get_token_trades(
-        #     "So11111111111111111111111111111111111111112",
-        #     limit=10
-        # )
+        trades = await client.get_token_trades(
+            "So11111111111111111111111111111111111111112",
+            limit=10
+        )
 
         # trending = await client.get_trending_tokens(
         #     limit=5
@@ -39,7 +41,7 @@ async def main():
         #     limit=3
         # )
 
-        print(price)
+        print(price, trades)
 
 if __name__ == "__main__":
     asyncio.run(main())
