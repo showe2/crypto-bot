@@ -132,14 +132,15 @@ class TokenAnalyzer:
                     api_manager.clients["helius"].get_token_supply, 
                     token_address
                 )
-                service_tasks["helius_accounts"] = self._safe_service_call(
-                    api_manager.clients["helius"].get_token_accounts, 
-                    token_address, account_limit  # Use reduced limit
-                )
                 service_tasks["helius_metadata"] = self._safe_service_call(
                     api_manager.clients["helius"].get_token_metadata, 
                     [token_address]
                 )
+                # TEMPORARILY UNAVAILABLE
+                # service_tasks["helius_accounts"] = self._safe_service_call(
+                #     api_manager.clients["helius"].get_token_accounts, 
+                #     token_address, account_limit  # Use reduced limit
+                # )
                 analysis_response["metadata"]["services_attempted"] += 1
                 logger.info(f"🔗 Helius tasks prepared (account limit: {account_limit})")
             except Exception as e:
