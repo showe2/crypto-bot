@@ -110,7 +110,7 @@ async def analysis_page(request: Request, token: Optional[str] = None):
         "selected_token": token,
         "analysis_types": ["quick", "deep"],
         "example_tokens": [
-            {"name": "Wrapped SOL", "mint": "So11111111111111111111111111111111111112", "symbol": "WSOL"},
+            {"name": "Wrapped SOL", "mint": "So11111111111111111111111111111111111111112", "symbol": "WSOL"},
             {"name": "USD Coin", "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "symbol": "USDC"},
             {"name": "Raydium", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "symbol": "RAY"}
         ]

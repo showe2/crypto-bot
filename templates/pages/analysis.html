@@ -96,33 +96,7 @@
             :disabled="isAnalyzing"
           >
             <option value="quick">Quick Analysis (API)</option>
-            <option value="deep">Deep Analysis (API + LLM)</option>
-          </select>
-        </div>
-
-        <div x-show="form.analysisType === 'comprehensive'">
-          <label class="form-label">Force Refresh</label>
-          <label class="flex items-center">
-            <input
-              type="checkbox"
-              x-model="form.forceRefresh"
-              :disabled="isAnalyzing"
-              class="mr-2"
-            />
-            <span class="text-sm">Force refresh cached data</span>
-          </label>
-        </div>
-
-        <div>
-          <label class="form-label">Priority</label>
-          <select
-            x-model="form.priority"
-            class="form-input form-select"
-            :disabled="isAnalyzing"
-          >
-            <option value="normal">Normal</option>
-            <option value="high">High Priority</option>
-            <option value="low">Low Priority</option>
+            <option value="deep">Deep Analysis (API+LLM)</option>
           </select>
         </div>
       </div>
@@ -502,564 +476,626 @@
     </div>
   </div>
 
-  <!-- No Results State -->
-  <div x-show="!hasResults && !isAnalyzing" class="text-center py-12">
-    <div
-      class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"
-    >
-      <i class="fas fa-search text-gray-400 text-3xl"></i>
-    </div>
-    <h3 class="text-lg font-medium text-gray-900 mb-2">Ready to Analyze</h3>
-    <p class="text-gray-600 mb-6">
-      Enter a token mint address above to start comprehensive AI analysis
-    </p>
-    <div class="flex justify-center space-x-4">
-      <button
-        @click="loadExampleAnalysis()"
-        class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-      >
-        <i class="fas fa-play mr-2"></i>
-        Try Example
-      </button>
-    </div>
-  </div>
-</div>
+  <script>
+    function analysisData() {
+      return {
+        form: {
+          tokenMint: '{{ selected_token or "" }}',
+          analysisType: "quick",
+          priority: "normal",
+          forceRefresh: false,
+        },
+        isAnalyzing: false,
+        hasResults: false,
+        results: null,
+        rawResults: null,
+        analysisProgress: {
+          step: "Initializing...",
+          message: "Starting analysis...",
+          percent: 0,
+        },
 
-<script>
-  function analysisData() {
-    return {
-      form: {
-        tokenMint: '{{ selected_token or "" }}',
-        analysisType: "quick",
-        priority: "normal",
-        forceRefresh: false,
-      },
-      isAnalyzing: false,
-      hasResults: false,
-      results: null,
-      rawResults: null,
-      analysisProgress: {
-        step: "Initializing...",
-        message: "Starting analysis...",
-        percent: 0,
-      },
+        get isValidAddress() {
+          return this.isValidSolanaAddress(this.form.tokenMint);
+        },
 
-      get isValidAddress() {
-        return this.isValidSolanaAddress(this.form.tokenMint);
-      },
-
-      initAnalysis() {
-        // Initialize with URL token if provided
-        const urlParams = new URLSearchParams(window.location.search);
-        const token = urlParams.get("token");
-        if (token) {
-          this.form.tokenMint = token;
-          // Auto-analyze if valid token in URL
-          if (this.isValidAddress) {
-            setTimeout(() => this.analyzeToken(), 1000);
+        initAnalysis() {
+          // Initialize with URL token if provided
+          const urlParams = new URLSearchParams(window.location.search);
+          const token = urlParams.get("token");
+          if (token) {
+            this.form.tokenMint = token;
+            // Auto-analyze if valid token in URL
+            if (this.isValidAddress) {
+              setTimeout(() => this.analyzeToken(), 1000);
+            }
           }
-        }
-      },
+        },
 
-      getAnalyzeButtonText() {
-        switch (this.form.analysisType) {
-          case "quick":
-            return "Quick Analysis (Frontend API)";
-          case "deep":
-            return "Deep Analysis (LLM API)";
-          case "comprehensive":
-            return "Comprehensive Analysis (Full API)";
-          default:
-            return "Analyze Token";
-        }
-      },
-
-      async analyzeToken() {
-        console.log("🚀 Starting token analysis...", {
-          tokenMint: this.form.tokenMint,
-          analysisType: this.form.analysisType,
-          isValidAddress: this.isValidAddress,
-        });
-
-        if (!this.isValidAddress) {
-          console.error("❌ Invalid token address:", this.form.tokenMint);
-          this.showNotification(
-            "error",
-            "Invalid Address",
-            "Please enter a valid Solana token mint address"
-          );
-          return;
-        }
-
-        this.isAnalyzing = true;
-        this.hasResults = false;
-        this.results = null;
-        this.rawResults = null;
-
-        try {
-          // Check if SolanaAI is available
-          if (!window.SolanaAI || !window.SolanaAI.api) {
-            throw new Error(
-              "SolanaAI API not loaded. Please refresh the page."
-            );
-          }
-
-          console.log("📡 Making API call...", {
-            endpoint: this.form.analysisType,
-            tokenMint: this.form.tokenMint,
-          });
-
-          // Use the enhanced API from main.js
-          const analysisOptions = {
-            forceRefresh: this.form.forceRefresh,
-            priority: this.form.priority,
-          };
-
-          let result;
-
-          // Direct API calls based on analysis type
+        getAnalyzeButtonText() {
           switch (this.form.analysisType) {
             case "quick":
-              result = await this.callQuickAnalysis(this.form.tokenMint);
-              break;
-            // case "deep":
-            //   result = await this.callDeepAnalysis(this.form.tokenMint);
-            //   break;
+              return "Quick Analysis (Frontend API)";
+            case "deep":
+              return "Deep Analysis (LLM API)";
+            case "comprehensive":
+              return "Comprehensive Analysis (Full API)";
             default:
+              return "Analyze Token";
+          }
+        },
+
+        async analyzeToken() {
+          console.log("🚀 Starting token analysis...", {
+            tokenMint: this.form.tokenMint,
+            analysisType: this.form.analysisType,
+            isValidAddress: this.isValidAddress,
+          });
+
+          if (!this.isValidAddress) {
+            console.error("❌ Invalid token address:", this.form.tokenMint);
+            this.showNotification(
+              "error",
+              "Invalid Address",
+              "Please enter a valid Solana token mint address"
+            );
+            return;
+          }
+
+          this.isAnalyzing = true;
+          this.hasResults = false;
+          this.results = null;
+          this.rawResults = null;
+
+          try {
+            // Check if SolanaAI is available
+            if (!window.SolanaAI || !window.SolanaAI.api) {
               throw new Error(
-                `Unknown analysis type: ${this.form.analysisType}`
+                "SolanaAI API not loaded. Please refresh the page."
               );
+            }
+
+            console.log("📡 Making API call...", {
+              endpoint: this.form.analysisType,
+              tokenMint: this.form.tokenMint,
+            });
+
+            // Use the enhanced API from main.js
+            const analysisOptions = {
+              forceRefresh: this.form.forceRefresh,
+              priority: this.form.priority,
+            };
+
+            let result;
+
+            // Direct API calls based on analysis type
+            switch (this.form.analysisType) {
+              case "quick":
+                result = await this.callQuickAnalysis(this.form.tokenMint);
+                break;
+              // case "deep":
+              //   result = await this.callDeepAnalysis(this.form.tokenMint);
+              //   break;
+              default:
+                throw new Error(
+                  `Unknown analysis type: ${this.form.analysisType}`
+                );
+            }
+
+            console.log("✅ Analysis result received:", result);
+
+            this.rawResults = result;
+            this.results =
+              window.SolanaAI.analysis.formatAnalysisResult(result);
+            this.hasResults = true;
+
+            const summary = window.SolanaAI.analysis.generateSummary(result);
+            this.showNotification("success", "Analysis Complete", summary);
+          } catch (error) {
+            console.error("❌ Analysis error:", error);
+
+            // More detailed error messages
+            let errorMessage = error.message || "Failed to analyze token";
+
+            if (error.message && error.message.includes("fetch")) {
+              errorMessage = "Network error - please check your connection";
+            } else if (error.message && error.message.includes("404")) {
+              errorMessage = "Analysis endpoint not found";
+            } else if (error.message && error.message.includes("422")) {
+              errorMessage = "Invalid token address format";
+            } else if (error.message && error.message.includes("500")) {
+              errorMessage = "Server error - please try again later";
+            }
+
+            this.showNotification("error", "Analysis Failed", errorMessage);
+          } finally {
+            this.isAnalyzing = false;
+            this.analysisProgress.percent = 100;
+            this.analysisProgress.message = "Complete";
+          }
+        },
+
+        // Direct API calls with better error handling
+        async callQuickAnalysis(tokenMint) {
+          console.log("📞 Calling quick analysis API...");
+
+          try {
+            const response = await fetch(`/quick/${tokenMint}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+
+            console.log("📡 Quick analysis response status:", response.status);
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                errorData.message ||
+                  errorData.detail ||
+                  `HTTP ${response.status}`
+              );
+            }
+
+            const data = await response.json();
+            console.log("✅ Quick analysis data received:", data);
+            return data;
+          } catch (error) {
+            console.error("❌ Quick analysis failed:", error);
+            throw error;
+          }
+        },
+
+        async callDeepAnalysis(tokenMint) {
+          console.log("📞 Calling deep analysis API...");
+
+          try {
+            const response = await fetch(`/deep/${tokenMint}`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+            });
+
+            console.log("📡 Deep analysis response status:", response.status);
+
+            if (!response.ok) {
+              const errorData = await response.json().catch(() => ({}));
+              throw new Error(
+                errorData.message ||
+                  errorData.detail ||
+                  `HTTP ${response.status}`
+              );
+            }
+
+            const data = await response.json();
+            console.log("✅ Deep analysis data received:", data);
+            return data;
+          } catch (error) {
+            console.error("❌ Deep analysis failed:", error);
+            throw error;
+          }
+        },
+
+        showNotification(type, title, message) {
+          // Try to use parent notification system
+          if (this.$parent && this.$parent.showNotification) {
+            this.$parent.showNotification(type, title, message);
+          }
+          // Fallback to SolanaAI notifications
+          else if (window.SolanaAI && window.SolanaAI.notifications) {
+            window.SolanaAI.notifications[type](title, message);
+          }
+          // ✅ Use custom toast notification
+          else if (window.showToast) {
+            window.showToast(type, title, message);
+          }
+          // Absolute fallback
+          else {
+            console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+            alert(`${title}: ${message}`);
+          }
+        },
+
+        async simulateProgress() {
+          const steps = [
+            { step: "Validating token address...", percent: 10 },
+            { step: "Connecting to analysis APIs...", percent: 25 },
+            { step: "Fetching token data...", percent: 40 },
+            { step: "Processing analysis...", percent: 60 },
+            { step: "Generating insights...", percent: 80 },
+            { step: "Finalizing results...", percent: 95 },
+          ];
+
+          // Non-blocking progress simulation
+          for (const progressStep of steps) {
+            if (!this.isAnalyzing) break; // Stop if analysis was cancelled
+
+            this.analysisProgress = {
+              ...progressStep,
+              message: progressStep.step,
+            };
+
+            // Don't await - let it update in background
+            setTimeout(() => {}, 200);
+          }
+        },
+
+        // Helper functions to extract data from results
+        getTokenName() {
+          if (!this.results) return "Unknown Token";
+
+          if (this.results.formattedData?.tokenInfo?.name) {
+            return this.results.formattedData.tokenInfo.name;
           }
 
-          console.log("✅ Analysis result received:", result);
-
-          this.rawResults = result;
-          this.results = window.SolanaAI.analysis.formatAnalysisResult(result);
-          this.hasResults = true;
-
-          const summary = window.SolanaAI.analysis.generateSummary(result);
-          this.showNotification("success", "Analysis Complete", summary);
-        } catch (error) {
-          console.error("❌ Analysis error:", error);
-
-          // More detailed error messages
-          let errorMessage = error.message || "Failed to analyze token";
-
-          if (error.message && error.message.includes("fetch")) {
-            errorMessage = "Network error - please check your connection";
-          } else if (error.message && error.message.includes("404")) {
-            errorMessage = "Analysis endpoint not found";
-          } else if (error.message && error.message.includes("422")) {
-            errorMessage = "Invalid token address format";
-          } else if (error.message && error.message.includes("500")) {
-            errorMessage = "Server error - please try again later";
+          if (this.results.data?.token_info?.name) {
+            return this.results.data.token_info.name;
           }
 
-          this.showNotification("error", "Analysis Failed", errorMessage);
-        } finally {
-          this.isAnalyzing = false;
-          this.analysisProgress.percent = 100;
-          this.analysisProgress.message = "Complete";
-        }
-      },
+          return "Unknown Token";
+        },
 
-      // Direct API calls with better error handling
-      async callQuickAnalysis(tokenMint) {
-        console.log("📞 Calling quick analysis API...");
+        getTokenSymbol() {
+          if (!this.results) return "N/A";
 
-        try {
-          const response = await fetch(`/quick/${tokenMint}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
+          if (this.results.formattedData?.tokenInfo?.symbol) {
+            return this.results.formattedData.tokenInfo.symbol;
+          }
 
-          console.log("📡 Quick analysis response status:", response.status);
+          if (this.results.data?.token_info?.symbol) {
+            return this.results.data.token_info.symbol;
+          }
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              errorData.message || errorData.detail || `HTTP ${response.status}`
+          return "N/A";
+        },
+
+        getPriceData() {
+          if (!this.results) return {};
+
+          if (this.results.formattedData?.priceData) {
+            return this.results.formattedData.priceData;
+          }
+
+          if (this.results.data?.price_data) {
+            return this.results.data.price_data;
+          }
+
+          return {};
+        },
+
+        getQuickAnalysis() {
+          if (!this.results) return null;
+
+          if (this.results.formattedData?.quickAnalysis) {
+            return this.results.formattedData.quickAnalysis;
+          }
+
+          if (this.results.data?.quick_analysis) {
+            return this.results.data.quick_analysis;
+          }
+
+          return null;
+        },
+
+        getDeepAnalysis() {
+          if (!this.results) return null;
+
+          if (this.results.formattedData?.deepAnalysis) {
+            return this.results.formattedData.deepAnalysis;
+          }
+
+          if (this.results.data?.deep_analysis) {
+            return this.results.data.deep_analysis;
+          }
+
+          return null;
+        },
+
+        getSecurityAnalysis() {
+          if (!this.results) return null;
+
+          if (this.results.formattedData?.securityAnalysis) {
+            return this.results.formattedData.securityAnalysis;
+          }
+
+          if (this.results.security_analysis) {
+            return this.results.security_analysis;
+          }
+
+          return null;
+        },
+
+        getOnChainMetrics() {
+          if (!this.results) return null;
+
+          if (this.results.formattedData?.onChainMetrics) {
+            return this.results.formattedData.onChainMetrics;
+          }
+
+          if (this.results.on_chain_metrics) {
+            return this.results.on_chain_metrics;
+          }
+
+          return null;
+        },
+
+        getRiskAssessment() {
+          if (!this.results) return null;
+
+          if (this.results.formattedData?.riskAssessment) {
+            return this.results.formattedData.riskAssessment;
+          }
+
+          if (this.results.risk_assessment) {
+            return this.results.risk_assessment;
+          }
+
+          return null;
+        },
+
+        getAnalysisScore() {
+          const quick = this.getQuickAnalysis();
+          const deep = this.getDeepAnalysis();
+
+          if (quick?.score) return quick.score;
+          if (deep?.score) return deep.score;
+
+          return null;
+        },
+
+        getRiskLevel() {
+          const quick = this.getQuickAnalysis();
+          const deep = this.getDeepAnalysis();
+          const risk = this.getRiskAssessment();
+
+          if (quick?.risk_level) return quick.risk_level.toUpperCase();
+          if (deep?.risk_level) return deep.risk_level.toUpperCase();
+          if (risk?.risk_category) return risk.risk_category.toUpperCase();
+
+          return "UNKNOWN";
+        },
+
+        getDataSources() {
+          if (!this.results) return [];
+
+          if (this.results.sources_used) return this.results.sources_used;
+          if (this.results.data_sources) return this.results.data_sources;
+
+          return [];
+        },
+
+        isComprehensiveAnalysis() {
+          return this.form.analysisType === "comprehensive" && this.results;
+        },
+
+        async pasteFromClipboard() {
+          try {
+            const text = await navigator.clipboard.readText();
+            if (this.isValidSolanaAddress(text)) {
+              this.form.tokenMint = text;
+              this.$parent.showNotification(
+                "success",
+                "Pasted",
+                "Token address pasted from clipboard"
+              );
+            } else {
+              this.$parent.showNotification(
+                "warning",
+                "Invalid Format",
+                "Clipboard content is not a valid Solana address"
+              );
+            }
+          } catch (error) {
+            this.$parent.showNotification(
+              "error",
+              "Paste Failed",
+              "Failed to access clipboard"
             );
           }
+        },
 
-          const data = await response.json();
-          console.log("✅ Quick analysis data received:", data);
-          return data;
-        } catch (error) {
-          console.error("❌ Quick analysis failed:", error);
-          throw error;
-        }
-      },
+        clearResults() {
+          this.hasResults = false;
+          this.results = null;
+          this.rawResults = null;
+          this.form.tokenMint = "";
+        },
 
-      async callDeepAnalysis(tokenMint) {
-        console.log("📞 Calling deep analysis API...");
+        exportResults() {
+          if (!this.rawResults) return;
 
-        try {
-          const response = await fetch(`/deep/${tokenMint}`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
-
-          console.log("📡 Deep analysis response status:", response.status);
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              errorData.message || errorData.detail || `HTTP ${response.status}`
-            );
-          }
-
-          const data = await response.json();
-          console.log("✅ Deep analysis data received:", data);
-          return data;
-        } catch (error) {
-          console.error("❌ Deep analysis failed:", error);
-          throw error;
-        }
-      },
-
-      // Helper method to show notifications
-      showNotification(type, title, message) {
-        // Try to use parent notification system
-        if (this.$parent && this.$parent.showNotification) {
-          this.$parent.showNotification(type, title, message);
-        }
-        // Fallback to global notification system
-        else if (window.SolanaAI && window.SolanaAI.notifications) {
-          window.SolanaAI.notifications[type](title, message);
-        }
-        // Last resort - console log
-        else {
-          console.log(`${type.toUpperCase()}: ${title} - ${message}`);
-          alert(`${title}: ${message}`);
-        }
-      },
-
-      async simulateProgress() {
-        const steps = [
-          { step: "Validating token address...", percent: 10 },
-          { step: "Connecting to analysis APIs...", percent: 25 },
-          { step: "Fetching token data...", percent: 40 },
-          { step: "Processing analysis...", percent: 60 },
-          { step: "Generating insights...", percent: 80 },
-          { step: "Finalizing results...", percent: 95 },
-        ];
-
-        // Non-blocking progress simulation
-        for (const progressStep of steps) {
-          if (!this.isAnalyzing) break; // Stop if analysis was cancelled
-
-          this.analysisProgress = {
-            ...progressStep,
-            message: progressStep.step,
+          const data = {
+            ...this.rawResults,
+            exported_at: new Date().toISOString(),
+            export_format: "json",
+            analysis_type: this.form.analysisType,
           };
 
-          // Don't await - let it update in background
-          setTimeout(() => {}, 200);
-        }
-      },
-
-      // Helper functions to extract data from results
-      getTokenName() {
-        if (!this.results) return "Unknown Token";
-
-        if (this.results.formattedData?.tokenInfo?.name) {
-          return this.results.formattedData.tokenInfo.name;
-        }
-
-        if (this.results.data?.token_info?.name) {
-          return this.results.data.token_info.name;
-        }
-
-        return "Unknown Token";
-      },
-
-      getTokenSymbol() {
-        if (!this.results) return "N/A";
-
-        if (this.results.formattedData?.tokenInfo?.symbol) {
-          return this.results.formattedData.tokenInfo.symbol;
-        }
-
-        if (this.results.data?.token_info?.symbol) {
-          return this.results.data.token_info.symbol;
-        }
-
-        return "N/A";
-      },
-
-      getPriceData() {
-        if (!this.results) return {};
-
-        if (this.results.formattedData?.priceData) {
-          return this.results.formattedData.priceData;
-        }
-
-        if (this.results.data?.price_data) {
-          return this.results.data.price_data;
-        }
-
-        return {};
-      },
-
-      getQuickAnalysis() {
-        if (!this.results) return null;
-
-        if (this.results.formattedData?.quickAnalysis) {
-          return this.results.formattedData.quickAnalysis;
-        }
-
-        if (this.results.data?.quick_analysis) {
-          return this.results.data.quick_analysis;
-        }
-
-        return null;
-      },
-
-      getDeepAnalysis() {
-        if (!this.results) return null;
-
-        if (this.results.formattedData?.deepAnalysis) {
-          return this.results.formattedData.deepAnalysis;
-        }
-
-        if (this.results.data?.deep_analysis) {
-          return this.results.data.deep_analysis;
-        }
-
-        return null;
-      },
-
-      getSecurityAnalysis() {
-        if (!this.results) return null;
-
-        if (this.results.formattedData?.securityAnalysis) {
-          return this.results.formattedData.securityAnalysis;
-        }
-
-        if (this.results.security_analysis) {
-          return this.results.security_analysis;
-        }
-
-        return null;
-      },
-
-      getOnChainMetrics() {
-        if (!this.results) return null;
-
-        if (this.results.formattedData?.onChainMetrics) {
-          return this.results.formattedData.onChainMetrics;
-        }
-
-        if (this.results.on_chain_metrics) {
-          return this.results.on_chain_metrics;
-        }
-
-        return null;
-      },
-
-      getRiskAssessment() {
-        if (!this.results) return null;
-
-        if (this.results.formattedData?.riskAssessment) {
-          return this.results.formattedData.riskAssessment;
-        }
-
-        if (this.results.risk_assessment) {
-          return this.results.risk_assessment;
-        }
-
-        return null;
-      },
-
-      getAnalysisScore() {
-        const quick = this.getQuickAnalysis();
-        const deep = this.getDeepAnalysis();
-
-        if (quick?.score) return quick.score;
-        if (deep?.score) return deep.score;
-
-        return null;
-      },
-
-      getRiskLevel() {
-        const quick = this.getQuickAnalysis();
-        const deep = this.getDeepAnalysis();
-        const risk = this.getRiskAssessment();
-
-        if (quick?.risk_level) return quick.risk_level.toUpperCase();
-        if (deep?.risk_level) return deep.risk_level.toUpperCase();
-        if (risk?.risk_category) return risk.risk_category.toUpperCase();
-
-        return "UNKNOWN";
-      },
-
-      getDataSources() {
-        if (!this.results) return [];
-
-        if (this.results.sources_used) return this.results.sources_used;
-        if (this.results.data_sources) return this.results.data_sources;
-
-        return [];
-      },
-
-      isComprehensiveAnalysis() {
-        return this.form.analysisType === "comprehensive" && this.results;
-      },
-
-      async pasteFromClipboard() {
-        try {
-          const text = await navigator.clipboard.readText();
-          if (this.isValidSolanaAddress(text)) {
-            this.form.tokenMint = text;
-            this.$parent.showNotification(
-              "success",
-              "Pasted",
-              "Token address pasted from clipboard"
-            );
-          } else {
-            this.$parent.showNotification(
-              "warning",
-              "Invalid Format",
-              "Clipboard content is not a valid Solana address"
-            );
-          }
-        } catch (error) {
-          this.$parent.showNotification(
-            "error",
-            "Paste Failed",
-            "Failed to access clipboard"
-          );
-        }
-      },
-
-      clearResults() {
-        this.hasResults = false;
-        this.results = null;
-        this.rawResults = null;
-        this.form.tokenMint = "";
-      },
-
-      exportResults() {
-        if (!this.rawResults) return;
-
-        const data = {
-          ...this.rawResults,
-          exported_at: new Date().toISOString(),
-          export_format: "json",
-          analysis_type: this.form.analysisType,
-        };
-
-        const blob = new Blob([JSON.stringify(data, null, 2)], {
-          type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `token-analysis-${this.form.tokenMint.substring(0, 8)}-${
-          new Date().toISOString().split("T")[0]
-        }.json`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-
-        this.$parent.showNotification(
-          "success",
-          "Export Complete",
-          "Analysis results exported successfully"
-        );
-      },
-
-      loadExampleAnalysis() {
-        this.form.tokenMint = "So11111111111111111111111111111111111112"; // WSOL
-        this.form.analysisType = "quick"; // Start with quick analysis
-        this.analyzeToken();
-      },
-
-      // Debug method to test if everything is working
-      async testAnalysis() {
-        console.log("🧪 Testing analysis system...");
-
-        // Test basic fetch
-        try {
-          console.log("1. Testing basic fetch to /health...");
-          const healthResponse = await fetch("/health");
-          console.log("✅ Health check response:", healthResponse.status);
-
-          console.log("2. Testing quick analysis endpoint...");
-          const testToken = "So11111111111111111111111111111111111112";
-          const quickResponse = await fetch(`/quick/${testToken}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+          const blob = new Blob([JSON.stringify(data, null, 2)], {
+            type: "application/json",
           });
-          console.log("✅ Quick analysis response:", quickResponse.status);
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `token-analysis-${this.form.tokenMint.substring(0, 8)}-${
+            new Date().toISOString().split("T")[0]
+          }.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
 
-          if (quickResponse.ok) {
-            const data = await quickResponse.json();
-            console.log("✅ Quick analysis data:", data);
+          this.$parent.showNotification(
+            "success",
+            "Export Complete",
+            "Analysis results exported successfully"
+          );
+        },
+
+        loadExampleAnalysis() {
+          this.form.tokenMint = "So11111111111111111111111111111111111111112"; // WSOL
+          this.form.analysisType = "quick"; // Start with quick analysis
+          this.analyzeToken();
+        },
+
+        // Debug method to test if everything is working
+        async testAnalysis() {
+          console.log("🧪 Testing analysis system...");
+
+          // Test basic fetch
+          try {
+            console.log("1. Testing basic fetch to /health...");
+            const healthResponse = await fetch("/health");
+            console.log("✅ Health check response:", healthResponse.status);
+
+            console.log("2. Testing quick analysis endpoint...");
+            const testToken = "So11111111111111111111111111111111111112";
+            const quickResponse = await fetch(`/quick/${testToken}`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+            });
+            console.log("✅ Quick analysis response:", quickResponse.status);
+
+            if (quickResponse.ok) {
+              const data = await quickResponse.json();
+              console.log("✅ Quick analysis data:", data);
+            }
+          } catch (error) {
+            console.error("❌ Test failed:", error);
           }
-        } catch (error) {
-          console.error("❌ Test failed:", error);
-        }
-      },
+        },
 
-      // Utility functions
-      truncateAddress(address) {
-        if (!address) return "N/A";
-        return window.SolanaAI.utils.truncateAddress(address);
-      },
+        // Utility functions
+        truncateAddress(address) {
+          if (!address) return "N/A";
+          return window.SolanaAI.utils.truncateAddress(address);
+        },
 
-      formatCurrency(value) {
-        return window.SolanaAI.utils.formatCurrency(value);
-      },
+        formatCurrency(value) {
+          return window.SolanaAI.utils.formatCurrency(value);
+        },
 
-      formatNumber(num) {
-        return window.SolanaAI.utils.formatNumber(num);
-      },
+        formatNumber(num) {
+          return window.SolanaAI.utils.formatNumber(num);
+        },
 
-      formatPercent(num) {
-        return window.SolanaAI.utils.formatPercent(num);
-      },
+        formatPercent(num) {
+          return window.SolanaAI.utils.formatPercent(num);
+        },
 
-      formatTime(timestamp) {
-        return window.SolanaAI.utils.formatTime(timestamp);
-      },
+        formatTime(timestamp) {
+          return window.SolanaAI.utils.formatTime(timestamp);
+        },
 
-      isValidSolanaAddress(address) {
-        return window.SolanaAI.utils.isValidSolanaAddress(address);
-      },
+        isValidSolanaAddress(address) {
+          return window.SolanaAI.utils.isValidSolanaAddress(address);
+        },
 
-      getPriceChangeClass(change) {
-        if (!change) return "text-gray-500";
-        return parseFloat(change) >= 0 ? "text-green-600" : "text-red-600";
-      },
+        getPriceChangeClass(change) {
+          if (!change) return "text-gray-500";
+          return parseFloat(change) >= 0 ? "text-green-600" : "text-red-600";
+        },
 
-      getRiskLevelClass(level) {
-        const classes = {
-          low: "bg-green-100 text-green-800",
-          medium: "bg-yellow-100 text-yellow-800",
-          high: "bg-red-100 text-red-800",
-          critical: "bg-red-200 text-red-900",
-        };
-        return classes[level?.toLowerCase()] || "bg-gray-100 text-gray-800";
-      },
+        getRiskLevelClass(level) {
+          const classes = {
+            low: "bg-green-100 text-green-800",
+            medium: "bg-yellow-100 text-yellow-800",
+            high: "bg-red-100 text-red-800",
+            critical: "bg-red-200 text-red-900",
+          };
+          return classes[level?.toLowerCase()] || "bg-gray-100 text-gray-800";
+        },
 
-      getRecommendationClass(recommendation) {
-        const classes = {
-          BUY: "bg-green-100 text-green-800",
-          CONSIDER: "bg-blue-100 text-blue-800",
-          HOLD: "bg-yellow-100 text-yellow-800",
-          CAUTION: "bg-orange-100 text-orange-800",
-          AVOID: "bg-red-100 text-red-800",
-        };
-        return classes[recommendation] || "bg-gray-100 text-gray-800";
-      },
+        getRecommendationClass(recommendation) {
+          const classes = {
+            BUY: "bg-green-100 text-green-800",
+            CONSIDER: "bg-blue-100 text-blue-800",
+            HOLD: "bg-yellow-100 text-yellow-800",
+            CAUTION: "bg-orange-100 text-orange-800",
+            AVOID: "bg-red-100 text-red-800",
+          };
+          return classes[recommendation] || "bg-gray-100 text-gray-800";
+        },
+      };
+    }
+  </script>
+
+  <!-- 🔔 Toast Notification System -->
+  <style>
+    #toast-container {
+      position: fixed;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      z-index: 99999;
+    }
+    .toast {
+      min-width: 250px;
+      max-width: 350px;
+      padding: 12px 16px;
+      border-radius: 8px;
+      color: #fff;
+      font-size: 14px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+      opacity: 0;
+      transform: translateY(-10px);
+      transition: all 0.3s ease;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .toast.success {
+      background: #16a34a;
+    } /* green */
+    .toast.error {
+      background: #dc2626;
+    } /* red */
+    .toast.warning {
+      background: #d97706;
+    } /* orange */
+    .toast.info {
+      background: #2563eb;
+    } /* blue */
+    .toast-title {
+      font-weight: bold;
+      display: block;
+    }
+    .toast-message {
+      font-size: 13px;
+      opacity: 0.9;
+    }
+  </style>
+
+  <div id="toast-container"></div>
+
+  <script>
+    window.showToast = function (type, title, message, timeout = 4000) {
+      const container = document.getElementById("toast-container");
+
+      const toast = document.createElement("div");
+      toast.className = `toast ${type}`;
+      toast.innerHTML = `
+      <span class="toast-title">${title}</span>
+      <span class="toast-message">${message}</span>
+    `;
+
+      container.appendChild(toast);
+
+      // trigger animation
+      setTimeout(() => toast.classList.add("show"), 50);
+
+      // auto-remove after timeout
+      setTimeout(() => {
+        toast.classList.remove("show");
+        setTimeout(() => toast.remove(), 300);
+      }, timeout);
     };
-  }
-</script>
-{% endblock %}
+  </script>
+
+  {% endblock %}
+</div>

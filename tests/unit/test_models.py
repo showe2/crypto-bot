@@ -44,7 +44,7 @@ class TestTokenMetadata:
     def test_valid_token_metadata(self):
         """Test creating valid token metadata"""
         metadata = TokenMetadata(
-            mint="So11111111111111111111111111111111111112",
+            mint="So11111111111111111111111111111111111111112",
             name="Wrapped SOL",
             symbol="WSOL",
             decimals=9,
@@ -52,7 +52,7 @@ class TestTokenMetadata:
             description="Wrapped Solana token"
         )
         
-        assert metadata.mint == "So11111111111111111111111111111111111112"
+        assert metadata.mint == "So11111111111111111111111111111111111111112"
         assert metadata.name == "Wrapped SOL"
         assert metadata.symbol == "WSOL"
         assert metadata.decimals == 9
