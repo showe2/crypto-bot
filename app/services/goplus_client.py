@@ -93,6 +93,8 @@ class GOplusClient:
                 self._access_token = response_data["result"]["access_token"]
                 self._token_expiry = response_data["result"]["expires_in"]
 
+                print(self._access_token)
+
                 logger.debug(f"GOplus access token obtained")
                 return response_data["result"]["access_token"]
                 

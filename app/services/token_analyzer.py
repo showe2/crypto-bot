@@ -126,20 +126,22 @@ class TokenAnalyzer:
         # HELIUS - On-chain data
         if api_manager.clients.get("helius"):
             try:
+                account_limit = 50 if len(token_address) == 44 else 100
+                
                 service_tasks["helius_supply"] = self._safe_service_call(
                     api_manager.clients["helius"].get_token_supply, 
                     token_address
                 )
                 service_tasks["helius_accounts"] = self._safe_service_call(
                     api_manager.clients["helius"].get_token_accounts, 
-                    token_address
+                    token_address, account_limit  # Use reduced limit
                 )
                 service_tasks["helius_metadata"] = self._safe_service_call(
                     api_manager.clients["helius"].get_token_metadata, 
                     [token_address]
                 )
                 analysis_response["metadata"]["services_attempted"] += 1
-                logger.info("🔗 Helius tasks prepared")
+                logger.info(f"🔗 Helius tasks prepared (account limit: {account_limit})")
             except Exception as e:
                 analysis_response["warnings"].append(f"Helius initialization failed: {str(e)}")
         
@@ -188,10 +190,11 @@ class TokenAnalyzer:
                     api_manager.clients["goplus"].analyze_token_security, 
                     token_address
                 )
-                service_tasks["goplus_rugpull"] = self._safe_service_call(
-                    api_manager.clients["goplus"].detect_rugpull, 
-                    token_address, "solana"
-                )
+                # DOESN'T SUPPORT SOLANA TOKENS 
+                # service_tasks["goplus_rugpull"] = self._safe_service_call(
+                #     api_manager.clients["goplus"].detect_rugpull, 
+                #     token_address, "solana"
+                # )
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"GOplus initialization failed: {str(e)}")
