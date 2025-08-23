@@ -95,8 +95,8 @@
             class="form-input form-select"
             :disabled="isAnalyzing"
           >
-            <option value="quick">Quick Analysis (Mistral 7B)</option>
-            <option value="deep">Deep Analysis (LLaMA 3 70B)</option>
+            <option value="quick">Quick Analysis</option>
+            <option value="deep">Deep Analysis (LLM)</option>
             <option value="both">Both (Comprehensive)</option>
           </select>
         </div>
@@ -267,32 +267,32 @@
 
     <!-- AI Analysis Results -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- Quick Analysis (Mistral) -->
+      <!-- Quick Analysis -->
       <div
-        x-show="results.mistral_quick"
+        x-show="results.quick_analysis"
         class="bg-white rounded-xl shadow-lg p-6"
       >
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-gray-900">Quick Analysis</h3>
           <div class="flex items-center space-x-2">
             <i class="fas fa-bolt text-yellow-500"></i>
-            <span class="text-sm text-gray-500">Mistral 7B</span>
+            <span class="text-sm text-gray-500">Multi-Service</span>
           </div>
         </div>
 
-        <template x-if="results.mistral_quick">
+        <template x-if="results.quick_analysis">
           <div class="space-y-4">
             <!-- Score -->
             <div class="text-center p-4 bg-gray-50 rounded-lg">
               <div
                 class="text-3xl font-bold text-blue-600"
-                x-text="Math.round(results.mistral_quick.score * 100)"
+                x-text="Math.round(results.quick_analysis.score * 100)"
               ></div>
               <div class="text-sm text-gray-500">Overall Score</div>
               <div class="progress-bar mt-2">
                 <div
                   class="progress-bar-fill bg-blue-600"
-                  :style="`width: ${results.mistral_quick.score * 100}%`"
+                  :style="`width: ${results.quick_analysis.score * 100}%`"
                 ></div>
               </div>
             </div>
@@ -302,34 +302,34 @@
               <span class="text-gray-700">Risk Level:</span>
               <span
                 class="px-3 py-1 rounded-full text-sm font-medium"
-                :class="getRiskLevelClass(results.mistral_quick.risk_level)"
-                x-text="results.mistral_quick.risk_level?.toUpperCase()"
+                :class="getRiskLevelClass(results.quick_analysis.risk_level)"
+                x-text="results.quick_analysis.risk_level?.toUpperCase()"
               ></span>
             </div>
 
-            <!-- Scam Likelihood -->
+            <!-- Recommendation -->
             <div class="flex items-center justify-between">
-              <span class="text-gray-700">Scam Likely:</span>
+              <span class="text-gray-700">Recommendation:</span>
               <span
                 class="px-3 py-1 rounded-full text-sm font-medium"
-                :class="results.mistral_quick.is_scam_likely ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'"
-                x-text="results.mistral_quick.is_scam_likely ? 'Yes' : 'No'"
+                :class="getRecommendationClass(results.quick_analysis.recommendation)"
+                x-text="results.quick_analysis.recommendation"
               ></span>
             </div>
 
-            <!-- Key Points -->
-            <div x-show="results.mistral_quick.key_points?.length">
-              <h4 class="font-medium text-gray-900 mb-2">Key Points:</h4>
+            <!-- Key Insights -->
+            <div x-show="results.quick_analysis.key_insights?.length">
+              <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
               <ul class="space-y-1">
                 <template
-                  x-for="point in results.mistral_quick.key_points"
-                  :key="point"
+                  x-for="insight in results.quick_analysis.key_insights"
+                  :key="insight"
                 >
                   <li class="text-sm text-gray-600 flex items-start">
                     <i
                       class="fas fa-chevron-right text-blue-500 mr-2 mt-0.5 text-xs"
                     ></i>
-                    <span x-text="point"></span>
+                    <span x-text="insight"></span>
                   </li>
                 </template>
               </ul>
@@ -338,51 +338,51 @@
             <!-- Processing Time -->
             <div class="text-xs text-gray-500 text-center">
               Processed in
-              <span x-text="results.mistral_quick.processing_time"></span>s
+              <span x-text="results.quick_analysis.processing_time"></span>s
             </div>
           </div>
         </template>
       </div>
 
-      <!-- Deep Analysis (LLaMA) -->
+      <!-- Deep Analysis -->
       <div
-        x-show="results.llama_deep"
+        x-show="results.deep_analysis"
         class="bg-white rounded-xl shadow-lg p-6"
       >
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-gray-900">Deep Analysis</h3>
           <div class="flex items-center space-x-2">
             <i class="fas fa-brain text-purple-500"></i>
-            <span class="text-sm text-gray-500">LLaMA 3 70B</span>
+            <span class="text-sm text-gray-500">LLM Enhanced</span>
           </div>
         </div>
 
-        <template x-if="results.llama_deep">
+        <template x-if="results.deep_analysis">
           <div class="space-y-4">
             <!-- Pump Probabilities -->
             <div class="grid grid-cols-2 gap-4">
               <div class="text-center p-3 bg-gray-50 rounded-lg">
                 <div
                   class="text-xl font-bold text-green-600"
-                  x-text="Math.round(results.llama_deep.pump_probability_1h * 100) + '%'"
+                  x-text="Math.round(results.deep_analysis.pump_probability_1h * 100) + '%'"
                 ></div>
                 <div class="text-xs text-gray-500">1h Pump Probability</div>
               </div>
               <div class="text-center p-3 bg-gray-50 rounded-lg">
                 <div
                   class="text-xl font-bold text-blue-600"
-                  x-text="Math.round(results.llama_deep.pump_probability_24h * 100) + '%'"
+                  x-text="Math.round(results.deep_analysis.pump_probability_24h * 100) + '%'"
                 ></div>
                 <div class="text-xs text-gray-500">24h Pump Probability</div>
               </div>
             </div>
 
             <!-- Patterns -->
-            <div x-show="results.llama_deep.patterns?.length">
+            <div x-show="results.deep_analysis.patterns?.length">
               <h4 class="font-medium text-gray-900 mb-2">Detected Patterns:</h4>
               <div class="flex flex-wrap gap-1">
                 <template
-                  x-for="pattern in results.llama_deep.patterns"
+                  x-for="pattern in results.deep_analysis.patterns"
                   :key="pattern"
                 >
                   <span
@@ -395,12 +395,12 @@
 
             <!-- Price Targets -->
             <div
-              x-show="results.llama_deep.price_targets && Object.keys(results.llama_deep.price_targets).length"
+              x-show="results.deep_analysis.price_targets && Object.keys(results.deep_analysis.price_targets).length"
             >
               <h4 class="font-medium text-gray-900 mb-2">Price Targets:</h4>
               <div class="space-y-1">
                 <template
-                  x-for="[timeframe, target] in Object.entries(results.llama_deep.price_targets)"
+                  x-for="[timeframe, target] in Object.entries(results.deep_analysis.price_targets)"
                   :key="timeframe"
                 >
                   <div class="flex justify-between text-sm">
@@ -414,186 +414,46 @@
               </div>
             </div>
 
-            <!-- Reasoning -->
-            <div x-show="results.llama_deep.reasoning">
-              <h4 class="font-medium text-gray-900 mb-2">AI Reasoning:</h4>
-              <p
-                class="text-sm text-gray-600"
-                x-text="results.llama_deep.reasoning"
-              ></p>
+            <!-- Key Insights -->
+            <div x-show="results.deep_analysis.key_insights?.length">
+              <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
+              <ul class="space-y-1">
+                <template
+                  x-for="insight in results.deep_analysis.key_insights"
+                  :key="insight"
+                >
+                  <li class="text-sm text-gray-600 flex items-start">
+                    <i
+                      class="fas fa-chevron-right text-purple-500 mr-2 mt-0.5 text-xs"
+                    ></i>
+                    <span x-text="insight"></span>
+                  </li>
+                </template>
+              </ul>
+            </div>
+
+            <!-- Risk Factors -->
+            <div x-show="results.deep_analysis.risk_factors?.length">
+              <h4 class="font-medium text-gray-900 mb-2">Risk Factors:</h4>
+              <ul class="space-y-1">
+                <template
+                  x-for="risk in results.deep_analysis.risk_factors"
+                  :key="risk"
+                >
+                  <li class="text-sm text-red-600 flex items-start">
+                    <i
+                      class="fas fa-exclamation-triangle text-red-500 mr-2 mt-0.5 text-xs"
+                    ></i>
+                    <span x-text="risk"></span>
+                  </li>
+                </template>
+              </ul>
             </div>
 
             <!-- Processing Time -->
             <div class="text-xs text-gray-500 text-center">
               Processed in
-              <span x-text="results.llama_deep.processing_time"></span>s
-            </div>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <!-- Aggregated Results -->
-    <div x-show="results.aggregated" class="bg-white rounded-xl shadow-lg p-6">
-      <h3 class="text-xl font-semibold text-gray-900 mb-6">
-        Final Recommendation
-      </h3>
-
-      <template x-if="results.aggregated">
-        <div class="space-y-6">
-          <!-- Main Recommendation -->
-          <div
-            class="text-center p-6 rounded-lg"
-            :class="getRecommendationClass(results.aggregated.recommendation)"
-          >
-            <div
-              class="text-3xl font-bold mb-2"
-              x-text="results.aggregated.recommendation"
-            ></div>
-            <div class="text-lg opacity-90">
-              Score:
-              <span
-                x-text="Math.round(results.aggregated.final_score * 100)"
-              ></span
-              >/100
-            </div>
-            <div class="text-sm opacity-75 mt-1">
-              Confidence:
-              <span
-                x-text="Math.round(results.aggregated.confidence * 100)"
-              ></span
-              >%
-            </div>
-          </div>
-
-          <!-- Expected Returns -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div class="text-center p-4 bg-gray-50 rounded-lg">
-              <div
-                class="text-lg font-semibold text-gray-900"
-                x-text="formatPercent(results.aggregated.expected_return_1h)"
-              ></div>
-              <div class="text-sm text-gray-500">Expected 1h Return</div>
-            </div>
-            <div class="text-center p-4 bg-gray-50 rounded-lg">
-              <div
-                class="text-lg font-semibold text-gray-900"
-                x-text="formatPercent(results.aggregated.expected_return_24h)"
-              ></div>
-              <div class="text-sm text-gray-500">Expected 24h Return</div>
-            </div>
-            <div class="text-center p-4 bg-gray-50 rounded-lg">
-              <div
-                class="text-lg font-semibold text-red-600"
-                x-text="Math.round(results.aggregated.max_risk * 100) + '%'"
-              ></div>
-              <div class="text-sm text-gray-500">Maximum Risk</div>
-            </div>
-          </div>
-
-          <!-- Summary -->
-          <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r-lg">
-            <h4 class="font-medium text-blue-900 mb-2">Summary</h4>
-            <p class="text-blue-800" x-text="results.aggregated.summary"></p>
-          </div>
-
-          <!-- Action Plan -->
-          <div x-show="results.aggregated.action_plan?.length">
-            <h4 class="font-medium text-gray-900 mb-3">Recommended Actions:</h4>
-            <ol class="space-y-2">
-              <template
-                x-for="(action, index) in results.aggregated.action_plan"
-                :key="index"
-              >
-                <li class="flex items-start">
-                  <span
-                    class="flex-shrink-0 w-6 h-6 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-sm font-medium mr-3 mt-0.5"
-                    x-text="index + 1"
-                  ></span>
-                  <span class="text-gray-700" x-text="action"></span>
-                </li>
-              </template>
-            </ol>
-          </div>
-        </div>
-      </template>
-    </div>
-
-    <!-- Social Analysis -->
-    <div
-      x-show="results.social_data?.length"
-      class="bg-white rounded-xl shadow-lg p-6"
-    >
-      <h3 class="text-xl font-semibold text-gray-900 mb-6">Social Sentiment</h3>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div
-            class="text-2xl font-bold text-gray-900"
-            x-text="results.social_data?.length || 0"
-          ></div>
-          <div class="text-sm text-gray-500">Total Mentions</div>
-        </div>
-        <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div
-            class="text-2xl font-bold text-green-600"
-            x-text="getAverageSentiment()"
-          ></div>
-          <div class="text-sm text-gray-500">Avg Sentiment</div>
-        </div>
-        <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div
-            class="text-2xl font-bold text-blue-600"
-            x-text="getTopPlatform()"
-          ></div>
-          <div class="text-sm text-gray-500">Top Platform</div>
-        </div>
-        <div class="text-center p-4 bg-gray-50 rounded-lg">
-          <div
-            class="text-2xl font-bold text-purple-600"
-            x-text="getViralScore()"
-          ></div>
-          <div class="text-sm text-gray-500">Viral Score</div>
-        </div>
-      </div>
-
-      <!-- Recent Social Posts -->
-      <div class="space-y-3">
-        <h4 class="font-medium text-gray-900">Recent Mentions:</h4>
-        <template
-          x-for="post in results.social_data?.slice(0, 5)"
-          :key="post.timestamp"
-        >
-          <div class="p-3 bg-gray-50 rounded-lg">
-            <div class="flex items-start justify-between">
-              <div class="flex-1">
-                <div class="flex items-center space-x-2 mb-1">
-                  <div
-                    class="social-platform-icon"
-                    :class="post.platform"
-                    x-text="post.platform.charAt(0).toUpperCase()"
-                  ></div>
-                  <span
-                    class="text-sm font-medium"
-                    x-text="post.author || 'Anonymous'"
-                  ></span>
-                  <span
-                    class="text-xs text-gray-500"
-                    x-text="formatTime(post.timestamp)"
-                  ></span>
-                </div>
-                <p
-                  class="text-sm text-gray-700"
-                  x-text="post.content.substring(0, 120) + '...'"
-                ></p>
-              </div>
-              <div class="ml-3 text-right">
-                <div
-                  class="text-xs px-2 py-1 rounded-full"
-                  :class="getSentimentClass(post.sentiment_score)"
-                  x-text="getSentimentLabel(post.sentiment_score)"
-                ></div>
-              </div>
+              <span x-text="results.deep_analysis.processing_time"></span>s
             </div>
           </div>
         </template>
@@ -611,50 +471,19 @@
         </div>
         <div>
           <div class="text-sm text-gray-500">Processing Time</div>
-          <div
-            class="font-medium"
-            x-text="results.processing_time_total + 's'"
-          ></div>
+          <div class="font-medium" x-text="results.processing_time + 's'"></div>
         </div>
         <div>
           <div class="text-sm text-gray-500">Data Sources</div>
           <div
             class="font-medium"
-            x-text="results.data_sources?.join(', ') || 'N/A'"
+            x-text="results.sources_used?.join(', ') || 'N/A'"
           ></div>
         </div>
         <div>
           <div class="text-sm text-gray-500">Timestamp</div>
           <div class="font-medium" x-text="formatTime(results.timestamp)"></div>
         </div>
-      </div>
-
-      <!-- Warnings and Errors -->
-      <div
-        x-show="results.warnings?.length || results.errors?.length"
-        class="mt-4 space-y-2"
-      >
-        <template x-for="warning in results.warnings" :key="warning">
-          <div
-            class="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded-r-lg"
-          >
-            <div class="flex">
-              <i
-                class="fas fa-exclamation-triangle text-yellow-400 mr-2 mt-0.5"
-              ></i>
-              <span class="text-yellow-800 text-sm" x-text="warning"></span>
-            </div>
-          </div>
-        </template>
-
-        <template x-for="error in results.errors" :key="error">
-          <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded-r-lg">
-            <div class="flex">
-              <i class="fas fa-exclamation-circle text-red-400 mr-2 mt-0.5"></i>
-              <span class="text-red-800 text-sm" x-text="error"></span>
-            </div>
-          </div>
-        </template>
       </div>
     </div>
   </div>
@@ -722,11 +551,11 @@
       getAnalyzeButtonText() {
         switch (this.form.analysisType) {
           case "quick":
-            return "Quick Analysis (2-3s)";
+            return "Quick Analysis (2-5s)";
           case "deep":
-            return "Deep Analysis (8-10s)";
+            return "Deep Analysis (8-15s)";
           case "both":
-            return "Comprehensive Analysis (10-15s)";
+            return "Comprehensive Analysis (10-20s)";
           default:
             return "Analyze Token";
         }
@@ -750,32 +579,33 @@
           // Simulate analysis progress
           await this.simulateProgress();
 
-          // Perform actual analysis
+          // Perform actual analysis using new endpoints
           let result;
           if (this.form.analysisType === "quick") {
-            result = await window.SolanaAI.api.tweetCommand(
-              this.form.tokenMint
-            );
+            result = await this.callQuickAnalysis(this.form.tokenMint);
           } else if (this.form.analysisType === "deep") {
-            result = await window.SolanaAI.api.nameCommand(this.form.tokenMint);
+            result = await this.callDeepAnalysis(this.form.tokenMint);
           } else {
             // Both analyses
             const [quickResult, deepResult] = await Promise.all([
-              window.SolanaAI.api.tweetCommand(this.form.tokenMint),
-              window.SolanaAI.api.nameCommand(this.form.tokenMint),
+              this.callQuickAnalysis(this.form.tokenMint),
+              this.callDeepAnalysis(this.form.tokenMint),
             ]);
-            result = { ...quickResult, deepAnalysis: deepResult };
+            result = this.combineBothResults(quickResult, deepResult);
           }
 
-          // Transform result to expected format
-          this.results = this.transformResults(result);
-          this.hasResults = true;
+          if (result.status === "success") {
+            this.results = result;
+            this.hasResults = true;
 
-          this.$parent.showNotification(
-            "success",
-            "Analysis Complete",
-            "Token analysis completed successfully"
-          );
+            this.$parent.showNotification(
+              "success",
+              "Analysis Complete",
+              "Token analysis completed successfully"
+            );
+          } else {
+            throw new Error(result.message || "Analysis failed");
+          }
         } catch (error) {
           console.error("Analysis error:", error);
           this.$parent.showNotification(
@@ -786,6 +616,62 @@
         } finally {
           this.isAnalyzing = false;
         }
+      },
+
+      async callQuickAnalysis(tokenMint) {
+        const response = await fetch(`/quick/${tokenMint}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+
+        return await response.json();
+      },
+
+      async callDeepAnalysis(tokenMint) {
+        const response = await fetch(`/deep/${tokenMint}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || `HTTP ${response.status}`);
+        }
+
+        return await response.json();
+      },
+
+      combineBothResults(quickResult, deepResult) {
+        return {
+          ...deepResult,
+          quick_analysis: quickResult.data?.quick_analysis,
+          deep_analysis: deepResult.data?.deep_analysis,
+          metadata: {
+            name:
+              deepResult.data?.token_info?.name ||
+              quickResult.data?.token_info?.name,
+            symbol:
+              deepResult.data?.token_info?.symbol ||
+              quickResult.data?.token_info?.symbol,
+          },
+          price_data:
+            deepResult.data?.price_data || quickResult.data?.price_data,
+          sources_used: [
+            ...new Set([
+              ...(quickResult.sources_used || []),
+              ...(deepResult.sources_used || []),
+            ]),
+          ],
+        };
       },
 
       async simulateProgress() {
@@ -806,103 +692,6 @@
           };
           await new Promise((resolve) => setTimeout(resolve, 300));
         }
-      },
-
-      transformResults(apiResult) {
-        // Transform API result to match expected UI format
-        return {
-          token: this.form.tokenMint,
-          analysis_id: Date.now().toString(),
-          timestamp: new Date().toISOString(),
-          processing_time_total: 3.2,
-          data_sources: ["API", "Blockchain"],
-          warnings: [],
-          errors: [],
-
-          // Mock data - replace with real API response transformation
-          metadata: {
-            name: "Example Token",
-            symbol: "EXT",
-            mint: this.form.tokenMint,
-          },
-
-          price_data: {
-            current_price: "0.025",
-            price_change_24h: "5.2",
-            market_cap: "1250000",
-            volume_24h: "350000",
-            holders_count: 1247,
-          },
-
-          mistral_quick:
-            this.form.analysisType !== "deep"
-              ? {
-                  score: 0.75,
-                  risk_level: "medium",
-                  is_scam_likely: false,
-                  key_points: [
-                    "Good liquidity levels detected",
-                    "Active community engagement",
-                    "Reasonable tokenomics structure",
-                  ],
-                  processing_time: 2.3,
-                  confidence: 0.85,
-                }
-              : null,
-
-          llama_deep:
-            this.form.analysisType !== "quick"
-              ? {
-                  pump_probability_1h: 0.35,
-                  pump_probability_24h: 0.62,
-                  patterns: ["volume_spike", "social_buzz"],
-                  price_targets: {
-                    "1h": "0.027",
-                    "24h": "0.032",
-                  },
-                  reasoning:
-                    "Token shows strong fundamentals with increasing social activity and volume patterns suggesting potential upward movement.",
-                  processing_time: 8.7,
-                  confidence: 0.78,
-                }
-              : null,
-
-          aggregated: {
-            final_score: 0.72,
-            recommendation: "HOLD",
-            confidence: 0.81,
-            expected_return_1h: 8.2,
-            expected_return_24h: 24.5,
-            max_risk: 0.15,
-            summary:
-              "Moderate risk token with decent growth potential. Consider for short to medium-term holding.",
-            action_plan: [
-              "Monitor volume and price action over next 24 hours",
-              "Set stop-loss at 15% below entry price",
-              "Consider taking partial profits at 20% gains",
-            ],
-          },
-
-          social_data: this.form.includeSocial
-            ? [
-                {
-                  platform: "twitter",
-                  content:
-                    "This token looks promising! Great community behind it. #crypto #solana",
-                  author: "CryptoTrader123",
-                  timestamp: new Date(Date.now() - 3600000).toISOString(),
-                  sentiment_score: 0.8,
-                },
-                {
-                  platform: "telegram",
-                  content: "Just bought some more. Chart looks bullish!",
-                  author: "Anonymous",
-                  timestamp: new Date(Date.now() - 7200000).toISOString(),
-                  sentiment_score: 0.6,
-                },
-              ]
-            : [],
-        };
       },
 
       async pasteFromClipboard() {
@@ -982,7 +771,7 @@
 
       formatCurrency(value) {
         if (!value) return "N/A";
-        return `${parseFloat(value).toFixed(4)}`;
+        return `${parseFloat(value).toFixed(6)}`;
       },
 
       formatNumber(num) {
@@ -1033,52 +822,13 @@
 
       getRecommendationClass(recommendation) {
         const classes = {
-          BUY: "recommendation-buy",
-          SELL: "recommendation-sell",
-          HOLD: "recommendation-hold",
-          AVOID: "recommendation-avoid",
+          BUY: "bg-green-100 text-green-800",
+          CONSIDER: "bg-blue-100 text-blue-800",
+          HOLD: "bg-yellow-100 text-yellow-800",
+          CAUTION: "bg-orange-100 text-orange-800",
+          AVOID: "bg-red-100 text-red-800",
         };
         return classes[recommendation] || "bg-gray-100 text-gray-800";
-      },
-
-      getSentimentClass(score) {
-        if (score > 0.6) return "bg-green-100 text-green-800";
-        if (score > 0.2) return "bg-yellow-100 text-yellow-800";
-        return "bg-red-100 text-red-800";
-      },
-
-      getSentimentLabel(score) {
-        if (score > 0.6) return "Positive";
-        if (score > 0.2) return "Neutral";
-        return "Negative";
-      },
-
-      getAverageSentiment() {
-        if (!this.results?.social_data?.length) return "N/A";
-        const avg =
-          this.results.social_data.reduce(
-            (sum, post) => sum + (post.sentiment_score || 0),
-            0
-          ) / this.results.social_data.length;
-        return this.getSentimentLabel(avg);
-      },
-
-      getTopPlatform() {
-        if (!this.results?.social_data?.length) return "N/A";
-        const platforms = {};
-        this.results.social_data.forEach((post) => {
-          platforms[post.platform] = (platforms[post.platform] || 0) + 1;
-        });
-        return Object.keys(platforms)
-          .reduce((a, b) => (platforms[a] > platforms[b] ? a : b))
-          .toUpperCase();
-      },
-
-      getViralScore() {
-        if (!this.results?.social_data?.length) return "N/A";
-        // Simple viral score based on number of mentions
-        const score = Math.min(this.results.social_data.length / 10, 1) * 100;
-        return Math.round(score) + "%";
       },
     };
   }
