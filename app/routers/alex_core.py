@@ -168,60 +168,11 @@ async def quick_analysis_endpoint(
         # Use your existing token analyzer's comprehensive analysis
         analysis_result = await token_analyzer.analyze_token_comprehensive(token_mint, "frontend_quick")
         
-        # Transform the comprehensive result to frontend-friendly format
-        frontend_response = {
-            "status": "success",
-            "token": token_mint,
-            "analysis_id": analysis_result.get("analysis_id", f"quick_{int(time.time())}"),
-            "timestamp": analysis_result.get("metadata", {}).get("timestamp") or datetime.utcnow().isoformat(),
-            "processing_time": analysis_result.get("metadata", {}).get("processing_time_seconds", time.time() - start_time),
-            "message": "Quick analysis completed successfully",
-            
-            # Frontend expects these specific fields
-            "data": {
-                # Basic token info
-                "token_info": {
-                    "name": "Unknown Token",  # Will be populated from analysis
-                    "symbol": "UNK",
-                    "mint": token_mint
-                },
-                
-                # Quick analysis results
-                "quick_analysis": {
-                    "score": analysis_result.get("overall_analysis", {}).get("score", 50) / 100,  # Convert to 0-1 scale
-                    "confidence": analysis_result.get("overall_analysis", {}).get("confidence_score", 50) / 100,
-                    "risk_level": analysis_result.get("risk_assessment", {}).get("risk_category", "medium"),
-                    "recommendation": _map_risk_to_recommendation(analysis_result.get("risk_assessment", {}).get("risk_category", "medium")),
-                    "key_insights": analysis_result.get("overall_analysis", {}).get("positive_signals", [])[:3],
-                    "processing_time": analysis_result.get("metadata", {}).get("processing_time_seconds", 0)
-                },
-                
-                # Price data from analysis
-                "price_data": _extract_price_data(analysis_result),
-                
-                # Data sources used
-                "sources": analysis_result.get("metadata", {}).get("data_sources_available", 0)
-            },
-            
-            # Analysis metadata
-            "analysis_type": "quick",
-            "endpoint": "/quick",
-            "model": "Multi-Service Analysis",
-            "sources_used": analysis_result.get("data_sources", [])
-        }
-        
-        # Extract token name and symbol from analysis if available
-        if analysis_result.get("token_information"):
-            token_info = analysis_result["token_information"]
-            if token_info.get("name"):
-                frontend_response["data"]["token_info"]["name"] = token_info["name"]
-            if token_info.get("symbol"):
-                frontend_response["data"]["token_info"]["symbol"] = token_info["symbol"]
-        
-        processing_time = time.time() - start_time
-        logger.info(f"✅ Frontend quick analysis completed for {token_mint} in {processing_time:.2f}s")
-        
-        return frontend_response
+        if analysis_result and analysis_result.get("service_responses"):
+            response = {"success": True}
+            response.update(analysis_result)
+
+            return response
         
     except HTTPException:
         raise
@@ -239,116 +190,6 @@ async def quick_analysis_endpoint(
             "endpoint": "/quick",
             "analysis_type": "quick"
         }
-
-
-@router.post("/deep/{token_mint}", summary="Deep Token Analysis - Placeholder")
-async def deep_analysis_endpoint(
-    token_mint: str = Path(..., description="Token mint address"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Deep token analysis endpoint - placeholder for future LLM integration
-    For now, returns the comprehensive analysis with deep analysis format
-    """
-    start_time = time.time()
-    
-    try:
-        # Validate token mint format
-        if not token_mint or len(token_mint) < 32 or len(token_mint) > 44:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid Solana token mint address format"
-            )
-        
-        logger.info(f"🧠 Frontend deep analysis request for {token_mint}")
-        
-        # For now, use the same comprehensive analysis but format differently
-        analysis_result = await token_analyzer.analyze_token_comprehensive(token_mint, "frontend_deep")
-        
-        # Transform to deep analysis format expected by frontend
-        frontend_response = {
-            "status": "success",
-            "token": token_mint,
-            "analysis_id": analysis_result.get("analysis_id", f"deep_{int(time.time())}"),
-            "timestamp": analysis_result.get("metadata", {}).get("timestamp") or datetime.utcnow().isoformat(),
-            "processing_time": analysis_result.get("metadata", {}).get("processing_time_seconds", time.time() - start_time),
-            "message": "Deep analysis completed (using comprehensive analysis)",
-            
-            "data": {
-                # Token info
-                "token_info": {
-                    "name": "Unknown Token",
-                    "symbol": "UNK", 
-                    "mint": token_mint
-                },
-                
-                # Deep analysis results (simulated from comprehensive data)
-                "deep_analysis": {
-                    "score": analysis_result.get("overall_analysis", {}).get("score", 50) / 100,
-                    "confidence": analysis_result.get("overall_analysis", {}).get("confidence_score", 70) / 100,
-                    "risk_level": analysis_result.get("risk_assessment", {}).get("risk_category", "medium"),
-                    "recommendation": _map_risk_to_recommendation(analysis_result.get("risk_assessment", {}).get("risk_category", "medium")),
-                    
-                    # Simulated pump probabilities based on analysis
-                    "pump_probability_1h": _calculate_pump_probability(analysis_result, "1h"),
-                    "pump_probability_24h": _calculate_pump_probability(analysis_result, "24h"),
-                    
-                    # Extract patterns from analysis
-                    "patterns": _extract_patterns(analysis_result),
-                    
-                    # Generate price targets
-                    "price_targets": _generate_price_targets(analysis_result),
-                    
-                    # Key insights and risks
-                    "key_insights": analysis_result.get("overall_analysis", {}).get("positive_signals", []),
-                    "risk_factors": analysis_result.get("overall_analysis", {}).get("risk_factors", []),
-                    "processing_time": analysis_result.get("metadata", {}).get("processing_time_seconds", 0)
-                },
-                
-                # Enhanced data sections
-                "price_data": _extract_price_data(analysis_result),
-                "market_analysis": _extract_market_analysis(analysis_result),
-                "security_analysis": _extract_security_analysis(analysis_result),
-                
-                "sources": analysis_result.get("metadata", {}).get("data_sources_available", 0)
-            },
-            
-            "analysis_type": "deep",
-            "endpoint": "/deep",
-            "model": "Comprehensive Analysis (LLM Integration Coming Soon)",
-            "sources_used": analysis_result.get("data_sources", [])
-        }
-        
-        # Extract token info
-        if analysis_result.get("token_information"):
-            token_info = analysis_result["token_information"]
-            if token_info.get("name"):
-                frontend_response["data"]["token_info"]["name"] = token_info["name"]
-            if token_info.get("symbol"):
-                frontend_response["data"]["token_info"]["symbol"] = token_info["symbol"]
-        
-        processing_time = time.time() - start_time
-        logger.info(f"✅ Frontend deep analysis completed for {token_mint} in {processing_time:.2f}s")
-        
-        return frontend_response
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"❌ Frontend deep analysis failed for {token_mint}: {str(e)}")
-        
-        return {
-            "status": "error",
-            "token": token_mint,
-            "timestamp": datetime.utcnow().isoformat(),
-            "processing_time": round(processing_time, 2),
-            "message": f"Deep analysis failed: {str(e)}",
-            "error": str(e),
-            "endpoint": "/deep",
-            "analysis_type": "deep"
-        }
-
 
 # ==============================================
 # HELPER FUNCTIONS FOR DATA TRANSFORMATION

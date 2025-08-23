@@ -95,10 +95,22 @@
             class="form-input form-select"
             :disabled="isAnalyzing"
           >
-            <option value="quick">Quick Analysis</option>
-            <option value="deep">Deep Analysis (LLM)</option>
-            <option value="both">Both (Comprehensive)</option>
+            <option value="quick">Quick Analysis (API)</option>
+            <option value="deep">Deep Analysis (API + LLM)</option>
           </select>
+        </div>
+
+        <div x-show="form.analysisType === 'comprehensive'">
+          <label class="form-label">Force Refresh</label>
+          <label class="flex items-center">
+            <input
+              type="checkbox"
+              x-model="form.forceRefresh"
+              :disabled="isAnalyzing"
+              class="mr-2"
+            />
+            <span class="text-sm">Force refresh cached data</span>
+          </label>
         </div>
 
         <div>
@@ -112,37 +124,6 @@
             <option value="high">High Priority</option>
             <option value="low">Low Priority</option>
           </select>
-        </div>
-
-        <!-- Analysis Options -->
-        <div class="space-y-2">
-          <label class="flex items-center">
-            <input
-              type="checkbox"
-              x-model="form.includeSocial"
-              :disabled="isAnalyzing"
-              class="mr-2"
-            />
-            <span class="text-sm">Include Social Analysis</span>
-          </label>
-          <label class="flex items-center">
-            <input
-              type="checkbox"
-              x-model="form.includeOnChain"
-              :disabled="isAnalyzing"
-              class="mr-2"
-            />
-            <span class="text-sm">Include On-Chain Metrics</span>
-          </label>
-          <label class="flex items-center">
-            <input
-              type="checkbox"
-              x-model="form.includeSecurity"
-              :disabled="isAnalyzing"
-              class="mr-2"
-            />
-            <span class="text-sm">Security Scan</span>
-          </label>
         </div>
       </div>
     </div>
@@ -183,7 +164,7 @@
   <!-- Analysis Results -->
   <div x-show="hasResults" x-transition class="space-y-6">
     <!-- Token Overview -->
-    <div x-show="results.metadata" class="bg-white rounded-xl shadow-lg p-6">
+    <div x-show="results" class="bg-white rounded-xl shadow-lg p-6">
       <h3 class="text-xl font-semibold text-gray-900 mb-4">Token Overview</h3>
 
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -194,22 +175,16 @@
           >
             <i class="fas fa-coins text-blue-600 text-2xl"></i>
           </div>
-          <h4
-            class="font-semibold text-gray-900"
-            x-text="results.metadata?.name || 'Unknown Token'"
-          ></h4>
-          <p
-            class="text-sm text-gray-500"
-            x-text="results.metadata?.symbol || 'N/A'"
-          ></p>
+          <h4 class="font-semibold text-gray-900" x-text="getTokenName()"></h4>
+          <p class="text-sm text-gray-500" x-text="getTokenSymbol()"></p>
           <p
             class="text-xs text-gray-400 font-mono mt-1"
-            x-text="truncateAddress(results.token)"
+            x-text="truncateAddress(results?.token || form.tokenMint)"
           ></p>
         </div>
 
         <!-- Price Data -->
-        <div class="text-center" x-show="results.price_data">
+        <div class="text-center" x-show="getPriceData().current_price">
           <div
             class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"
           >
@@ -217,18 +192,18 @@
           </div>
           <h4
             class="font-semibold text-gray-900"
-            x-text="formatCurrency(results.price_data?.current_price)"
+            x-text="formatCurrency(getPriceData().current_price)"
           ></h4>
           <p
             class="text-sm"
-            :class="getPriceChangeClass(results.price_data?.price_change_24h)"
-            x-text="formatPercent(results.price_data?.price_change_24h)"
+            :class="getPriceChangeClass(getPriceData().price_change_24h)"
+            x-text="formatPercent(getPriceData().price_change_24h)"
           ></p>
           <p class="text-xs text-gray-400">24h Change</p>
         </div>
 
         <!-- Market Cap -->
-        <div class="text-center" x-show="results.price_data?.market_cap">
+        <div class="text-center" x-show="getPriceData().market_cap">
           <div
             class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
           >
@@ -236,93 +211,91 @@
           </div>
           <h4
             class="font-semibold text-gray-900"
-            x-text="formatNumber(results.price_data?.market_cap)"
+            x-text="formatNumber(getPriceData().market_cap)"
           ></h4>
           <p class="text-sm text-gray-500">Market Cap</p>
           <p
             class="text-xs text-gray-400"
-            x-text="formatNumber(results.price_data?.volume_24h) + ' Vol'"
+            x-text="formatNumber(getPriceData().volume_24h) + ' Vol'"
           ></p>
         </div>
 
-        <!-- Holders -->
-        <div class="text-center" x-show="results.price_data?.holders_count">
+        <!-- Analysis Score -->
+        <div class="text-center" x-show="getAnalysisScore() !== null">
           <div
             class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3"
           >
-            <i class="fas fa-users text-yellow-600 text-2xl"></i>
+            <i class="fas fa-star text-yellow-600 text-2xl"></i>
           </div>
           <h4
             class="font-semibold text-gray-900"
-            x-text="formatNumber(results.price_data?.holders_count)"
+            x-text="Math.round(getAnalysisScore() * 100) + '%'"
           ></h4>
-          <p class="text-sm text-gray-500">Holders</p>
-          <p
-            class="text-xs text-gray-400"
-            x-text="formatNumber(results.onchain_metrics?.unique_traders_24h) + ' Traders'"
-          ></p>
+          <p class="text-sm text-gray-500">Analysis Score</p>
+          <p class="text-xs text-gray-400" x-text="getRiskLevel()"></p>
         </div>
       </div>
     </div>
 
-    <!-- AI Analysis Results -->
+    <!-- Analysis Results Cards -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Quick Analysis -->
       <div
-        x-show="results.quick_analysis"
+        x-show="getQuickAnalysis()"
         class="bg-white rounded-xl shadow-lg p-6"
       >
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-gray-900">Quick Analysis</h3>
           <div class="flex items-center space-x-2">
             <i class="fas fa-bolt text-yellow-500"></i>
-            <span class="text-sm text-gray-500">Multi-Service</span>
+            <span class="text-sm text-gray-500">Frontend</span>
           </div>
         </div>
 
-        <template x-if="results.quick_analysis">
+        <template x-if="getQuickAnalysis()">
           <div class="space-y-4">
             <!-- Score -->
             <div class="text-center p-4 bg-gray-50 rounded-lg">
               <div
                 class="text-3xl font-bold text-blue-600"
-                x-text="Math.round(results.quick_analysis.score * 100)"
+                x-text="Math.round((getQuickAnalysis().score || 0) * 100)"
               ></div>
               <div class="text-sm text-gray-500">Overall Score</div>
               <div class="progress-bar mt-2">
                 <div
                   class="progress-bar-fill bg-blue-600"
-                  :style="`width: ${results.quick_analysis.score * 100}%`"
+                  :style="`width: ${(getQuickAnalysis().score || 0) * 100}%`"
                 ></div>
               </div>
             </div>
 
-            <!-- Risk Level -->
-            <div class="flex items-center justify-between">
-              <span class="text-gray-700">Risk Level:</span>
-              <span
-                class="px-3 py-1 rounded-full text-sm font-medium"
-                :class="getRiskLevelClass(results.quick_analysis.risk_level)"
-                x-text="results.quick_analysis.risk_level?.toUpperCase()"
-              ></span>
-            </div>
+            <!-- Risk and Recommendation -->
+            <div class="space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-gray-700">Risk Level:</span>
+                <span
+                  class="px-3 py-1 rounded-full text-sm font-medium"
+                  :class="getRiskLevelClass(getQuickAnalysis().risk_level)"
+                  x-text="(getQuickAnalysis().risk_level || 'unknown').toUpperCase()"
+                ></span>
+              </div>
 
-            <!-- Recommendation -->
-            <div class="flex items-center justify-between">
-              <span class="text-gray-700">Recommendation:</span>
-              <span
-                class="px-3 py-1 rounded-full text-sm font-medium"
-                :class="getRecommendationClass(results.quick_analysis.recommendation)"
-                x-text="results.quick_analysis.recommendation"
-              ></span>
+              <div class="flex items-center justify-between">
+                <span class="text-gray-700">Recommendation:</span>
+                <span
+                  class="px-3 py-1 rounded-full text-sm font-medium"
+                  :class="getRecommendationClass(getQuickAnalysis().recommendation)"
+                  x-text="getQuickAnalysis().recommendation || 'HOLD'"
+                ></span>
+              </div>
             </div>
 
             <!-- Key Insights -->
-            <div x-show="results.quick_analysis.key_insights?.length">
+            <div x-show="getQuickAnalysis().key_insights?.length">
               <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
               <ul class="space-y-1">
                 <template
-                  x-for="insight in results.quick_analysis.key_insights"
+                  x-for="insight in getQuickAnalysis().key_insights"
                   :key="insight"
                 >
                   <li class="text-sm text-gray-600 flex items-start">
@@ -338,17 +311,17 @@
             <!-- Processing Time -->
             <div class="text-xs text-gray-500 text-center">
               Processed in
-              <span x-text="results.quick_analysis.processing_time"></span>s
+              <span
+                x-text="(getQuickAnalysis().processing_time || 0).toFixed(2)"
+              ></span
+              >s
             </div>
           </div>
         </template>
       </div>
 
       <!-- Deep Analysis -->
-      <div
-        x-show="results.deep_analysis"
-        class="bg-white rounded-xl shadow-lg p-6"
-      >
+      <div x-show="getDeepAnalysis()" class="bg-white rounded-xl shadow-lg p-6">
         <div class="flex items-center justify-between mb-4">
           <h3 class="text-lg font-semibold text-gray-900">Deep Analysis</h3>
           <div class="flex items-center space-x-2">
@@ -357,32 +330,32 @@
           </div>
         </div>
 
-        <template x-if="results.deep_analysis">
+        <template x-if="getDeepAnalysis()">
           <div class="space-y-4">
             <!-- Pump Probabilities -->
             <div class="grid grid-cols-2 gap-4">
               <div class="text-center p-3 bg-gray-50 rounded-lg">
                 <div
                   class="text-xl font-bold text-green-600"
-                  x-text="Math.round(results.deep_analysis.pump_probability_1h * 100) + '%'"
+                  x-text="Math.round((getDeepAnalysis().pump_probability_1h || 0) * 100) + '%'"
                 ></div>
                 <div class="text-xs text-gray-500">1h Pump Probability</div>
               </div>
               <div class="text-center p-3 bg-gray-50 rounded-lg">
                 <div
                   class="text-xl font-bold text-blue-600"
-                  x-text="Math.round(results.deep_analysis.pump_probability_24h * 100) + '%'"
+                  x-text="Math.round((getDeepAnalysis().pump_probability_24h || 0) * 100) + '%'"
                 ></div>
                 <div class="text-xs text-gray-500">24h Pump Probability</div>
               </div>
             </div>
 
             <!-- Patterns -->
-            <div x-show="results.deep_analysis.patterns?.length">
+            <div x-show="getDeepAnalysis().patterns?.length">
               <h4 class="font-medium text-gray-900 mb-2">Detected Patterns:</h4>
               <div class="flex flex-wrap gap-1">
                 <template
-                  x-for="pattern in results.deep_analysis.patterns"
+                  x-for="pattern in getDeepAnalysis().patterns"
                   :key="pattern"
                 >
                   <span
@@ -395,12 +368,12 @@
 
             <!-- Price Targets -->
             <div
-              x-show="results.deep_analysis.price_targets && Object.keys(results.deep_analysis.price_targets).length"
+              x-show="getDeepAnalysis().price_targets && Object.keys(getDeepAnalysis().price_targets).length"
             >
               <h4 class="font-medium text-gray-900 mb-2">Price Targets:</h4>
               <div class="space-y-1">
                 <template
-                  x-for="[timeframe, target] in Object.entries(results.deep_analysis.price_targets)"
+                  x-for="[timeframe, target] in Object.entries(getDeepAnalysis().price_targets || {})"
                   :key="timeframe"
                 >
                   <div class="flex justify-between text-sm">
@@ -414,49 +387,81 @@
               </div>
             </div>
 
-            <!-- Key Insights -->
-            <div x-show="results.deep_analysis.key_insights?.length">
-              <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
-              <ul class="space-y-1">
-                <template
-                  x-for="insight in results.deep_analysis.key_insights"
-                  :key="insight"
-                >
-                  <li class="text-sm text-gray-600 flex items-start">
-                    <i
-                      class="fas fa-chevron-right text-purple-500 mr-2 mt-0.5 text-xs"
-                    ></i>
-                    <span x-text="insight"></span>
-                  </li>
-                </template>
-              </ul>
-            </div>
-
-            <!-- Risk Factors -->
-            <div x-show="results.deep_analysis.risk_factors?.length">
-              <h4 class="font-medium text-gray-900 mb-2">Risk Factors:</h4>
-              <ul class="space-y-1">
-                <template
-                  x-for="risk in results.deep_analysis.risk_factors"
-                  :key="risk"
-                >
-                  <li class="text-sm text-red-600 flex items-start">
-                    <i
-                      class="fas fa-exclamation-triangle text-red-500 mr-2 mt-0.5 text-xs"
-                    ></i>
-                    <span x-text="risk"></span>
-                  </li>
-                </template>
-              </ul>
-            </div>
-
             <!-- Processing Time -->
             <div class="text-xs text-gray-500 text-center">
               Processed in
-              <span x-text="results.deep_analysis.processing_time"></span>s
+              <span
+                x-text="(getDeepAnalysis().processing_time || 0).toFixed(2)"
+              ></span
+              >s
             </div>
           </div>
         </template>
+      </div>
+    </div>
+
+    <!-- Comprehensive Analysis Details -->
+    <div
+      x-show="isComprehensiveAnalysis()"
+      class="bg-white rounded-xl shadow-lg p-6"
+    >
+      <h3 class="text-lg font-semibold text-gray-900 mb-4">
+        Comprehensive Analysis Details
+      </h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Security Analysis -->
+        <div x-show="getSecurityAnalysis()">
+          <h4 class="font-medium text-gray-900 mb-2">Security Score</h4>
+          <div class="text-center p-3 bg-gray-50 rounded-lg">
+            <div
+              class="text-2xl font-bold"
+              :class="getSecurityAnalysis().overall_security_score >= 70 ? 'text-green-600' : getSecurityAnalysis().overall_security_score >= 40 ? 'text-yellow-600' : 'text-red-600'"
+              x-text="getSecurityAnalysis().overall_security_score || 'N/A'"
+            ></div>
+            <div class="text-xs text-gray-500">Security Score</div>
+          </div>
+        </div>
+
+        <!-- On-Chain Metrics -->
+        <div x-show="getOnChainMetrics()">
+          <h4 class="font-medium text-gray-900 mb-2">On-Chain Activity</h4>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-600">Holder Count:</span>
+              <span
+                x-text="formatNumber(getOnChainMetrics().holder_analysis?.holder_count || 0)"
+              ></span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">24h Transactions:</span>
+              <span
+                x-text="formatNumber(getOnChainMetrics().transaction_activity?.['24h_transactions'] || 0)"
+              ></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Risk Assessment -->
+        <div x-show="getRiskAssessment()">
+          <h4 class="font-medium text-gray-900 mb-2">Risk Breakdown</h4>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-600">Overall Risk:</span>
+              <span
+                :class="getRiskLevelClass(getRiskAssessment().risk_category)"
+                class="px-2 py-1 rounded text-xs"
+                x-text="(getRiskAssessment().risk_category || 'unknown').toUpperCase()"
+              ></span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600">Score:</span>
+              <span
+                x-text="getRiskAssessment().overall_risk_score || 'N/A'"
+              ></span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -467,22 +472,31 @@
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <div>
           <div class="text-sm text-gray-500">Analysis ID</div>
-          <div class="font-mono text-sm" x-text="results.analysis_id"></div>
+          <div
+            class="font-mono text-sm"
+            x-text="results?.analysis_id || 'N/A'"
+          ></div>
         </div>
         <div>
           <div class="text-sm text-gray-500">Processing Time</div>
-          <div class="font-medium" x-text="results.processing_time + 's'"></div>
+          <div
+            class="font-medium"
+            x-text="(results?.processing_time || 0).toFixed(2) + 's'"
+          ></div>
         </div>
         <div>
           <div class="text-sm text-gray-500">Data Sources</div>
           <div
             class="font-medium"
-            x-text="results.sources_used?.join(', ') || 'N/A'"
+            x-text="getDataSources().join(', ') || 'N/A'"
           ></div>
         </div>
         <div>
           <div class="text-sm text-gray-500">Timestamp</div>
-          <div class="font-medium" x-text="formatTime(results.timestamp)"></div>
+          <div
+            class="font-medium"
+            x-text="formatTime(results?.timestamp)"
+          ></div>
         </div>
       </div>
     </div>
@@ -518,13 +532,12 @@
         tokenMint: '{{ selected_token or "" }}',
         analysisType: "quick",
         priority: "normal",
-        includeSocial: true,
-        includeOnChain: true,
-        includeSecurity: true,
+        forceRefresh: false,
       },
       isAnalyzing: false,
       hasResults: false,
       results: null,
+      rawResults: null,
       analysisProgress: {
         step: "Initializing...",
         message: "Starting analysis...",
@@ -551,19 +564,26 @@
       getAnalyzeButtonText() {
         switch (this.form.analysisType) {
           case "quick":
-            return "Quick Analysis (2-5s)";
+            return "Quick Analysis (Frontend API)";
           case "deep":
-            return "Deep Analysis (8-15s)";
-          case "both":
-            return "Comprehensive Analysis (10-20s)";
+            return "Deep Analysis (LLM API)";
+          case "comprehensive":
+            return "Comprehensive Analysis (Full API)";
           default:
             return "Analyze Token";
         }
       },
 
       async analyzeToken() {
+        console.log("🚀 Starting token analysis...", {
+          tokenMint: this.form.tokenMint,
+          analysisType: this.form.analysisType,
+          isValidAddress: this.isValidAddress,
+        });
+
         if (!this.isValidAddress) {
-          this.$parent.showNotification(
+          console.error("❌ Invalid token address:", this.form.tokenMint);
+          this.showNotification(
             "error",
             "Invalid Address",
             "Please enter a valid Solana token mint address"
@@ -574,130 +594,327 @@
         this.isAnalyzing = true;
         this.hasResults = false;
         this.results = null;
+        this.rawResults = null;
 
         try {
-          // Simulate analysis progress
-          await this.simulateProgress();
-
-          // Perform actual analysis using new endpoints
-          let result;
-          if (this.form.analysisType === "quick") {
-            result = await this.callQuickAnalysis(this.form.tokenMint);
-          } else if (this.form.analysisType === "deep") {
-            result = await this.callDeepAnalysis(this.form.tokenMint);
-          } else {
-            // Both analyses
-            const [quickResult, deepResult] = await Promise.all([
-              this.callQuickAnalysis(this.form.tokenMint),
-              this.callDeepAnalysis(this.form.tokenMint),
-            ]);
-            result = this.combineBothResults(quickResult, deepResult);
-          }
-
-          if (result.status === "success") {
-            this.results = result;
-            this.hasResults = true;
-
-            this.$parent.showNotification(
-              "success",
-              "Analysis Complete",
-              "Token analysis completed successfully"
+          // Check if SolanaAI is available
+          if (!window.SolanaAI || !window.SolanaAI.api) {
+            throw new Error(
+              "SolanaAI API not loaded. Please refresh the page."
             );
-          } else {
-            throw new Error(result.message || "Analysis failed");
           }
+
+          console.log("📡 Making API call...", {
+            endpoint: this.form.analysisType,
+            tokenMint: this.form.tokenMint,
+          });
+
+          // Use the enhanced API from main.js
+          const analysisOptions = {
+            forceRefresh: this.form.forceRefresh,
+            priority: this.form.priority,
+          };
+
+          let result;
+
+          // Direct API calls based on analysis type
+          switch (this.form.analysisType) {
+            case "quick":
+              result = await this.callQuickAnalysis(this.form.tokenMint);
+              break;
+            // case "deep":
+            //   result = await this.callDeepAnalysis(this.form.tokenMint);
+            //   break;
+            default:
+              throw new Error(
+                `Unknown analysis type: ${this.form.analysisType}`
+              );
+          }
+
+          console.log("✅ Analysis result received:", result);
+
+          this.rawResults = result;
+          this.results = window.SolanaAI.analysis.formatAnalysisResult(result);
+          this.hasResults = true;
+
+          const summary = window.SolanaAI.analysis.generateSummary(result);
+          this.showNotification("success", "Analysis Complete", summary);
         } catch (error) {
-          console.error("Analysis error:", error);
-          this.$parent.showNotification(
-            "error",
-            "Analysis Failed",
-            error.message || "Failed to analyze token"
-          );
+          console.error("❌ Analysis error:", error);
+
+          // More detailed error messages
+          let errorMessage = error.message || "Failed to analyze token";
+
+          if (error.message && error.message.includes("fetch")) {
+            errorMessage = "Network error - please check your connection";
+          } else if (error.message && error.message.includes("404")) {
+            errorMessage = "Analysis endpoint not found";
+          } else if (error.message && error.message.includes("422")) {
+            errorMessage = "Invalid token address format";
+          } else if (error.message && error.message.includes("500")) {
+            errorMessage = "Server error - please try again later";
+          }
+
+          this.showNotification("error", "Analysis Failed", errorMessage);
         } finally {
           this.isAnalyzing = false;
+          this.analysisProgress.percent = 100;
+          this.analysisProgress.message = "Complete";
         }
       },
 
+      // Direct API calls with better error handling
       async callQuickAnalysis(tokenMint) {
-        const response = await fetch(`/quick/${tokenMint}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
+        console.log("📞 Calling quick analysis API...");
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || `HTTP ${response.status}`);
+        try {
+          const response = await fetch(`/quick/${tokenMint}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          console.log("📡 Quick analysis response status:", response.status);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              errorData.message || errorData.detail || `HTTP ${response.status}`
+            );
+          }
+
+          const data = await response.json();
+          console.log("✅ Quick analysis data received:", data);
+          return data;
+        } catch (error) {
+          console.error("❌ Quick analysis failed:", error);
+          throw error;
         }
-
-        return await response.json();
       },
 
       async callDeepAnalysis(tokenMint) {
-        const response = await fetch(`/deep/${tokenMint}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        });
+        console.log("📞 Calling deep analysis API...");
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          throw new Error(errorData.message || `HTTP ${response.status}`);
+        try {
+          const response = await fetch(`/deep/${tokenMint}`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+
+          console.log("📡 Deep analysis response status:", response.status);
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              errorData.message || errorData.detail || `HTTP ${response.status}`
+            );
+          }
+
+          const data = await response.json();
+          console.log("✅ Deep analysis data received:", data);
+          return data;
+        } catch (error) {
+          console.error("❌ Deep analysis failed:", error);
+          throw error;
         }
-
-        return await response.json();
       },
 
-      combineBothResults(quickResult, deepResult) {
-        return {
-          ...deepResult,
-          quick_analysis: quickResult.data?.quick_analysis,
-          deep_analysis: deepResult.data?.deep_analysis,
-          metadata: {
-            name:
-              deepResult.data?.token_info?.name ||
-              quickResult.data?.token_info?.name,
-            symbol:
-              deepResult.data?.token_info?.symbol ||
-              quickResult.data?.token_info?.symbol,
-          },
-          price_data:
-            deepResult.data?.price_data || quickResult.data?.price_data,
-          sources_used: [
-            ...new Set([
-              ...(quickResult.sources_used || []),
-              ...(deepResult.sources_used || []),
-            ]),
-          ],
-        };
+      // Helper method to show notifications
+      showNotification(type, title, message) {
+        // Try to use parent notification system
+        if (this.$parent && this.$parent.showNotification) {
+          this.$parent.showNotification(type, title, message);
+        }
+        // Fallback to global notification system
+        else if (window.SolanaAI && window.SolanaAI.notifications) {
+          window.SolanaAI.notifications[type](title, message);
+        }
+        // Last resort - console log
+        else {
+          console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+          alert(`${title}: ${message}`);
+        }
       },
 
       async simulateProgress() {
         const steps = [
           { step: "Validating token address...", percent: 10 },
-          { step: "Fetching token metadata...", percent: 25 },
-          { step: "Collecting price data...", percent: 40 },
-          { step: "Analyzing on-chain metrics...", percent: 60 },
-          { step: "Running AI analysis...", percent: 80 },
-          { step: "Generating insights...", percent: 95 },
-          { step: "Finalizing results...", percent: 100 },
+          { step: "Connecting to analysis APIs...", percent: 25 },
+          { step: "Fetching token data...", percent: 40 },
+          { step: "Processing analysis...", percent: 60 },
+          { step: "Generating insights...", percent: 80 },
+          { step: "Finalizing results...", percent: 95 },
         ];
 
+        // Non-blocking progress simulation
         for (const progressStep of steps) {
+          if (!this.isAnalyzing) break; // Stop if analysis was cancelled
+
           this.analysisProgress = {
             ...progressStep,
             message: progressStep.step,
           };
-          await new Promise((resolve) => setTimeout(resolve, 300));
+
+          // Don't await - let it update in background
+          setTimeout(() => {}, 200);
         }
+      },
+
+      // Helper functions to extract data from results
+      getTokenName() {
+        if (!this.results) return "Unknown Token";
+
+        if (this.results.formattedData?.tokenInfo?.name) {
+          return this.results.formattedData.tokenInfo.name;
+        }
+
+        if (this.results.data?.token_info?.name) {
+          return this.results.data.token_info.name;
+        }
+
+        return "Unknown Token";
+      },
+
+      getTokenSymbol() {
+        if (!this.results) return "N/A";
+
+        if (this.results.formattedData?.tokenInfo?.symbol) {
+          return this.results.formattedData.tokenInfo.symbol;
+        }
+
+        if (this.results.data?.token_info?.symbol) {
+          return this.results.data.token_info.symbol;
+        }
+
+        return "N/A";
+      },
+
+      getPriceData() {
+        if (!this.results) return {};
+
+        if (this.results.formattedData?.priceData) {
+          return this.results.formattedData.priceData;
+        }
+
+        if (this.results.data?.price_data) {
+          return this.results.data.price_data;
+        }
+
+        return {};
+      },
+
+      getQuickAnalysis() {
+        if (!this.results) return null;
+
+        if (this.results.formattedData?.quickAnalysis) {
+          return this.results.formattedData.quickAnalysis;
+        }
+
+        if (this.results.data?.quick_analysis) {
+          return this.results.data.quick_analysis;
+        }
+
+        return null;
+      },
+
+      getDeepAnalysis() {
+        if (!this.results) return null;
+
+        if (this.results.formattedData?.deepAnalysis) {
+          return this.results.formattedData.deepAnalysis;
+        }
+
+        if (this.results.data?.deep_analysis) {
+          return this.results.data.deep_analysis;
+        }
+
+        return null;
+      },
+
+      getSecurityAnalysis() {
+        if (!this.results) return null;
+
+        if (this.results.formattedData?.securityAnalysis) {
+          return this.results.formattedData.securityAnalysis;
+        }
+
+        if (this.results.security_analysis) {
+          return this.results.security_analysis;
+        }
+
+        return null;
+      },
+
+      getOnChainMetrics() {
+        if (!this.results) return null;
+
+        if (this.results.formattedData?.onChainMetrics) {
+          return this.results.formattedData.onChainMetrics;
+        }
+
+        if (this.results.on_chain_metrics) {
+          return this.results.on_chain_metrics;
+        }
+
+        return null;
+      },
+
+      getRiskAssessment() {
+        if (!this.results) return null;
+
+        if (this.results.formattedData?.riskAssessment) {
+          return this.results.formattedData.riskAssessment;
+        }
+
+        if (this.results.risk_assessment) {
+          return this.results.risk_assessment;
+        }
+
+        return null;
+      },
+
+      getAnalysisScore() {
+        const quick = this.getQuickAnalysis();
+        const deep = this.getDeepAnalysis();
+
+        if (quick?.score) return quick.score;
+        if (deep?.score) return deep.score;
+
+        return null;
+      },
+
+      getRiskLevel() {
+        const quick = this.getQuickAnalysis();
+        const deep = this.getDeepAnalysis();
+        const risk = this.getRiskAssessment();
+
+        if (quick?.risk_level) return quick.risk_level.toUpperCase();
+        if (deep?.risk_level) return deep.risk_level.toUpperCase();
+        if (risk?.risk_category) return risk.risk_category.toUpperCase();
+
+        return "UNKNOWN";
+      },
+
+      getDataSources() {
+        if (!this.results) return [];
+
+        if (this.results.sources_used) return this.results.sources_used;
+        if (this.results.data_sources) return this.results.data_sources;
+
+        return [];
+      },
+
+      isComprehensiveAnalysis() {
+        return this.form.analysisType === "comprehensive" && this.results;
       },
 
       async pasteFromClipboard() {
         try {
           const text = await navigator.clipboard.readText();
-          if (this.$parent.isValidSolanaAddress(text)) {
+          if (this.isValidSolanaAddress(text)) {
             this.form.tokenMint = text;
             this.$parent.showNotification(
               "success",
@@ -723,16 +940,18 @@
       clearResults() {
         this.hasResults = false;
         this.results = null;
+        this.rawResults = null;
         this.form.tokenMint = "";
       },
 
       exportResults() {
-        if (!this.results) return;
+        if (!this.rawResults) return;
 
         const data = {
-          ...this.results,
+          ...this.rawResults,
           exported_at: new Date().toISOString(),
           export_format: "json",
+          analysis_type: this.form.analysisType,
         };
 
         const blob = new Blob([JSON.stringify(data, null, 2)], {
@@ -741,7 +960,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `token-analysis-${this.results.token.substring(0, 8)}-${
+        a.download = `token-analysis-${this.form.tokenMint.substring(0, 8)}-${
           new Date().toISOString().split("T")[0]
         }.json`;
         document.body.appendChild(a);
@@ -758,51 +977,61 @@
 
       loadExampleAnalysis() {
         this.form.tokenMint = "So11111111111111111111111111111111111112"; // WSOL
+        this.form.analysisType = "quick"; // Start with quick analysis
         this.analyzeToken();
+      },
+
+      // Debug method to test if everything is working
+      async testAnalysis() {
+        console.log("🧪 Testing analysis system...");
+
+        // Test basic fetch
+        try {
+          console.log("1. Testing basic fetch to /health...");
+          const healthResponse = await fetch("/health");
+          console.log("✅ Health check response:", healthResponse.status);
+
+          console.log("2. Testing quick analysis endpoint...");
+          const testToken = "So11111111111111111111111111111111111112";
+          const quickResponse = await fetch(`/quick/${testToken}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          });
+          console.log("✅ Quick analysis response:", quickResponse.status);
+
+          if (quickResponse.ok) {
+            const data = await quickResponse.json();
+            console.log("✅ Quick analysis data:", data);
+          }
+        } catch (error) {
+          console.error("❌ Test failed:", error);
+        }
       },
 
       // Utility functions
       truncateAddress(address) {
         if (!address) return "N/A";
-        return `${address.substring(0, 8)}...${address.substring(
-          address.length - 8
-        )}`;
+        return window.SolanaAI.utils.truncateAddress(address);
       },
 
       formatCurrency(value) {
-        if (!value) return "N/A";
-        return `${parseFloat(value).toFixed(6)}`;
+        return window.SolanaAI.utils.formatCurrency(value);
       },
 
       formatNumber(num) {
-        if (!num && num !== 0) return "N/A";
-        if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
-        if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
-        if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
-        return Math.round(num).toString();
+        return window.SolanaAI.utils.formatNumber(num);
       },
 
       formatPercent(num) {
-        if (!num && num !== 0) return "N/A";
-        return `${num > 0 ? "+" : ""}${num.toFixed(1)}%`;
+        return window.SolanaAI.utils.formatPercent(num);
       },
 
       formatTime(timestamp) {
-        if (!timestamp) return "Unknown";
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
-
-        if (diff < 60000) return "Just now";
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-        return date.toLocaleDateString();
+        return window.SolanaAI.utils.formatTime(timestamp);
       },
 
       isValidSolanaAddress(address) {
-        if (!address || typeof address !== "string") return false;
-        if (address.length < 32 || address.length > 44) return false;
-        return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
+        return window.SolanaAI.utils.isValidSolanaAddress(address);
       },
 
       getPriceChangeClass(change) {
@@ -817,7 +1046,7 @@
           high: "bg-red-100 text-red-800",
           critical: "bg-red-200 text-red-900",
         };
-        return classes[level] || "bg-gray-100 text-gray-800";
+        return classes[level?.toLowerCase()] || "bg-gray-100 text-gray-800";
       },
 
       getRecommendationClass(recommendation) {

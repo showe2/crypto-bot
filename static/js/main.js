@@ -1,4 +1,4 @@
-// Main JavaScript file for Solana Token Analysis AI
+// Updated main.js - Enhanced API integration for token analysis
 console.log("🚀 Solana Token Analysis AI - Frontend Loaded");
 
 // Global state management
@@ -19,7 +19,7 @@ window.SolanaAI = {
   ws: null,
 };
 
-// Utility functions
+// Utility functions (keeping existing ones and adding new ones)
 window.SolanaAI.utils = {
   // Format numbers with K/M/B suffixes
   formatNumber(num) {
@@ -113,11 +113,28 @@ window.SolanaAI.utils = {
             `;
     }
   },
+
+  // Format currency values
+  formatCurrency(value, decimals = 6) {
+    if (!value && value !== 0) return "N/A";
+    const num = parseFloat(value);
+    if (isNaN(num)) return "N/A";
+    return num.toFixed(decimals);
+  },
+
+  // Truncate address for display
+  truncateAddress(address, startChars = 8, endChars = 8) {
+    if (!address) return "N/A";
+    if (address.length <= startChars + endChars) return address;
+    return `${address.substring(0, startChars)}...${address.substring(
+      address.length - endChars
+    )}`;
+  },
 };
 
-// API functions
+// Enhanced API functions with proper error handling
 window.SolanaAI.api = {
-  // Base request function
+  // Base request function with improved error handling
   async request(endpoint, options = {}) {
     const url = `${window.SolanaAI.config.apiBaseUrl}${endpoint}`;
 
@@ -130,11 +147,17 @@ window.SolanaAI.api = {
         ...options,
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        throw new Error(
+          data.message ||
+            data.detail ||
+            `HTTP ${response.status}: ${response.statusText}`
+        );
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error(`API Error for ${endpoint}:`, error);
       throw error;
@@ -150,27 +173,74 @@ window.SolanaAI.api = {
     return this.request("/api/dashboard");
   },
 
-  // Analysis endpoints
+  async getApiServicesHealth() {
+    return this.request("/api/health");
+  },
+
+  // New integrated analysis endpoints
   async quickAnalysis(tokenMint) {
-    return this.request("/api/analysis/quick", {
+    console.log(`🚀 Starting quick analysis for ${tokenMint}`);
+    return this.request(`/quick/${tokenMint}`, {
       method: "POST",
-      body: JSON.stringify({ token_mint: tokenMint }),
     });
   },
 
   async deepAnalysis(tokenMint) {
-    return this.request("/api/analysis/deep", {
+    console.log(`🧠 Starting deep analysis for ${tokenMint}`);
+    return this.request(`/deep/${tokenMint}`, {
       method: "POST",
-      body: JSON.stringify({ token_mint: tokenMint }),
     });
   },
 
-  // Command endpoints
+  // Comprehensive token analysis using API router
+  async analyzeTokenComprehensive(tokenMint, forceRefresh = false) {
+    console.log(`🔍 Starting comprehensive analysis for ${tokenMint}`);
+    return this.request("/api/analyze/token", {
+      method: "POST",
+      body: JSON.stringify({
+        token_address: tokenMint,
+        force_refresh: forceRefresh,
+      }),
+    });
+  },
+
+  // Batch analysis
+  async batchAnalyzeTokens(tokenAddresses, maxConcurrent = 3) {
+    console.log(
+      `📊 Starting batch analysis for ${tokenAddresses.length} tokens`
+    );
+    return this.request("/api/analyze/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        token_addresses: tokenAddresses,
+        max_concurrent: maxConcurrent,
+      }),
+    });
+  },
+
+  // Get analysis statistics
+  async getAnalysisStats() {
+    return this.request("/api/analyze/stats");
+  },
+
+  // Get services status
+  async getServicesStatus() {
+    return this.request("/api/services/status");
+  },
+
+  // Get recent webhook analyses
+  async getRecentAnalyses(limit = 10) {
+    return this.request(`/api/analyze/recent?limit=${limit}`);
+  },
+
+  // Legacy command endpoints (keeping for backward compatibility)
   async tweetCommand(tokenMint) {
+    console.log(`🐦 Tweet command for ${tokenMint}`);
     return this.request(`/tweet/${tokenMint}`, { method: "POST" });
   },
 
   async nameCommand(tokenMint) {
+    console.log(`📝 Name command for ${tokenMint}`);
     return this.request(`/name/${tokenMint}`, { method: "POST" });
   },
 
@@ -191,9 +261,59 @@ window.SolanaAI.api = {
   async getNotifications() {
     return this.request("/api/notifications");
   },
+
+  // Helper function to choose the best analysis endpoint based on requirements
+  async analyzeToken(tokenMint, analysisType = "quick", options = {}) {
+    const startTime = Date.now();
+
+    try {
+      let result;
+
+      switch (analysisType) {
+        case "quick":
+          result = await this.quickAnalysis(tokenMint);
+          break;
+
+        case "deep":
+          result = await this.deepAnalysis(tokenMint);
+          break;
+
+        case "comprehensive":
+          result = await this.analyzeTokenComprehensive(
+            tokenMint,
+            options.forceRefresh
+          );
+          break;
+
+        case "legacy":
+          // Use legacy tweet/name commands for backward compatibility
+          result = await this.tweetCommand(tokenMint);
+          break;
+
+        default:
+          throw new Error(`Unknown analysis type: ${analysisType}`);
+      }
+
+      // Add timing information
+      const processingTime = (Date.now() - startTime) / 1000;
+      if (result && typeof result === "object") {
+        result.frontend_processing_time = processingTime;
+      }
+
+      console.log(`✅ Analysis completed in ${processingTime.toFixed(2)}s`);
+      return result;
+    } catch (error) {
+      const processingTime = (Date.now() - startTime) / 1000;
+      console.error(
+        `❌ Analysis failed after ${processingTime.toFixed(2)}s:`,
+        error
+      );
+      throw error;
+    }
+  },
 };
 
-// Notification system
+// Enhanced notification system
 window.SolanaAI.notifications = {
   show(type, title, message, duration = 5000) {
     const notification = {
@@ -277,16 +397,40 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   // Initialize periodic health checks
-  setInterval(async () => {
+  let healthCheckInterval = setInterval(async () => {
     try {
-      const health = await window.SolanaAI.api.getSystemStatus();
+      const health = await window.SolanaAI.api.getSystemHealth();
       window.SolanaAI.state.systemHealth = health;
-      window.SolanaAI.state.connected = health.overall_healthy;
+      window.SolanaAI.state.connected = health.overall_status;
+
+      // Also check API services health
+      const apiHealth = await window.SolanaAI.api.getApiServicesHealth();
+      window.SolanaAI.state.apiHealth = apiHealth;
     } catch (error) {
       console.warn("Health check failed:", error);
       window.SolanaAI.state.connected = false;
     }
   }, 30000); // Check every 30 seconds
+
+  // Initial health check
+  setTimeout(async () => {
+    try {
+      const health = await window.SolanaAI.api.getSystemHealth();
+      window.SolanaAI.state.systemHealth = health;
+      window.SolanaAI.state.connected = health.overall_status;
+      console.log("✅ Initial system health check completed");
+    } catch (error) {
+      console.warn("Initial health check failed:", error);
+      window.SolanaAI.state.connected = false;
+    }
+  }, 1000);
+
+  // Cleanup interval on page unload
+  window.addEventListener("beforeunload", () => {
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+    }
+  });
 
   console.log("✅ Solana AI frontend initialized successfully");
 });
@@ -294,3 +438,33 @@ document.addEventListener("DOMContentLoaded", function () {
 // Export for global access
 window.SolanaAI.version = "1.0.0";
 window.SolanaAI.initialized = true;
+
+// Enhanced global functions for Alpine.js components
+window.analyzeTokenGlobal = async function (tokenMint, analysisType = "quick") {
+  try {
+    return await window.SolanaAI.api.analyzeToken(tokenMint, analysisType);
+  } catch (error) {
+    console.error("Global token analysis failed:", error);
+    throw error;
+  }
+};
+
+window.formatAnalysisResultGlobal = function (result) {
+  return window.SolanaAI.analysis.formatAnalysisResult(result);
+};
+
+window.extractKeyMetricsGlobal = function (result) {
+  return window.SolanaAI.analysis.extractKeyMetrics(result);
+};
+
+// Debug helper to check API availability
+window.debugSolanaAI = function () {
+  console.log("🔍 SolanaAI Debug Info:");
+  console.log("- API Base URL:", window.SolanaAI.config.apiBaseUrl);
+  console.log("- System State:", window.SolanaAI.state);
+  console.log("- Available API methods:", Object.keys(window.SolanaAI.api));
+  console.log("- Utils available:", Object.keys(window.SolanaAI.utils));
+};
+
+console.log("🎉 Enhanced Solana AI frontend API integration loaded");
+console.log("🔧 Use window.debugSolanaAI() to check system status");

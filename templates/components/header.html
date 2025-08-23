@@ -47,151 +47,15 @@
           <input
             type="text"
             x-model="quickSearchQuery"
-            @input="quickSearch($event.target.value)"
             @keyup.enter="performQuickAnalysis()"
-            placeholder="Enter token mint address for quick analysis..."
+            placeholder="Enter token mint address for analysis..."
             class="w-full px-4 py-2 pl-10 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg placeholder-blue-100 text-white focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50"
           />
           <i
             class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-100"
           ></i>
-
-          <!-- Quick action button -->
-          <button
-            x-show="isValidSolanaAddress(quickSearchQuery)"
-            @click="performQuickAnalysis()"
-            class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white text-sm px-3 py-1 rounded"
-          >
-            Analyze
-          </button>
         </div>
       </div>
-
-      <!-- Right Section -->
-      <div class="flex items-center space-x-2">
-        <!-- System Status Display (Hidden on mobile) -->
-        <div
-          class="hidden lg:flex items-center space-x-2 px-3 py-1 bg-white bg-opacity-20 rounded-lg"
-        >
-          <div
-            class="w-2 h-2 rounded-full"
-            :class="{
-              'status-healthy': systemHealth && systemHealth.overall_status,
-              'status-unhealthy': systemHealth && !systemHealth.overall_status,
-              'status-warning': !systemHealth
-            }"
-          ></div>
-          <span class="text-sm font-medium">
-            <span x-show="systemHealth && systemHealth.overall_status"
-              >System Online</span
-            >
-            <span x-show="systemHealth && !systemHealth.overall_status"
-              >System Issues</span
-            >
-            <span x-show="!systemHealth">Checking...</span>
-          </span>
-        </div>
-
-        <!-- Refresh Button -->
-        <button
-          @click="refreshData()"
-          :disabled="isRefreshing"
-          class="p-2 rounded-lg hover:bg-white hover:bg-opacity-20 transition-colors disabled:opacity-50"
-          title="Refresh system data"
-        >
-          <i
-            class="fas fa-sync-alt text-sm sm:text-base"
-            :class="{ 'animate-spin': isRefreshing }"
-          ></i>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Mobile Search Bar -->
-  <div class="md:hidden px-4 pb-3">
-    <div class="relative">
-      <input
-        type="text"
-        x-model="mobileSearchQuery"
-        @keyup.enter="performMobileAnalysis()"
-        placeholder="Enter token mint for analysis..."
-        class="w-full px-4 py-2 pl-10 pr-16 bg-white bg-opacity-20 border border-white border-opacity-30 rounded-lg placeholder-blue-100 text-white focus:outline-none focus:ring-2 focus:ring-white focus:ring-opacity-50 text-sm"
-      />
-      <i
-        class="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-100"
-      ></i>
-      <button
-        x-show="isValidSolanaAddress(mobileSearchQuery)"
-        @click="performMobileAnalysis()"
-        class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-white bg-opacity-20 hover:bg-opacity-30 text-white text-xs px-2 py-1 rounded"
-      >
-        Go
-      </button>
     </div>
   </div>
 </header>
-
-<script>
-  // Add to global Alpine data
-  document.addEventListener("alpine:init", () => {
-    Alpine.data("headerData", () => ({
-      quickSearchQuery: "",
-      mobileSearchQuery: "",
-      isRefreshing: false,
-
-      async refreshData() {
-        this.isRefreshing = true;
-
-        try {
-          await Promise.all([this.loadSystemHealth(), this.loadRealMetrics()]);
-
-          this.showNotification("success", "Refreshed", "System data updated");
-        } catch (error) {
-          this.showNotification(
-            "error",
-            "Refresh Failed",
-            "Could not update data"
-          );
-        } finally {
-          this.isRefreshing = false;
-        }
-      },
-
-      async performQuickAnalysis() {
-        if (!this.isValidSolanaAddress(this.quickSearchQuery)) {
-          this.showNotification(
-            "error",
-            "Invalid Address",
-            "Please enter a valid Solana token mint address"
-          );
-          return;
-        }
-
-        window.location.href = `/analysis?token=${this.quickSearchQuery}`;
-      },
-
-      async performMobileAnalysis() {
-        if (!this.isValidSolanaAddress(this.mobileSearchQuery)) {
-          this.showNotification(
-            "error",
-            "Invalid Address",
-            "Please enter a valid Solana token mint address"
-          );
-          return;
-        }
-
-        window.location.href = `/analysis?token=${this.mobileSearchQuery}`;
-      },
-
-      quickSearch(query) {
-        // Simple validation feedback
-        if (query && query.length >= 32 && this.isValidSolanaAddress(query)) {
-          // Valid address format
-          return true;
-        }
-        return false;
-      },
-    }));
-  });
-</script>
