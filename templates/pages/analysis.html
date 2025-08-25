@@ -455,7 +455,7 @@
           <div class="text-sm text-gray-500">Processing Time</div>
           <div
             class="font-medium"
-            x-text="(results?.processing_time || 0).toFixed(2) + 's'"
+            x-text="(results?.metadata.processing_time_seconds || 0).toFixed(2) + 's'"
           ></div>
         </div>
         <div>
@@ -488,7 +488,7 @@
         isAnalyzing: false,
         hasResults: false,
         results: null,
-        rawResults: null,
+        results: null,
         analysisProgress: {
           step: "Initializing...",
           message: "Starting analysis...",
@@ -545,7 +545,6 @@
           this.isAnalyzing = true;
           this.hasResults = false;
           this.results = null;
-          this.rawResults = null;
 
           try {
             // Check if SolanaAI is available
@@ -584,9 +583,7 @@
 
             console.log("✅ Analysis result received:", result);
 
-            this.rawResults = result;
-            this.results =
-              window.SolanaAI.analysis.formatAnalysisResult(result);
+            this.results = result;
             this.hasResults = true;
 
             const summary = window.SolanaAI.analysis.generateSummary(result);
@@ -726,12 +723,24 @@
         getTokenName() {
           if (!this.results) return "Unknown Token";
 
-          if (this.results.formattedData?.tokenInfo?.name) {
-            return this.results.formattedData.tokenInfo.name;
+          if (
+            this.results.service_responses?.helius?.metadata?.onChainMetadata
+              ?.metadata?.data?.name
+          ) {
+            return this.results.service_responses?.helius?.metadata
+              ?.onChainMetadata?.metadata?.data?.name;
           }
 
-          if (this.results.data?.token_info?.name) {
-            return this.results.data.token_info.name;
+          if (this.results.service_responses?.solanafm?.token?.name) {
+            return this.results.service_responses?.solanafm?.token?.name;
+          }
+
+          if (
+            this.results.service_responses?.dexscreener?.pairs?.pairs[0]
+              ?.baseToken?.name
+          ) {
+            return this.results.service_responses?.dexscreener?.pairs?.pairs[0]
+              ?.baseToken?.name;
           }
 
           return "Unknown Token";
@@ -740,12 +749,24 @@
         getTokenSymbol() {
           if (!this.results) return "N/A";
 
-          if (this.results.formattedData?.tokenInfo?.symbol) {
-            return this.results.formattedData.tokenInfo.symbol;
+          if (
+            this.results.service_responses?.helius?.metadata?.onChainMetadata
+              ?.metadata?.data?.symbol
+          ) {
+            return this.results.service_responses?.helius?.metadata
+              ?.onChainMetadata?.metadata?.data?.symbol;
           }
 
-          if (this.results.data?.token_info?.symbol) {
-            return this.results.data.token_info.symbol;
+          if (this.results.service_responses?.solanafm?.token?.symbol) {
+            return this.results.service_responses?.solanafm?.token?.symbol;
+          }
+
+          if (
+            this.results.service_responses?.dexscreener?.pairs?.pairs[0]
+              ?.baseToken?.symbol
+          ) {
+            return this.results.service_responses?.dexscreener?.pairs?.pairs[0]
+              ?.baseToken?.symbol;
           }
 
           return "N/A";
@@ -899,15 +920,15 @@
         clearResults() {
           this.hasResults = false;
           this.results = null;
-          this.rawResults = null;
+          this.results = null;
           this.form.tokenMint = "";
         },
 
         exportResults() {
-          if (!this.rawResults) return;
+          if (!this.results) return;
 
           const data = {
-            ...this.rawResults,
+            ...this.results,
             exported_at: new Date().toISOString(),
             export_format: "json",
             analysis_type: this.form.analysisType,
