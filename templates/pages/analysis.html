@@ -390,8 +390,8 @@
           <div class="text-center p-3 bg-gray-50 rounded-lg">
             <div
               class="text-2xl font-bold"
-              :class="getSecurityAnalysis().overall_security_score >= 70 ? 'text-green-600' : getSecurityAnalysis().overall_security_score >= 40 ? 'text-yellow-600' : 'text-red-600'"
-              x-text="getSecurityAnalysis().overall_security_score || 'N/A'"
+              :class="(getSecurityAnalysis()?.overall_security_score || 0) >= 70 ? 'text-green-600' : (getSecurityAnalysis()?.overall_security_score || 0) >= 40 ? 'text-yellow-600' : 'text-red-600'"
+              x-text="getSecurityAnalysis()?.overall_security_score || 'N/A'"
             ></div>
             <div class="text-xs text-gray-500">Security Score</div>
           </div>
@@ -404,13 +404,13 @@
             <div class="flex justify-between">
               <span class="text-gray-600">Holder Count:</span>
               <span
-                x-text="formatNumber(getOnChainMetrics().holder_analysis?.holder_count || 0)"
+                x-text="formatNumber(getOnChainMetrics()?.holder_analysis?.holder_count || 0)"
               ></span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">24h Transactions:</span>
               <span
-                x-text="formatNumber(getOnChainMetrics().transaction_activity?.['24h_transactions'] || 0)"
+                x-text="formatNumber(getOnChainMetrics()?.transaction_activity?.['24h_transactions'] || 0)"
               ></span>
             </div>
           </div>
@@ -423,15 +423,15 @@
             <div class="flex justify-between">
               <span class="text-gray-600">Overall Risk:</span>
               <span
-                :class="getRiskLevelClass(getRiskAssessment().risk_category)"
+                :class="getRiskLevelClass(getRiskAssessment()?.risk_category)"
                 class="px-2 py-1 rounded text-xs"
-                x-text="(getRiskAssessment().risk_category || 'unknown').toUpperCase()"
+                x-text="(getRiskAssessment()?.risk_category || 'unknown').toUpperCase()"
               ></span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Score:</span>
               <span
-                x-text="getRiskAssessment().overall_risk_score || 'N/A'"
+                x-text="getRiskAssessment()?.overall_risk_score || 'N/A'"
               ></span>
             </div>
           </div>
@@ -487,7 +487,6 @@
         },
         isAnalyzing: false,
         hasResults: false,
-        results: null,
         results: null,
         analysisProgress: {
           step: "Initializing...",
@@ -572,9 +571,6 @@
               case "quick":
                 result = await this.callQuickAnalysis(this.form.tokenMint);
                 break;
-              // case "deep":
-              //   result = await this.callDeepAnalysis(this.form.tokenMint);
-              //   break;
               default:
                 throw new Error(
                   `Unknown analysis type: ${this.form.analysisType}`
@@ -617,1841 +613,13 @@
           console.log("📞 Calling quick analysis API...");
 
           try {
-            return {
-              success: true,
-              analysis_id: "analysis_1756079674_So111111",
-              token_address: "So11111111111111111111111111111111111111112",
-              timestamp: "2025-08-24T23:54:34.528431",
-              source_event: "frontend_quick",
-              warnings: [],
-              errors: [],
-              data_sources: [
-                "birdeye",
-                "helius",
-                "chainbase",
-                "solanafm",
-                "dexscreener",
-                "goplus",
-                "rugcheck",
-              ],
-              service_responses: {
-                birdeye: {
-                  price: {
-                    address: "So11111111111111111111111111111111111111112",
-                    value: 205.76111419937826,
-                    update_unix_time: 1756079674,
-                    update_human_time: "2025-08-24T23:54:34",
-                    price_change_24h: 0.9080866470165302,
-                    price_change_24h_percent: null,
-                    liquidity: 33391863030.38257,
-                    volume_24h: null,
-                    market_cap: null,
-                  },
-                  trades: {
-                    items: [
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "5LFTsq9NnDCVY27NGAzhN9zGkuc3jvPBJTBEJX3E4QVfd7jxJrFgSZPF6HjxqQoDUpVraW31nKDGgUi8R42JhaCz",
-                        ins_index: 3,
-                        inner_ins_index: 1,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 142.30445656303644,
-                        volume: 2578394.10323,
-                        owner: "5MGpJZynJcZanZydgXzaE3RQUukkrjgGQg1KMazbQXu8",
-                        signers: [
-                          "5W4sXjpeY6DVw3wXrHuf1qWGunwRCjeio7gKXhagB7BR",
-                          "5MGpJZynJcZanZydgXzaE3RQUukkrjgGQg1KMazbQXu8",
-                        ],
-                        source: "pump_dot_fun",
-                        interacted_program_id:
-                          "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 3728115.3022032515,
-                        from: {
-                          symbol: "WPAD",
-                          address:
-                            "BihXVi15Qrph9kidpTM7RivBNJw95PtjxQjfPVaxpump",
-                          decimals: 6,
-                          price: 0.00005519111930358866,
-                          amount: "2578394103230",
-                          ui_amount: 2578394.10323,
-                          ui_change_amount: -2578394.10323,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "691607929",
-                          ui_amount: 0.691607929,
-                          ui_change_amount: 0.691607929,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "4NDaKTNbTxABSBZ53BbTxJEacwkmXNjU5Qz9Q2LmSiBx",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "4a3vsFoj89H4bWgoHrZ9YvoW2JpxZ3N1MnuSgTdE34yfFdMP9wBgQQGEYcUqoA8oRH5HQd5N7gJrM8WWXSuhGhXC",
-                        ins_index: 7,
-                        inner_ins_index: 3,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 364.4383996825393,
-                        volume: 21926363.15051184,
-                        owner: "BCnqsPEtA1TkgednYEebRpkmwFRJDCjMQcKZMMtEdArc",
-                        signers: [
-                          "BCnqsPEtA1TkgednYEebRpkmwFRJDCjMQcKZMMtEdArc",
-                        ],
-                        source: "meteora_dynamic_bonding_curve",
-                        interacted_program_id:
-                          "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 12379440.287467998,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "1771191802",
-                          ui_amount: 1.771191802,
-                          ui_change_amount: -1.771191802,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "Goonify",
-                          address:
-                            "5thVeaHm6XozacY8UckZb2hAkTAXSFDCmHAzDY6fdaos",
-                          decimals: 9,
-                          price: 0.00001662101449204685,
-                          amount: "21926363150511842",
-                          ui_amount: 21926363.15051184,
-                          ui_change_amount: 21926363.15051184,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "GE6swG9emyMbnFbkXxAwhnWM2A3NUeA333vsJEsKyQeQ",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "4Cqp1dzoVZYzJnkfTtmb8Z3jmQVi3FycQySnNz8Mjo8KBUvJhtuKh1e3dd4ZKiNs6Zji7qgXspTboumFwL9xLW4c",
-                        ins_index: 4,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 61.34375410970771,
-                        volume: 0.29813421,
-                        owner: "9sVmedqnBBt4M6KTWfCxhr2FvHb4seZzYY4RojU1LhcU",
-                        signers: [
-                          "9sVmedqnBBt4M6KTWfCxhr2FvHb4seZzYY4RojU1LhcU",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 98413.34468124271,
-                        from: {
-                          symbol: "LOONO",
-                          address:
-                            "3Qq3BQpRgiSonfg89CxhpgV1NQypVLaw8uQ2rD4UmrJU",
-                          decimals: 6,
-                          price: 0.002090761746670431,
-                          amount: "29340384770",
-                          ui_amount: 29340.38477,
-                          ui_change_amount: -29340.38477,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "298134210",
-                          ui_amount: 0.29813421,
-                          ui_change_amount: 0.29813421,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "2ySoHiyv4w6cdAN29CXNqEqiPgUgCRYY6doiSqrnsbP1",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "3uaLzB3FMNshfSEeUaAHHqEheerzG47SzRtVT4pNGctTis4QdiypCtgTb1oGe4oAADiNDeiDZap23kvP53D9s9jF",
-                        ins_index: 2,
-                        inner_ins_index: 5,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 30.518953369102025,
-                        volume: 11412.41176,
-                        owner: "7MBoioY9NNPVYCNUmdKzVfn4upSC4tzqgM8WUFtZ2gE2",
-                        signers: [
-                          "7MBoioY9NNPVYCNUmdKzVfn4upSC4tzqgM8WUFtZ2gE2",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "DF1ow4tspfHX9JwWJsAb9epbkA8hmpSEAtxXy1V27QBH",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 76942.50731171845,
-                        from: {
-                          symbol: "DARK",
-                          address:
-                            "8BtoThi2ZoXnF7QQK1Wjmh2JuBw9FjVvhnGMVZ2vpump",
-                          decimals: 6,
-                          price: 0.002674189646404944,
-                          amount: "11412411760",
-                          ui_amount: 11412.41176,
-                          ui_change_amount: -11412.41176,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "148323887",
-                          ui_amount: 0.148323887,
-                          ui_change_amount: 0.148323887,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "4bLcvqxuLia8cFKeMKPXx31iCoty9KbU7bWYYNfCMsSV",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "4BfH5UKsPPo8MnSJVrWnge2cf9EQPRkYeVxZ7LPFUe9bhEdWDKynZwqVvPRYcoEqPqEn1DZHU1gPtYFRsLGxTsds",
-                        ins_index: 1,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 39.84786362530083,
-                        volume: 0.193662933,
-                        owner: "8hF9W5owzcMwFbBJZHo9Rz95NUdiKFeAXZ9Gnioygg3P",
-                        signers: [
-                          "8hF9W5owzcMwFbBJZHo9Rz95NUdiKFeAXZ9Gnioygg3P",
-                          "EJTwJRx7RVKLGQg1FKvs3Gu1CRwahHCQAmbfF2vnopBW",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 591.31933109781,
-                        from: {
-                          symbol: "YZY",
-                          address:
-                            "CrVQ8aFktWFJHAeJ9ZbzWwBrFqi2x9BKdQLujRZm8vkP",
-                          decimals: 6,
-                          price: 0.3479657193676282,
-                          amount: "114516636",
-                          ui_amount: 114.516636,
-                          ui_change_amount: -114.516636,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "193662933",
-                          ui_amount: 0.193662933,
-                          ui_change_amount: 0.193662933,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "79HC1usWP15oeYfkUS6XcfhrWuYs8KMimQNThsGzJon5",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "4SPWu1yMhJyGkwbVUirEqmZTXTe3jiwYRzmdfVxTE7H8k3gjEx1GGosd9LK9kszxGJt8PDdaFsXqrW1QhmvPDwPD",
-                        ins_index: 3,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 9.586194833927577,
-                        volume: 0.046589464,
-                        owner: "DPNW9E6EFgDxcUSqsUg3sfuFZP7DtZzHbTodJ1vcBHwW",
-                        signers: [
-                          "DPNW9E6EFgDxcUSqsUg3sfuFZP7DtZzHbTodJ1vcBHwW",
-                          "DW2XKPqPCPm4tGZTZ76QP9fiSHP7K11wyYuqYnHdMzN2",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 588.1583226628235,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "46589464",
-                          ui_amount: 0.046589464,
-                          ui_change_amount: -0.046589464,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "YZY",
-                          address:
-                            "CrVQ8aFktWFJHAeJ9ZbzWwBrFqi2x9BKdQLujRZm8vkP",
-                          decimals: 6,
-                          price: 0.34983583245049243,
-                          amount: "27401981",
-                          ui_amount: 27.401981,
-                          ui_change_amount: 27.401981,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "79HC1usWP15oeYfkUS6XcfhrWuYs8KMimQNThsGzJon5",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "5qDi6dnYx6gybsksjCbqrx1rvaEvw27FBuZZwBEhcZDZ4NUk2kYvSPRNPadJsYhwgHWQthrp3CK8pPnxJiKJ8UYG",
-                        ins_index: 6,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 84.96389141473178,
-                        volume: 0.41292945,
-                        owner: "6Qd8WCgXWMovfB74MudL8jdzffGjwuio6fkQ5cZnJ34R",
-                        signers: [
-                          "WdEMQUz4hJtASm2voRFfLXPVuFEShs6i3G5jDtUi5Ht",
-                          "6Qd8WCgXWMovfB74MudL8jdzffGjwuio6fkQ5cZnJ34R",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 1000111.848014231,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "412929450",
-                          ui_amount: 0.41292945,
-                          ui_change_amount: -0.41292945,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "BABY BITTY",
-                          address:
-                            "6K4rAyms1h1z7FnZCQoDFyzSTMHUPCbHCYt9pBLqCCoa",
-                          decimals: 6,
-                          price: 0.00020573584527568394,
-                          amount: "412975635339",
-                          ui_amount: 412975.635339,
-                          ui_change_amount: 412975.635339,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "BnRftXc4a1FymBduBVrDq8SqWrJJjfZDRZ2kMiHrNsPj",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "5QQtWBvGcvYErJXBApZvBMPGVwmaGuvK87NkcHUce1XwUJFyUnrZyUxQnSnoqipANwokKncGHWqJQ7V2WpzFr9Lj",
-                        ins_index: 1,
-                        inner_ins_index: 0,
-                        block_unix_time: 1756079665,
-                        block_number: 362299374,
-                        volume_usd: 499.92282,
-                        volume: 2.429106207,
-                        owner: "YubozzSnKomEnH3pkmYsdatUUwUTcm7s4mHJVmefEWj",
-                        signers: [
-                          "YubozzSnKomEnH3pkmYsdatUUwUTcm7s4mHJVmefEWj",
-                        ],
-                        source: "lifinity",
-                        interacted_program_id:
-                          "8A2ap8YTUmCYbQztNZQnebE333PBuWQxztYNpvQ8RXKF",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 205.83702703452852,
-                        from: {
-                          symbol: "USDT",
-                          address:
-                            "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
-                          decimals: 6,
-                          price: 0.99984564,
-                          amount: "500000000",
-                          ui_amount: 500,
-                          ui_change_amount: -500,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "2429106207",
-                          ui_amount: 2.429106207,
-                          ui_change_amount: 2.429106207,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "EiEAydLqSKFqRPpuwYoVxEJ6h9UZh9tsTaHgs4f8b8Z5",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "3a87iSe6t18qwtyVCqCsR8ccZY4f1YtdCoeXUnTPrFXKKnXbdEYojGeMKUW899QsFSJ3P2vNST1fok4282QPfwJY",
-                        ins_index: 2,
-                        inner_ins_index: 0,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 617.2765692643026,
-                        volume: 3,
-                        owner: "Luckt5NfKnknMzTiqokUxLcy9kSD4dWjCnTWu8DNTqc",
-                        signers: [
-                          "Luckt5NfKnknMzTiqokUxLcy9kSD4dWjCnTWu8DNTqc",
-                        ],
-                        source: "whirlpool",
-                        interacted_program_id:
-                          "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 37.653165666666666,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "3000000000",
-                          ui_amount: 3,
-                          ui_change_amount: -3,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "JLP",
-                          address:
-                            "27G8MtK7VtTcCHkpASjSDdkWWYfoqT6ggEuKidVJidD4",
-                          decimals: 6,
-                          price: 5.464583197146341,
-                          amount: "112959497",
-                          ui_amount: 112.959497,
-                          ui_change_amount: 112.959497,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "6a3m2EgFFKfsFuQtP4LJJXPcAe3TQYXNyHUjjZpUxYgd",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "25Vg89jVqTRtMGTfC6WFxQca1CfTs6e65UEL23bzytz7UNc1GiSJSducqsRxJsRESGZHYkseJMjTdAWxMaEAoLnG",
-                        ins_index: 1,
-                        inner_ins_index: 0,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 14.81463766234326,
-                        volume: 0.072,
-                        owner: "J14Cg556roeBSgWFEKNTiSQeydMPRW6FZNB2zDMmSadQ",
-                        signers: [
-                          "J14Cg556roeBSgWFEKNTiSQeydMPRW6FZNB2zDMmSadQ",
-                        ],
-                        source: "whirlpool",
-                        interacted_program_id:
-                          "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 0.7584179444444445,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7588564214342,
-                          amount: "72000000",
-                          ui_amount: 0.072,
-                          ui_change_amount: -0.072,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "mSOL",
-                          address:
-                            "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",
-                          decimals: 9,
-                          price: 271.3161105885123,
-                          amount: "54606092",
-                          ui_amount: 0.054606092,
-                          ui_change_amount: 0.054606092,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "HQcY5n2zP6rW74fyFEhWeBd3LnJpBcZechkvJpmdb8cx",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "DZ9uFZnBu8eVUXZ3kUUcG8EuSM5K8TEn64c3pZdFMwbSEnApbdauz6mbbZfr5xkcN94PATqf5ZrBeG1tNtBzMEc",
-                        ins_index: 4,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 8128.519924,
-                        volume: 39.502192225,
-                        owner: "BMnT51N4iSNhWU5PyFFgWwFvN1jgaiiDr9ZHgnkm3iLJ",
-                        signers: [
-                          "BMnT51N4iSNhWU5PyFFgWwFvN1jgaiiDr9ZHgnkm3iLJ",
-                        ],
-                        source: "whirlpool",
-                        interacted_program_id:
-                          "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 205.7738942107535,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "39502192225",
-                          ui_amount: 39.502192225,
-                          ui_change_amount: -39.502192225,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "USDC",
-                          address:
-                            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                          decimals: 6,
-                          price: 0.99990588,
-                          amount: "8128519924",
-                          ui_amount: 8128.519924,
-                          ui_change_amount: 8128.519924,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "4QeTfpW5Yj19q2mPiWd7rk1h1K47U9LRQ5zcDfZMUVmhUVKkbJFR9kmGmpKD6763Fk8KpERZHj5VUbZYxtcVpfLm",
-                        ins_index: 4,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 128.03857583635218,
-                        volume: 0.622288014,
-                        owner: "6SVF3yYLjvEd9UoaGpzmXFBp7USMBKpMvUoWvrZ7BFcY",
-                        signers: [
-                          "6SVF3yYLjvEd9UoaGpzmXFBp7USMBKpMvUoWvrZ7BFcY",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 3273208.0796529693,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "622288014",
-                          ui_amount: 0.622288014,
-                          ui_change_amount: -0.622288014,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "Gulag",
-                          address:
-                            "7mEquFCE6zgha2iKS4WBDSpY8DuEXms4Zxa2kEHQQHku",
-                          decimals: 6,
-                          price: 0.00006286020374043707,
-                          amount: "2036878155296",
-                          ui_amount: 2036878.155296,
-                          ui_change_amount: 2036878.155296,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "FKitXqqeT9435R6CUkroDQv7aELzRjL9BF4dgcR4Si6Y",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "4QRd2eovTcKgFivzp3vGKZTsWD6fRcG7tuaiEhktUZ8Lt3MDXHvmdPufYACgPwUXt4Uo7DTZp1dx2A8WTys4zvhf",
-                        ins_index: 0,
-                        inner_ins_index: 0,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 3.0742458719826993,
-                        volume: 5216.812632,
-                        owner: "BWGn1gwXq91cK4gii755MD24G59EUTDPnvcGzK7UhNH1",
-                        signers: [
-                          "BWGn1gwXq91cK4gii755MD24G59EUTDPnvcGzK7UhNH1",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "progCJpaRyCNZzSV7RnR39L3PxyeG35kChknnNkADKJ",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 349153.20994224877,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "14941328",
-                          ui_amount: 0.014941328,
-                          ui_change_amount: -0.014941328,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "AGI",
-                          address:
-                            "EJRs2ephB8kZX1w196DBt7q3uvLAVqs6LEVgXEwhpump",
-                          decimals: 6,
-                          price: 0.0005892958188924082,
-                          amount: "5216812632",
-                          ui_amount: 5216.812632,
-                          ui_change_amount: 5216.812632,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "9AcEnsNcPasjqdZPRmqxm5zmpKc2B7NHDhehUo6ZULXG",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "5yJj7JKABiof5swpXGsGQ8rLuVM8T8dTr7tjPbo7Kmc6ekZ58oX2aWzF46Hphrg2W7KVFBEqJQnfB8iqUxpCCoem",
-                        ins_index: 6,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 100.1587086564354,
-                        volume: 0.486787388,
-                        owner: "9to3fYtYsVrHTLXkMD7T1mZjSuCR2NZQLwRbt2kjcHkg",
-                        signers: [
-                          "BTft7vaQ9ZUf7nNrrrkqgBovpdAsGhQMBE3UX1FtqGKm",
-                          "9to3fYtYsVrHTLXkMD7T1mZjSuCR2NZQLwRbt2kjcHkg",
-                        ],
-                        source: "pump_amm",
-                        interacted_program_id:
-                          "pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 9091.13915046624,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "486787388",
-                          ui_amount: 0.486787388,
-                          ui_change_amount: -0.486787388,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "CR7",
-                          address:
-                            "9ZQexrZMSnYDPPFSB9GfLenCJsyULxeiCSHSbRvZtTaU",
-                          decimals: 6,
-                          price: 0.022632425196272378,
-                          amount: "4425451881",
-                          ui_amount: 4425.451881,
-                          ui_change_amount: 4425.451881,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "EBN3cCsch15iqNXMkYVHQHLEMQahbjo3qdbmcrBaN514",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "42cQrHFBmJHgYQWj3UCUwJHTGpdY5nbuWTqWWSxNftcADuvNJm2EL52pfj3hMtouPdMYjcoYtjSTGHjm2EcTvRYS",
-                        ins_index: 4,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 480.2584014146155,
-                        volume: 2.334132857,
-                        owner: "B4VbQ2xPXY41ubypjXrGgLUsm7HgzT4xFhpDnWqBPHLv",
-                        signers: [
-                          "B4VbQ2xPXY41ubypjXrGgLUsm7HgzT4xFhpDnWqBPHLv",
-                        ],
-                        source: "raydium_clamm",
-                        interacted_program_id:
-                          "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 7557530.072160754,
-                        from: {
-                          symbol: "Supermoo",
-                          address:
-                            "9hLeAPm86GHdeCtPRo8BSQgu5BD2BKSd7rxbpidqUxCS",
-                          decimals: 6,
-                          price: 0.000027225101958873667,
-                          amount: "17640279259196",
-                          ui_amount: 17640279.259196,
-                          ui_change_amount: -17640279.259196,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "2334132857",
-                          ui_amount: 2.334132857,
-                          ui_change_amount: 2.334132857,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "8UHLDsrSZKGaN1NRwF645USrvu8JR1FySNNSa4ejJJSn",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "645DS58rUZvUmCEm3aqZeoiNAeSojwRmqA8b2xenpgg5DArr6JS7UkiozFrh4K1dgngAeK7vGTLTvBr3zjwH3DUg",
-                        ins_index: 4,
-                        inner_ins_index: null,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 0.00010267150885914337,
-                        volume: 4.99e-7,
-                        owner: "44DZvf45hvCj44rzKS8uDi5mskT9zTSZCXZ2q4GtPcBZ",
-                        signers: [
-                          "44DZvf45hvCj44rzKS8uDi5mskT9zTSZCXZ2q4GtPcBZ",
-                        ],
-                        source: "raydium_clamm",
-                        interacted_program_id:
-                          "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 6352807.615230461,
-                        from: {
-                          symbol: "FWOGGIES",
-                          address:
-                            "ANdCfKtXgmRp1btEWGysBKa4EEUddryPGdUSAgGBeXMG",
-                          decimals: 6,
-                          price: 0.000032389567461963084,
-                          amount: "3170051",
-                          ui_amount: 3.170051,
-                          ui_change_amount: -3.170051,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "499",
-                          ui_amount: 4.99e-7,
-                          ui_change_amount: 4.99e-7,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "4FGPCpsaVJaFWRsMJmNohEAq2XUu73thBYFwEwCGzAan",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "3UogQ5YW9XpVwsDJzCyK96WqKcNM1JkuSUty4YuVWUARe5PNBvkQtsEZDwvqfFoCXkj4eDao9mb9yVjfk8bEH3z5",
-                        ins_index: 3,
-                        inner_ins_index: 3,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 200.18902710542875,
-                        volume: 12597681.810193256,
-                        owner: "AUEt8p9EUfa1gg8kEpNWVTxrt2qj8frhKb4qfN66FK5K",
-                        signers: [
-                          "AUEt8p9EUfa1gg8kEpNWVTxrt2qj8frhKb4qfN66FK5K",
-                        ],
-                        source: "meteora_dynamic_bonding_curve",
-                        interacted_program_id:
-                          "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 12947912.764036397,
-                        from: {
-                          symbol: "Goonify",
-                          address:
-                            "5thVeaHm6XozacY8UckZb2hAkTAXSFDCmHAzDY6fdaos",
-                          decimals: 9,
-                          price: 0.000015890941692419022,
-                          amount: "12597681810193256",
-                          ui_amount: 12597681.810193256,
-                          ui_change_amount: -12597681.810193256,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "972950779",
-                          ui_amount: 0.972950779,
-                          ui_change_amount: 0.972950779,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "GE6swG9emyMbnFbkXxAwhnWM2A3NUeA333vsJEsKyQeQ",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "sd2KunYeAChEMFWV569hxabv364NXgZeGcyCWUaDD9cZV6RAX8hiYDxMezDjYvktixTEMno945NKovRvYwqSido",
-                        ins_index: 8,
-                        inner_ins_index: 4,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 205.7545267718304,
-                        volume: 12562902.917695373,
-                        owner: "HXH8SvCY95CHJgiirF2mLqmjfbbL4uoF4wt38WR2pTcz",
-                        signers: [
-                          "HXH8SvCY95CHJgiirF2mLqmjfbbL4uoF4wt38WR2pTcz",
-                        ],
-                        source: "meteora_dynamic_bonding_curve",
-                        interacted_program_id:
-                          "b1oomGGqPKGD6errbyfbVMBuzSC8WtAAYo8MwNafWW1",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 12562902.917695373,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "1000000000",
-                          ui_amount: 1,
-                          ui_change_amount: -1,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "Goonify",
-                          address:
-                            "5thVeaHm6XozacY8UckZb2hAkTAXSFDCmHAzDY6fdaos",
-                          decimals: 9,
-                          price: 0.000016377944502143413,
-                          amount: "12562902917695374",
-                          ui_amount: 12562902.917695373,
-                          ui_change_amount: 12562902.917695373,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "GE6swG9emyMbnFbkXxAwhnWM2A3NUeA333vsJEsKyQeQ",
-                      },
-                      {
-                        tx_type: "buy",
-                        tx_hash:
-                          "4o53QfFKqAKr8YmgmrHa9qhjjgQjgZNqVfwuY8L1vaXqTaTGnJZkiLJe4uHgBYtmvvMotPXftGnijsBbeRWS521D",
-                        ins_index: 4,
-                        inner_ins_index: 3,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 21.879931850316854,
-                        volume: 1359043.827208863,
-                        owner: "BLPpkoLxEwxzcLXNyRMkPDdNc6vwu1vNeUrKXMHnMTTj",
-                        signers: [
-                          "BLPpkoLxEwxzcLXNyRMkPDdNc6vwu1vNeUrKXMHnMTTj",
-                        ],
-                        source: "meteora_dynamic_bonding_curve",
-                        interacted_program_id:
-                          "dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN",
-                        side: "buy",
-                        alias: null,
-                        price_pair: 12780177.810539542,
-                        from: {
-                          symbol: "Goonify",
-                          address:
-                            "5thVeaHm6XozacY8UckZb2hAkTAXSFDCmHAzDY6fdaos",
-                          decimals: 9,
-                          price: 0.000016099504233982486,
-                          amount: "1359043827208863",
-                          ui_amount: 1359043.827208863,
-                          ui_change_amount: -1359043.827208863,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "106339978",
-                          ui_amount: 0.106339978,
-                          ui_change_amount: 0.106339978,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "GE6swG9emyMbnFbkXxAwhnWM2A3NUeA333vsJEsKyQeQ",
-                      },
-                      {
-                        tx_type: "sell",
-                        tx_hash:
-                          "2iDc91JpifBYnBXstLn5Tv7ZgoY8972pDNmiU9iUecQAapg2KpBTiY948fQzABLY7XNYbb2r8FVZnsDjeu8JCRs",
-                        ins_index: 3,
-                        inner_ins_index: 5,
-                        block_unix_time: 1756079665,
-                        block_number: 362299375,
-                        volume_usd: 302.52026941592317,
-                        volume: 5436051.50382,
-                        owner: "3sebsXHzBJMB3yZ7khm4pyV2NoScs29b6bajWbAUUM4P",
-                        signers: [
-                          "3sebsXHzBJMB3yZ7khm4pyV2NoScs29b6bajWbAUUM4P",
-                        ],
-                        source: "pump_dot_fun",
-                        interacted_program_id:
-                          "AxiomfHaWDemCFBLBayqnEnNwE6b7B2Qz3UmzMpgbMG6",
-                        side: "sell",
-                        alias: null,
-                        price_pair: 3697247.15251397,
-                        from: {
-                          symbol: "SOL",
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          decimals: 9,
-                          price: 205.7545267718304,
-                          amount: "1470297029",
-                          ui_amount: 1.470297029,
-                          ui_change_amount: -1.470297029,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        to: {
-                          symbol: "WPAD",
-                          address:
-                            "BihXVi15Qrph9kidpTM7RivBNJw95PtjxQjfPVaxpump",
-                          decimals: 6,
-                          price: 0.00005565073642207719,
-                          amount: "5436051503820",
-                          ui_amount: 5436051.50382,
-                          ui_change_amount: 5436051.50382,
-                          is_scaled_ui_token: false,
-                          multiplier: null,
-                        },
-                        pool_id: "4NDaKTNbTxABSBZ53BbTxJEacwkmXNjU5Qz9Q2LmSiBx",
-                      },
-                    ],
-                    has_next: true,
-                  },
-                },
-                helius: {
-                  supply: {
-                    amount: "0",
-                    decimals: 9,
-                    ui_amount: 0,
-                    ui_amount_string: "0",
-                  },
-                  metadata: {
-                    account: "So11111111111111111111111111111111111111112",
-                    onChainAccountInfo: {
-                      accountInfo: {
-                        key: "So11111111111111111111111111111111111111112",
-                        isSigner: false,
-                        isWritable: false,
-                        lamports: 1125182736817,
-                        data: {
-                          parsed: {
-                            info: {
-                              decimals: 9,
-                              freezeAuthority: "",
-                              isInitialized: true,
-                              mintAuthority: "",
-                              supply: "0",
-                            },
-                            type: "mint",
-                          },
-                          program:
-                            "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                          space: 82,
-                        },
-                        owner: "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-                        executable: false,
-                        rentEpoch: 18446744073709552000,
-                      },
-                      error: "",
-                    },
-                    onChainMetadata: {
-                      metadata: {
-                        tokenStandard: "UnknownStandard",
-                        key: "MetadataV1",
-                        updateAuthority:
-                          "AqH29mZfQFgRpfwaPoTMWSKJ5kqauoc1FwVBRksZyQrt",
-                        mint: "So11111111111111111111111111111111111111112",
-                        data: {
-                          name: "Wrapped SOL",
-                          symbol: "SOL",
-                          uri: "",
-                          sellerFeeBasisPoints: 0,
-                          creators: null,
-                        },
-                        primarySaleHappened: false,
-                        isMutable: true,
-                        editionNonce: 254,
-                        uses: {
-                          useMethod: "",
-                          remaining: 0,
-                          total: 0,
-                        },
-                        collection: null,
-                        collectionDetails: null,
-                      },
-                      error: "",
-                    },
-                    legacyMetadata: {
-                      chainId: 101,
-                      address: "So11111111111111111111111111111111111111112",
-                      symbol: "SOL",
-                      name: "Wrapped SOL",
-                      decimals: 9,
-                      logoURI:
-                        "https://raw.githubusercontent.com/solana-labs/token-list/main/assets/mainnet/So11111111111111111111111111111111111111112/logo.png",
-                      tags: null,
-                      extensions: {
-                        coingeckoId: "solana",
-                        serumV3Usdc:
-                          "9wFFyRfZBsuAha4YcuxcXLKwMxJR43S7fPfQLusDBzvT",
-                        serumV3Usdt:
-                          "HWHvQhFmJB3NUcu1aihKmrKegfVxBEHzwVX6yZCKEsi1",
-                        website: "https://solana.com/",
-                      },
-                    },
-                  },
-                },
-                chainbase: {
-                  metadata: {
-                    mint: "So11111111111111111111111111111111111111112",
-                    name: "",
-                    symbol: "",
-                    decimals: "",
-                    total_supply: "",
-                    description: "",
-                    image: "",
-                    external_url: "",
-                    creator: "",
-                    created_at: "",
-                    updated_at: "",
-                    verified: false,
-                    tags: [],
-                  },
-                  holders: {
-                    holders: [],
-                    total_holders: 0,
-                    distribution: {},
-                    error: "Invalid Solana address format",
-                  },
-                },
-                solanafm: {
-                  token: {
-                    address: "So11111111111111111111111111111111111111112",
-                    name: "Wrapped SOL",
-                    symbol: "SOL",
-                    decimals: 9,
-                    token_type: "Legacy",
-                    mint_authority: null,
-                    freeze_authority: null,
-                    extensions: {
-                      coingeckoId: "solana",
-                      serumV3Usdc:
-                        "9wFFyRfZBsuAha4YcuxcXLKwMxJR43S7fPfQLusDBzvT",
-                      serumV3Usdt:
-                        "HWHvQhFmJB3NUcu1aihKmrKegfVxBEHzwVX6yZCKEsi1",
-                      website: "https://solana.com/",
-                    },
-                    token_metadata: {
-                      onChainInfo: {
-                        name: "Wrapped SOL",
-                        symbol: "SOL",
-                        metadata:
-                          "6dM4TqWyWJsbx7obrdLcviBkTafD5E8av61zfU6jq57X",
-                        updateAuthority:
-                          "AqH29mZfQFgRpfwaPoTMWSKJ5kqauoc1FwVBRksZyQrt",
-                        isMasterEdition: null,
-                        edition: null,
-                        uri: "",
-                        sellerFeeBasisPoints: 0,
-                        primarySaleHappened: false,
-                        isMutable: true,
-                        creators: [],
-                        ruleSet: null,
-                        collection: null,
-                        collectionDetails: null,
-                        uses: null,
-                      },
-                      offChainInfo: null,
-                    },
-                    tags: [],
-                  },
-                },
-                dexscreener: {
-                  pairs: {
-                    pairs: [
-                      {
-                        chainId: "solana",
-                        dexId: "raydium",
-                        url: "https://dexscreener.com/solana/8slbnzoa1cfnvmjlpfp98zlanfsycfapfjkmbixnlwxj",
-                        pairAddress:
-                          "8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj",
-                        labels: ["CLMM"],
-                        baseToken: {
-                          address:
-                            "So11111111111111111111111111111111111111112",
-                          name: "Wrapped SOL",
-                          symbol: "SOL",
-                        },
-                        quoteToken: {
-                          address:
-                            "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
-                          name: "USD Coin",
-                          symbol: "USDC",
-                        },
-                        priceNative: "205.9512",
-                        priceUsd: "205.95",
-                        txns: {
-                          m5: {
-                            buys: 203,
-                            sells: 137,
-                          },
-                          h1: {
-                            buys: 2822,
-                            sells: 3735,
-                          },
-                          h6: {
-                            buys: 30062,
-                            sells: 31604,
-                          },
-                          h24: {
-                            buys: 75442,
-                            sells: 81297,
-                          },
-                        },
-                        volume: {
-                          h24: 71357480.04,
-                          h6: 31307142.92,
-                          h1: 1543935.93,
-                          m5: 100194.8,
-                        },
-                        priceChange: {
-                          m5: -0.03,
-                          h1: 0.59,
-                          h6: -1.33,
-                          h24: 0.97,
-                        },
-                        liquidity: {
-                          usd: 3095640.05,
-                          base: 8245.2174,
-                          quote: 1397527,
-                        },
-                        pairCreatedAt: 1723699294000,
-                      },
-                    ],
-                  },
-                },
-                goplus: {
-                  security: {
-                    balance_mutable_authority: {
-                      authority: [],
-                      status: "0",
-                    },
-                    closable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    creators: [],
-                    default_account_state: "1",
-                    default_account_state_upgradable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    dex: [
-                      {
-                        burn_percent: 0,
-                        day: {
-                          price_max: "208.508930363235",
-                          price_min: "177.228792",
-                          volume: "2894214.388897951",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0025",
-                        id: "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2",
-                        lp_amount: "84584.527793034",
-                        month: {
-                          price_max: "218.1818181818182",
-                          price_min: "155.14018691588785",
-                          volume: "386257864.1621075",
-                        },
-                        open_time: "0",
-                        price: "204.28605006327516",
-                        tvl: "10788287.924777",
-                        type: "Standard",
-                        week: {
-                          price_max: "218.1818181818182",
-                          price_min: "175.0149094528333",
-                          volume: "162569208.98136646",
-                        },
-                      },
-                      {
-                        burn_percent: 0.03,
-                        day: {
-                          price_max: "215.05376344086025",
-                          price_min: "177.08333333333334",
-                          volume: "113693917.6687716",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0004",
-                        id: "3ucNos4NbumPLZNWztqGHNFFgkHeRMBQAVemeeomsUxv",
-                        lp_amount: null,
-                        month: {
-                          price_max: "215.05376344086025",
-                          price_min: "155.71477511993132",
-                          volume: "3071146708.621661",
-                        },
-                        open_time: "1723037622",
-                        price: "203.95959538623234",
-                        tvl: "10690333.905955",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "215.05376344086025",
-                          price_min: "168.83116883116884",
-                          volume: "715625191.0196675",
-                        },
-                      },
-                      {
-                        burn_percent: 0.01,
-                        day: {
-                          price_max: "208.45577129659588",
-                          price_min: "168.83116883116884",
-                          volume: "22593121.217819985",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0002",
-                        id: "CYbD9RaToYMtWKA7QZyoLahnHdWq553Vm62Lh6qWtuxq",
-                        lp_amount: null,
-                        month: {
-                          price_max: "211.05527638190955",
-                          price_min: "146.34146341463415",
-                          volume: "375812301.51743793",
-                        },
-                        open_time: "1722694155",
-                        price: "203.99565024093584",
-                        tvl: "1559473.84782",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "208.45577129659588",
-                          price_min: "166.66666666666666",
-                          volume: "108086766.91149464",
-                        },
-                      },
-                      {
-                        burn_percent: 0.26,
-                        day: {
-                          price_max: "214.8148148148148",
-                          price_min: "168.67469879518072",
-                          volume: "29534709.569306698",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0001",
-                        id: "8sLbNZoA1cfnvMJLPfp98ZLAnFSYCFApfJKMbiXNLwxj",
-                        lp_amount: null,
-                        month: {
-                          price_max: "220.33898305084745",
-                          price_min: "149.2537313432836",
-                          volume: "863266719.6593906",
-                        },
-                        open_time: "0",
-                        price: "204.0207980992061",
-                        tvl: "1350791.406504",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "214.8148148148148",
-                          price_min: "168.67469879518072",
-                          volume: "203061187.4054801",
-                        },
-                      },
-                      {
-                        burn_percent: 0.01,
-                        day: {
-                          price_max: "209.36582145170425",
-                          price_min: "177.33607601713138",
-                          volume: "153302.88946854562",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0025",
-                        id: "7XawhbbxtsRcQA8KTkHT9f9nc6d69UwqCDh6U5EEbEmX",
-                        lp_amount: "3086.014980878",
-                        month: {
-                          price_max: "210.3708976353536",
-                          price_min: "155.7499246784821",
-                          volume: "3622744.274699174",
-                        },
-                        open_time: "0",
-                        price: "204.2155929913813",
-                        tvl: "618700.65533",
-                        type: "Standard",
-                        week: {
-                          price_max: "209.36582145170425",
-                          price_min: "174.19354838709677",
-                          volume: "741233.1195915225",
-                        },
-                      },
-                      {
-                        burn_percent: 27.47,
-                        day: {
-                          price_max: "208.4562093480374",
-                          price_min: "177.27041634096557",
-                          volume: "600367.290988043",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0005",
-                        id: "2QdhepnKRTLjjSqPL1PtKNwqrUkoLee5Gqs8bvZhRdMv",
-                        lp_amount: null,
-                        month: {
-                          price_max: "209.9407886698403",
-                          price_min: "155.79054543261083",
-                          volume: "18350570.832345583",
-                        },
-                        open_time: "0",
-                        price: "203.93352749867424",
-                        tvl: "394251.587431",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "208.4562093480374",
-                          price_min: "175.72031112742414",
-                          volume: "4089220.45397528",
-                        },
-                      },
-                      {
-                        burn_percent: 0.04,
-                        day: {
-                          price_max: "213.41463414634143",
-                          price_min: "177.2412319244204",
-                          volume: "9605110.795399075",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0001",
-                        id: "3nMFwZXwY1s1M5s8vYAHqd4wGs4iSxXE4LRoUMMYqEgF",
-                        lp_amount: null,
-                        month: {
-                          price_max: "217.3913043478261",
-                          price_min: "155.81853755839882",
-                          volume: "378608501.1786776",
-                        },
-                        open_time: "0",
-                        price: "204.04418822137362",
-                        tvl: "367818.425994",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "213.41463414634143",
-                          price_min: "170",
-                          volume: "62925297.42647463",
-                        },
-                      },
-                      {
-                        burn_percent: 0.59,
-                        day: {
-                          price_max: "208.5896433286373",
-                          price_min: "177.3368304027961",
-                          volume: "322191.8595903277",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0005",
-                        id: "6kT4MhDqKrkWikaGpFCvYsk45BUKXEe2gTpNGAR1YcjS",
-                        lp_amount: null,
-                        month: {
-                          price_max: "209.815265930787",
-                          price_min: "155.8156675534183",
-                          volume: "8716116.667527096",
-                        },
-                        open_time: "0",
-                        price: "203.95993096073124",
-                        tvl: "128680.947594",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "208.5896433286373",
-                          price_min: "173.07692307692307",
-                          volume: "2214845.9088608525",
-                        },
-                      },
-                      {
-                        burn_percent: 0.03,
-                        day: {
-                          price_max: "208.43575293213345",
-                          price_min: "177.3254674500898",
-                          volume: "421038.6440140076",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.0002",
-                        id: "ExcBWu8fGPdJiaF1b1z3iEef38sjQJks8xvj6M85pPY6",
-                        lp_amount: null,
-                        month: {
-                          price_max: "209.7903751299877",
-                          price_min: "155.85645270461393",
-                          volume: "18904175.73527405",
-                        },
-                        open_time: "1722876580",
-                        price: "204.0424124000756",
-                        tvl: "84678.392641",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "208.43575293213345",
-                          price_min: "175.72252443864443",
-                          volume: "4560262.770172305",
-                        },
-                      },
-                      {
-                        burn_percent: 0,
-                        day: {
-                          price_max: "208.3421019403173",
-                          price_min: "177.2458850699699",
-                          volume: "5957.484125503526",
-                        },
-                        dex_name: "raydium",
-                        fee_rate: "0.02",
-                        id: "6MUjnGffYaqcHeqv4nNemUQVNMpJab3W2NV9bfPj576c",
-                        lp_amount: null,
-                        month: {
-                          price_max: "209.8745473341451",
-                          price_min: "155.82729557594692",
-                          volume: "142431.49481339322",
-                        },
-                        open_time: "1722641769",
-                        price: "204.16189251942856",
-                        tvl: "56136.241711",
-                        type: "Concentrated",
-                        week: {
-                          price_max: "208.3421019403173",
-                          price_min: "175.73117932939186",
-                          volume: "33849.4105093211",
-                        },
-                      },
-                    ],
-                    freezable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    holder_count: "3727094",
-                    holders: [
-                      {
-                        account: "AVzP2GeRmqGphJsMxWoqjpUifPpCret7LqWhD8NWQK49",
-                        balance: "4775869.110279316",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "BUvduFTd2sWFagCunBPLupG8fBTJqweLw9DuhruNFSCm",
-                      },
-                      {
-                        account: "9DrvZvyWh1HuAoZxvYWMvkf2XCzryCpGgHqrMjyDWpmo",
-                        balance: "630111.416045261",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "GafNuUXj9rxGLn4y79dPu6MHSuPWeJR6UtTWuexpGh3U",
-                      },
-                      {
-                        account: "GugU1tP7doLeTw9hQP51xRJyS8Da1fWxuiy2rVrnMD2m",
-                        balance: "575660.01461297",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "2nQNF8F9LLWMqdjymiLK2u8HoHMvYa4orCXsp3w65fQ2",
-                      },
-                      {
-                        account: "AYhux5gJzCoeoc1PoJ1VxwPDe22RwcvpHviLDD1oCGvW",
-                        balance: "194938.748840144",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "F2AETMoKjZgb3965ee9DiSriVmFDMA9Uf1ebuWuVzjUu",
-                      },
-                      {
-                        account: "Dx8iy2o46sK1DzWbEcznqSKeLbLVeu7otkibA3WohGAj",
-                        balance: "127255.796889116",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "ywaaLvG7t1vXJo8sT3UzE8yzzZtxLM7Fmev64Jbooye",
-                      },
-                      {
-                        account: "5Q544fKrFoe6tsEbD7S8EmxGTJYAKtTVhAW5Q5pge4j1",
-                        balance: "121589.151883089",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "5Zumc1SYPmQ89nqwXqzogeuhdJ85iEMpSk35A4P87pmD",
-                      },
-                      {
-                        account: "Hp53XEtt4S8SvPCXarsLSdGfZBuUr5mMmZmX2DRNXQKp",
-                        balance: "109844.351541329",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "F7tcS67EfP4bBJhWLxCk6ZmPVcsmPnJvPLQcDw5eeR67",
-                      },
-                      {
-                        account: "Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE",
-                        balance: "109472.415609177",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "EUuUbDcafPrmVTD5M6qoJAoyyNbihBhugADAxRMn5he9",
-                      },
-                      {
-                        account: "JCNCMFXo5M5qwUPg2Utu1u6YWp3MbygxqBsBeXXJfrw",
-                        balance: "97834.591607773",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "DfYCNezifxAEsQbAJ1b3j6PX3JVBe8fu11KBhxsbw5d2",
-                      },
-                      {
-                        account: "DdZR6zRFiUt4S5mg7AV1uKB2z1f1WzcNYCaTEEWPAuby",
-                        balance: "86110.632964727",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0",
-                        tag: "",
-                        token_account:
-                          "8UviNr47S8eL6J3WfDxMRa3hvLta1VDJwNWqsDgtN3Cv",
-                      },
-                    ],
-                    lp_holders: [
-                      {
-                        account: "DgbCWnbXg43nmeiAveMCkUUPEpAr3rZo3iop3TyP6S63",
-                        balance: "31812.465202798",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.3761",
-                        tag: "",
-                        token_account:
-                          "J6ECnRDZEXcxuruvErXDWsPZn9czowKynUr9eDSQ4QeN",
-                      },
-                      {
-                        account: "9ucwGDNLe3owBuyQDHvUhMcLHr1DaiGSjTq4b1dTXapa",
-                        balance: "19516.453927294",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.2307",
-                        tag: "",
-                        token_account:
-                          "A1cDZVTrRrmPKBJtQRJRg8i7m2ixiwfNUbBSgzk8DqfY",
-                      },
-                      {
-                        account: "GBeVQoizQMJua3ZDDijZTQF1DcQPUkwzuRicZ3HNhYa9",
-                        balance: "12592.143328724",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.1489",
-                        tag: "",
-                        token_account:
-                          "9bX74G8WzRzHD6MQzmipRjfbTnmMu5UC7Qazg9SPv1cV",
-                      },
-                      {
-                        account: "2F9PxNokttEiQhFJgwfd4Y5YKeoKGzcPjuqNHHaiTc9R",
-                        balance: "7136.61635932",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0844",
-                        tag: "",
-                        token_account:
-                          "6YYV7fMxNAhRe7esFzbXGi1BSMmaMnoQoByhh8vPTCLR",
-                      },
-                      {
-                        account: "74RPiQQBrsxAbRToup8qNQccmSyq7DiNkSQVYuBx78Mj",
-                        balance: "4101.693222667",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0485",
-                        tag: "",
-                        token_account:
-                          "Fp6A1AaD6PGTp1gn9n3oHVZ1YWqVye445wCGNXAWYRoa",
-                      },
-                      {
-                        account: "E5r7E9x779oeqD62kRwUWKukpJAFFWyGQEcb3nAgbAAU",
-                        balance: "1937.576858675",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0229",
-                        tag: "",
-                        token_account:
-                          "7i72qWQrVqcTvHFsZqE9yqmbh1KWH1VkVLL2TWMJravr",
-                      },
-                      {
-                        account: "2hEEVFRmXpaQh4vXi3oRd4vDQQAE7Y1fYkVfxjUyxEXS",
-                        balance: "1041.064370849",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0123",
-                        tag: "",
-                        token_account:
-                          "48869FQPSLm5QQfrS5wkNQVfZMo2eHb4JSJxfKubbBTC",
-                      },
-                      {
-                        account: "98ULXBc5jCkov9YsUubV3UD3ciUaXM3Lp1iVUrRdmvgT",
-                        balance: "976.611928341",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0115",
-                        tag: "",
-                        token_account:
-                          "JnNjwRE2KNwpZFitnmuDGjpU5NqpbmpTbh2Eww4A8f3",
-                      },
-                      {
-                        account: "9PamNcakQZb2Ty5e2XozEkbT4jvDUVjBBAfZc8xeUCWd",
-                        balance: "639.263165985",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0076",
-                        tag: "",
-                        token_account:
-                          "Ez8UgWaJ4hkj7PZy2uCNtwUJTW66adxtDVusmKYHCoos",
-                      },
-                      {
-                        account: "oae4f1T1a5sz6yzkvwYEBehKnTcEKJJzBxUNaDasyht",
-                        balance: "374.465654714",
-                        is_locked: 0,
-                        locked_detail: [],
-                        percent: "0.0044",
-                        tag: "",
-                        token_account:
-                          "GjakDXzfHHnEENN2YLJ36vJAGnkuwvZnShnigiMp2p2C",
-                      },
-                    ],
-                    metadata: {
-                      description: "",
-                      name: "",
-                      symbol: "",
-                      uri: "",
-                    },
-                    mintable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    non_transferable: "0",
-                    total_supply: "0",
-                    transfer_fee: {},
-                    transfer_fee_upgradable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    transfer_hook: [],
-                    transfer_hook_upgradable: {
-                      authority: [],
-                      status: "0",
-                    },
-                    trusted_token: 1,
-                  },
-                },
-                rugcheck: {
-                  report: {
-                    token_address:
-                      "So11111111111111111111111111111111111111112",
-                    token_program: null,
-                    score: 1,
-                    risks: null,
-                    token: null,
-                    token_type: "",
-                    total_LP_providers: 0,
-                    known_accounts: null,
-                    events: null,
-                    verification: null,
-                    rugged: false,
-                    metadata: {
-                      token_meta: null,
-                      file_meta: null,
-                    },
-                    creator_analysis: {
-                      creator: null,
-                      creator_balance: 0,
-                      creator_tokens: null,
-                    },
-                    lockers_data: {
-                      lockers: null,
-                      locker_owners: null,
-                    },
-                    mint_analysis: {
-                      mint_authority: null,
-                      freeze_authority: null,
-                    },
-                    liquidity_analysis: {
-                      total_market_liquidity: 0,
-                      total_stable_liquidity: 0,
-                    },
-                    market_analysis: {
-                      markets: null,
-                      price: 0,
-                      holder_count: 0,
-                      transfer_fee: null,
-                    },
-                    insiders_analysis: {
-                      graph_insiders_detected: 0,
-                      insider_networks: null,
-                    },
-                    detected_at: "0001-01-01T00:00:00Z",
-                    launchpad: null,
-                  },
-                },
-              },
-              metadata: {
-                processing_time_seconds: 2.72,
-                data_sources_available: 7,
-                services_attempted: 7,
-                services_successful: 7,
-                force_completed: true,
-              },
-              overall_analysis: {
-                score: 46.7,
-                risk_level: "high",
-                recommendation: "avoid",
-                confidence: 100,
-                confidence_score: 100,
-                data_quality: "excellent",
-                summary:
-                  "Helius on-chain data analyzed; Positives: Helius: Token supply data available, Birdeye: Token has market price; Risks: Incomplete token metadata, Low trading volume",
-                positive_signals: [
-                  "Helius: Token supply data available",
-                  "Birdeye: Token has market price",
-                ],
-                risk_factors: [
-                  "Incomplete token metadata",
-                  "Low trading volume",
-                  "RugCheck: Risk detected (score: 1)",
-                ],
-                metadata_quality: 0,
-                price_available: true,
-                security_checked: true,
-                services_responded: 7,
-                helius_data_available: true,
-                analysis_completed: true,
-              },
-              analysis_summary: {
-                score: 46.7,
-                risk_level: "high",
-                recommendation: "avoid",
-                confidence: 100,
-                confidence_score: 100,
-                data_quality: "excellent",
-                summary:
-                  "Helius on-chain data analyzed; Positives: Helius: Token supply data available, Birdeye: Token has market price; Risks: Incomplete token metadata, Low trading volume",
-                positive_signals: [
-                  "Helius: Token supply data available",
-                  "Birdeye: Token has market price",
-                ],
-                risk_factors: [
-                  "Incomplete token metadata",
-                  "Low trading volume",
-                  "RugCheck: Risk detected (score: 1)",
-                ],
-                metadata_quality: 0,
-                price_available: true,
-                security_checked: true,
-                services_responded: 7,
-                helius_data_available: true,
-                analysis_completed: true,
-              },
-              risk_assessment: {
-                risk_category: "high",
-                risk_score: 46.7,
-                confidence: 100,
-              },
-            };
-            // const response = await fetch(`/quick/${tokenMint}`, {
-            //   method: "POST",
-            //   headers: {
-            //     "Content-Type": "application/json",
-            //   },
-            // });
-            // console.log("📡 Quick analysis response status:", response.status);
-            // if (!response.ok) {
-            //   const errorData = await response.json().catch(() => ({}));
-            //   throw new Error(
-            //     errorData.message ||
-            //       errorData.detail ||
-            //       `HTTP ${response.status}`
-            //   );
-            // }
-            // const data = await response.json();
-            // console.log("✅ Quick analysis data received:", data);
-            // return data;
-          } catch (error) {
-            console.error("❌ Quick analysis failed:", error);
-            throw error;
-          }
-        },
-
-        async callDeepAnalysis(tokenMint) {
-          console.log("📞 Calling deep analysis API...");
-
-          try {
-            const response = await fetch(`/deep/${tokenMint}`, {
+            const response = await fetch(`/quick/${tokenMint}`, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
               },
             });
-
-            console.log("📡 Deep analysis response status:", response.status);
-
+            console.log("📡 Quick analysis response status:", response.status);
             if (!response.ok) {
               const errorData = await response.json().catch(() => ({}));
               throw new Error(
@@ -2460,12 +628,11 @@
                   `HTTP ${response.status}`
               );
             }
-
             const data = await response.json();
-            console.log("✅ Deep analysis data received:", data);
+            console.log("✅ Quick analysis data received:", data);
             return data;
           } catch (error) {
-            console.error("❌ Deep analysis failed:", error);
+            console.error("❌ Quick analysis failed:", error);
             throw error;
           }
         },
@@ -2479,7 +646,7 @@
           else if (window.SolanaAI && window.SolanaAI.notifications) {
             window.SolanaAI.notifications[type](title, message);
           }
-          // ✅ Use custom toast notification
+          // Use custom toast notification
           else if (window.showToast) {
             window.showToast(type, title, message);
           }
@@ -2490,53 +657,24 @@
           }
         },
 
-        async simulateProgress() {
-          const steps = [
-            { step: "Validating token address...", percent: 10 },
-            { step: "Connecting to analysis APIs...", percent: 25 },
-            { step: "Fetching token data...", percent: 40 },
-            { step: "Processing analysis...", percent: 60 },
-            { step: "Generating insights...", percent: 80 },
-            { step: "Finalizing results...", percent: 95 },
-          ];
-
-          // Non-blocking progress simulation
-          for (const progressStep of steps) {
-            if (!this.isAnalyzing) break; // Stop if analysis was cancelled
-
-            this.analysisProgress = {
-              ...progressStep,
-              message: progressStep.step,
-            };
-
-            // Don't await - let it update in background
-            setTimeout(() => {}, 200);
-          }
-        },
-
-        // Helper functions to extract data from results
+        // Helper functions to extract data from results with null safety
         getTokenName() {
           if (!this.results) return "Unknown Token";
 
-          if (
-            this.results.service_responses?.helius?.metadata?.onChainMetadata
-              ?.metadata?.data?.name
-          ) {
-            return this.results.service_responses?.helius?.metadata
-              ?.onChainMetadata?.metadata?.data?.name;
-          }
+          // Try different paths with null safety
+          const heliusName =
+            this.results?.service_responses?.helius?.metadata?.onChainMetadata
+              ?.metadata?.data?.name;
+          if (heliusName) return heliusName;
 
-          if (this.results.service_responses?.solanafm?.token?.name) {
-            return this.results.service_responses?.solanafm?.token?.name;
-          }
+          const solanafmName =
+            this.results?.service_responses?.solanafm?.token?.name;
+          if (solanafmName) return solanafmName;
 
-          if (
-            this.results.service_responses?.dexscreener?.pairs?.pairs[0]
-              ?.baseToken?.name
-          ) {
-            return this.results.service_responses?.dexscreener?.pairs?.pairs[0]
+          const dexName =
+            this.results?.service_responses?.dexscreener?.pairs?.pairs?.[0]
               ?.baseToken?.name;
-          }
+          if (dexName) return dexName;
 
           return "Unknown Token";
         },
@@ -2544,25 +682,19 @@
         getTokenSymbol() {
           if (!this.results) return "N/A";
 
-          if (
-            this.results.service_responses?.helius?.metadata?.onChainMetadata
-              ?.metadata?.data?.symbol
-          ) {
-            return this.results.service_responses.helius.metadata
-              .onChainMetadata.metadata.data.symbol;
-          }
+          const heliusSymbol =
+            this.results?.service_responses?.helius?.metadata?.onChainMetadata
+              ?.metadata?.data?.symbol;
+          if (heliusSymbol) return heliusSymbol;
 
-          if (this.results.service_responses?.solanafm?.token?.symbol) {
-            return this.results.service_responses.solanafm.token.symbol;
-          }
+          const solanafmSymbol =
+            this.results?.service_responses?.solanafm?.token?.symbol;
+          if (solanafmSymbol) return solanafmSymbol;
 
-          if (
-            this.results.service_responses?.dexscreener?.pairs?.pairs[0]
-              ?.baseToken?.symbol
-          ) {
-            return this.results.service_responses.dexscreener.pairs.pairs[0]
-              .baseToken.symbol;
-          }
+          const dexSymbol =
+            this.results?.service_responses?.dexscreener?.pairs?.pairs?.[0]
+              ?.baseToken?.symbol;
+          if (dexSymbol) return dexSymbol;
 
           return "N/A";
         },
@@ -2571,8 +703,8 @@
           if (!this.results) return {};
 
           // Check for Birdeye price data first
-          if (this.results.service_responses?.birdeye?.price) {
-            const birdeyePrice = this.results.service_responses.birdeye.price;
+          const birdeyePrice = this.results?.service_responses?.birdeye?.price;
+          if (birdeyePrice) {
             return {
               value: birdeyePrice.value,
               price_change_24h: birdeyePrice.price_change_24h,
@@ -2588,40 +720,41 @@
         getQuickAnalysis() {
           if (!this.results) return null;
 
-          if (this.results.formattedData?.quickAnalysis) {
-            return this.results.formattedData.quickAnalysis;
-          }
-
-          if (this.results.data?.quick_analysis) {
-            return this.results.data.quick_analysis;
+          // Check for overall analysis as quick analysis
+          if (this.results.overall_analysis) {
+            return {
+              score: this.results.overall_analysis.score / 100, // Normalize to 0-1
+              risk_level: this.results.overall_analysis.risk_level,
+              recommendation: this.results.overall_analysis.recommendation,
+              key_insights:
+                this.results.overall_analysis.positive_signals || [],
+              processing_time:
+                this.results.metadata?.processing_time_seconds || 0,
+              confidence: this.results.overall_analysis.confidence_score || 0,
+            };
           }
 
           return null;
         },
 
         getDeepAnalysis() {
-          if (!this.results) return null;
-
-          if (this.results.formattedData?.deepAnalysis) {
-            return this.results.formattedData.deepAnalysis;
-          }
-
-          if (this.results.data?.deep_analysis) {
-            return this.results.data.deep_analysis;
-          }
-
-          return null;
+          return null; // Not implemented yet
         },
 
         getSecurityAnalysis() {
           if (!this.results) return null;
 
-          if (this.results.formattedData?.securityAnalysis) {
-            return this.results.formattedData.securityAnalysis;
-          }
+          // Extract security data from service responses
+          const goplusData = this.results?.service_responses?.goplus?.security;
+          const rugcheckData =
+            this.results?.service_responses?.rugcheck?.report;
 
-          if (this.results.security_analysis) {
-            return this.results.security_analysis;
+          if (goplusData || rugcheckData) {
+            return {
+              overall_security_score: rugcheckData?.score || 50,
+              risk_factors: this.results?.overall_analysis?.risk_factors || [],
+              security_warnings: [],
+            };
           }
 
           return null;
@@ -2630,12 +763,20 @@
         getOnChainMetrics() {
           if (!this.results) return null;
 
-          if (this.results.formattedData?.onChainMetrics) {
-            return this.results.formattedData.onChainMetrics;
-          }
+          const heliusData = this.results?.service_responses?.helius;
+          const chainbaseData = this.results?.service_responses?.chainbase;
 
-          if (this.results.on_chain_metrics) {
-            return this.results.on_chain_metrics;
+          if (heliusData || chainbaseData) {
+            return {
+              holder_analysis: {
+                holder_count: chainbaseData?.holders?.total_holders || 0,
+                concentration: {},
+              },
+              transaction_activity: {
+                "24h_transactions": 0,
+                average_transaction_size: 0,
+              },
+            };
           }
 
           return null;
@@ -2654,7 +795,6 @@
         getAnalysisScore() {
           if (!this.results) return null;
 
-          // Check overall_analysis first
           if (this.results.overall_analysis?.score) {
             return Math.round(this.results.overall_analysis.score);
           }
@@ -2665,12 +805,10 @@
         getRiskLevel() {
           if (!this.results) return "UNKNOWN";
 
-          // Check overall_analysis first
           if (this.results.overall_analysis?.risk_level) {
             return this.results.overall_analysis.risk_level.toUpperCase();
           }
 
-          // Check risk_assessment
           if (this.results.risk_assessment?.risk_category) {
             return this.results.risk_assessment.risk_category.toUpperCase();
           }
@@ -2681,7 +819,6 @@
         getDataSources() {
           if (!this.results) return [];
 
-          // Check the actual data_sources array
           if (
             this.results.data_sources &&
             Array.isArray(this.results.data_sources)
@@ -2689,7 +826,6 @@
             return this.results.data_sources;
           }
 
-          // Fallback - extract from service_responses keys
           if (this.results.service_responses) {
             return Object.keys(this.results.service_responses);
           }
@@ -2706,20 +842,20 @@
             const text = await navigator.clipboard.readText();
             if (this.isValidSolanaAddress(text)) {
               this.form.tokenMint = text;
-              this.$parent.showNotification(
+              this.showNotification(
                 "success",
                 "Pasted",
                 "Token address pasted from clipboard"
               );
             } else {
-              this.$parent.showNotification(
+              this.showNotification(
                 "warning",
                 "Invalid Format",
                 "Clipboard content is not a valid Solana address"
               );
             }
           } catch (error) {
-            this.$parent.showNotification(
+            this.showNotification(
               "error",
               "Paste Failed",
               "Failed to access clipboard"
@@ -2729,7 +865,6 @@
 
         clearResults() {
           this.hasResults = false;
-          this.results = null;
           this.results = null;
           this.form.tokenMint = "";
         },
@@ -2758,70 +893,51 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
 
-          this.$parent.showNotification(
+          this.showNotification(
             "success",
             "Export Complete",
             "Analysis results exported successfully"
           );
         },
 
-        loadExampleAnalysis() {
-          this.form.tokenMint = "So11111111111111111111111111111111111111112"; // WSOL
-          this.form.analysisType = "quick"; // Start with quick analysis
-          this.analyzeToken();
-        },
-
-        // Debug method to test if everything is working
-        async testAnalysis() {
-          console.log("🧪 Testing analysis system...");
-
-          // Test basic fetch
-          try {
-            console.log("1. Testing basic fetch to /health...");
-            const healthResponse = await fetch("/health");
-            console.log("✅ Health check response:", healthResponse.status);
-
-            console.log("2. Testing quick analysis endpoint...");
-            const testToken = "So11111111111111111111111111111111111111112";
-            const quickResponse = await fetch(`/quick/${testToken}`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-            });
-            console.log("✅ Quick analysis response:", quickResponse.status);
-
-            if (quickResponse.ok) {
-              const data = await quickResponse.json();
-              console.log("✅ Quick analysis data:", data);
-            }
-          } catch (error) {
-            console.error("❌ Test failed:", error);
-          }
-        },
-
         // Utility functions
         truncateAddress(address) {
           if (!address) return "N/A";
-          return window.SolanaAI.utils.truncateAddress(address);
+          return (
+            window.SolanaAI?.utils?.truncateAddress?.(address) ||
+            (address.length > 16
+              ? `${address.substring(0, 8)}...${address.substring(
+                  address.length - 8
+                )}`
+              : address)
+          );
         },
 
         formatCurrency(value) {
-          return window.SolanaAI.utils.formatCurrency(value);
+          if (!value && value !== 0) return "N/A";
+          return (
+            window.SolanaAI?.utils?.formatCurrency?.(value) ||
+            parseFloat(value).toFixed(6)
+          );
         },
 
         formatNumber(num) {
-          return window.SolanaAI.utils.formatNumber(num);
+          if (!num && num !== 0) return "0";
+          return window.SolanaAI?.utils?.formatNumber?.(num) || num.toString();
         },
 
         formatPercent(num) {
-          return window.SolanaAI.utils.formatPercent(num);
-        },
-
-        formatTime(timestamp) {
-          return window.SolanaAI.utils.formatTime(timestamp);
+          if (!num && num !== 0) return "0%";
+          return (
+            window.SolanaAI?.utils?.formatPercent?.(num) ||
+            `${num > 0 ? "+" : ""}${num.toFixed(2)}%`
+          );
         },
 
         isValidSolanaAddress(address) {
-          return window.SolanaAI.utils.isValidSolanaAddress(address);
+          if (!address || typeof address !== "string") return false;
+          if (address.length < 32 || address.length > 44) return false;
+          return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
         },
 
         getPriceChangeClass(change) {
@@ -2853,7 +969,7 @@
     }
   </script>
 
-  <!-- 🔔 Toast Notification System -->
+  <!-- Toast Notification System -->
   <style>
     #toast-container {
       position: fixed;
@@ -2882,16 +998,16 @@
     }
     .toast.success {
       background: #16a34a;
-    } /* green */
+    }
     .toast.error {
       background: #dc2626;
-    } /* red */
+    }
     .toast.warning {
       background: #d97706;
-    } /* orange */
+    }
     .toast.info {
       background: #2563eb;
-    } /* blue */
+    }
     .toast-title {
       font-weight: bold;
       display: block;
@@ -2911,9 +1027,9 @@
       const toast = document.createElement("div");
       toast.className = `toast ${type}`;
       toast.innerHTML = `
-      <span class="toast-title">${title}</span>
-      <span class="toast-message">${message}</span>
-    `;
+        <span class="toast-title">${title}</span>
+        <span class="toast-message">${message}</span>
+      `;
 
       container.appendChild(toast);
 

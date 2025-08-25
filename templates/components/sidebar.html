@@ -25,7 +25,7 @@
       <!-- Dashboard -->
       <a
         href="/"
-        @click="$parent.closeSidebar()"
+        @click="closeSidebar()"
         class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
         :class="currentPage === '/' ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
       >
@@ -39,7 +39,7 @@
       <!-- Token Analysis -->
       <a
         href="/analysis"
-        @click="$parent.closeSidebar()"
+        @click="closeSidebar()"
         class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
         :class="currentPage.startsWith('/analysis') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
       >
@@ -53,7 +53,7 @@
       <!-- Marketplace -->
       <a
         href="/marketplace"
-        @click="$parent.closeSidebar()"
+        @click="closeSidebar()"
         class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
         :class="currentPage.startsWith('/marketplace') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
       >
@@ -143,6 +143,12 @@
         return this.isValidSolanaAddress(this.quickAnalysisToken);
       },
 
+      get currentPage() {
+        // Access parent component's currentPage
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
+        return parentApp?.currentPage || window.location.pathname;
+      },
+
       async runQuickAnalysis() {
         if (!this.isValidAddress) {
           this.showNotification(
@@ -201,14 +207,14 @@
       // Helper methods to access parent functions
       closeSidebar() {
         // Get the parent Alpine component
-        const parentApp = this.$el.closest("[x-data]").__x.$data;
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
         if (parentApp && parentApp.closeSidebar) {
           parentApp.closeSidebar();
         }
       },
 
       isValidSolanaAddress(address) {
-        const parentApp = this.$el.closest("[x-data]").__x.$data;
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
         if (parentApp && parentApp.isValidSolanaAddress) {
           return parentApp.isValidSolanaAddress(address);
         }
@@ -219,19 +225,19 @@
       },
 
       showNotification(type, title, message) {
-        const parentApp = this.$el.closest("[x-data]").__x.$data;
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
         if (parentApp && parentApp.showNotification) {
           parentApp.showNotification(type, title, message);
         }
       },
 
       getSystemHealth() {
-        const parentApp = this.$el.closest("[x-data]").__x.$data;
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
         return parentApp ? parentApp.systemHealth : null;
       },
 
       getAPIHealth() {
-        const parentApp = this.$el.closest("[x-data]").__x.$data;
+        const parentApp = this.$el?.closest("[x-data]")?.__x?.$data;
         return parentApp ? parentApp.apiHealth : null;
       },
     };

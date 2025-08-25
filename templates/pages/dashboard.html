@@ -26,9 +26,9 @@ AI{% endblock %} {% block content %}
     </div>
   </div>
 
-  <!-- System Health Alert -->
+  <!-- System Health Alert with Enhanced Null Safety -->
   <div
-    x-show="systemHealth && !systemHealth.overall_status"
+    x-show="systemHealth && systemHealth.overall_status === false"
     class="mb-6 bg-red-50 border-l-4 border-red-400 p-4 rounded-r-lg"
   >
     <div class="flex">
@@ -57,16 +57,16 @@ AI{% endblock %} {% block content %}
 
   <!-- Key Metrics -->
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-    <!-- System Status -->
+    <!-- System Status with Enhanced Null Safety -->
     <div class="bg-white rounded-xl shadow-lg p-6 card-hover">
       <div class="flex items-center">
         <div class="flex-shrink-0">
           <div
             class="w-8 h-8 rounded-lg flex items-center justify-center"
-            :class="systemHealth && systemHealth.overall_status ? 'bg-green-100' : 'bg-red-100'"
+            :class="(systemHealth && systemHealth.overall_status) ? 'bg-green-100' : 'bg-red-100'"
           >
             <i
-              :class="systemHealth && systemHealth.overall_status ? 'fas fa-check-circle text-green-600' : 'fas fa-exclamation-circle text-red-600'"
+              :class="(systemHealth && systemHealth.overall_status) ? 'fas fa-check-circle text-green-600' : 'fas fa-exclamation-circle text-red-600'"
             ></i>
           </div>
         </div>
@@ -74,16 +74,16 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">System Status</p>
           <p
             class="text-2xl font-semibold"
-            :class="systemHealth && systemHealth.overall_status ? 'text-green-600' : 'text-red-600'"
-            x-text="systemHealth && systemHealth.overall_status ? 'Online' : 'Issues'"
+            :class="(systemHealth && systemHealth.overall_status) ? 'text-green-600' : 'text-red-600'"
+            x-text="(systemHealth && systemHealth.overall_status) ? 'Online' : 'Issues'"
           ></p>
           <div class="flex items-center mt-1">
             <span class="text-sm text-gray-500">
               <span
-                x-text="systemHealth ? systemHealth.summary?.healthy_services || 0 : 0"
+                x-text="(systemHealth && systemHealth.summary && systemHealth.summary.healthy_services) || 0"
               ></span
               >/<span
-                x-text="systemHealth ? systemHealth.summary?.total_services || 0 : 0"
+                x-text="(systemHealth && systemHealth.summary && systemHealth.summary.total_services) || 0"
               ></span>
               services healthy
             </span>
@@ -106,7 +106,7 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Total Analyses</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="realMetrics.totalAnalyses"
+            x-text="realMetrics.totalAnalyses || 0"
           ></p>
           <div class="flex items-center mt-1">
             <span class="text-sm text-gray-500">Lifetime total</span>
@@ -129,13 +129,13 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Success Rate</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="realMetrics.successRate + '%'"
+            x-text="(realMetrics.successRate || 0) + '%'"
           ></p>
           <div class="flex items-center mt-1">
             <div class="w-full bg-gray-200 rounded-full h-2">
               <div
                 class="bg-green-600 h-2 rounded-full transition-all duration-300"
-                :style="`width: ${realMetrics.successRate}%`"
+                :style="`width: ${realMetrics.successRate || 0}%`"
               ></div>
             </div>
           </div>
@@ -157,7 +157,7 @@ AI{% endblock %} {% block content %}
           <p class="text-sm font-medium text-gray-500">Avg Response</p>
           <p
             class="text-2xl font-semibold text-gray-900"
-            x-text="realMetrics.avgResponseTime + 's'"
+            x-text="(realMetrics.avgResponseTime || 0) + 's'"
           ></p>
           <div class="flex items-center mt-1">
             <span class="text-sm text-gray-500">Per analysis</span>
@@ -276,17 +276,19 @@ AI{% endblock %} {% block content %}
                 <strong>Token:</strong>
                 <code
                   class="bg-gray-100 px-2 py-1 rounded text-sm"
-                  x-text="analysisResult.token"
+                  x-text="analysisResult.token || 'N/A'"
                 ></code>
               </p>
               <p>
                 <strong>Status:</strong>
-                <span x-text="analysisResult.message"></span>
+                <span
+                  x-text="analysisResult.message || 'Analysis completed'"
+                ></span>
               </p>
               <p>
                 <strong>Timestamp:</strong>
                 <span
-                  x-text="new Date(analysisResult.timestamp).toLocaleString()"
+                  x-text="analysisResult.timestamp ? new Date(analysisResult.timestamp).toLocaleString() : 'N/A'"
                 ></span>
               </p>
 
@@ -327,7 +329,7 @@ AI{% endblock %} {% block content %}
                   ></p>
                   <p
                     class="text-sm text-gray-500 font-mono"
-                    x-text="analysis.mint.substring(0, 12) + '...'"
+                    x-text="analysis.mint ? (analysis.mint.substring(0, 12) + '...') : 'N/A'"
                   ></p>
                 </div>
               </div>
@@ -370,7 +372,6 @@ AI{% endblock %} {% block content %}
     <div class="space-y-6">
       <!-- System Health Panel -->
       {% include 'components/health_status.html' %}
-      </div>
     </div>
   </div>
 </div>
@@ -423,7 +424,7 @@ AI{% endblock %} {% block content %}
             }
 
             // Update recent analyses
-            if (data.recentActivity) {
+            if (data.recentActivity && Array.isArray(data.recentActivity)) {
               this.recentAnalyses = data.recentActivity.map((activity) => ({
                 id: activity.id,
                 symbol: activity.token_symbol,
@@ -434,14 +435,11 @@ AI{% endblock %} {% block content %}
             }
           }
 
-          // Load system health
-          const healthResponse = await fetch("/health");
-          if (healthResponse.ok) {
-            this.systemHealth = await healthResponse.json();
-          }
+          // Load system health with better error handling
+          await this.loadSystemHealth();
         } catch (error) {
           console.error("Failed to load dashboard:", error);
-          this.$parent.showNotification(
+          this.showNotification(
             "error",
             "Load Failed",
             "Failed to load dashboard data"
@@ -451,9 +449,56 @@ AI{% endblock %} {% block content %}
         }
       },
 
+      async loadSystemHealth() {
+        try {
+          const healthResponse = await fetch("/health");
+          if (!healthResponse.ok) {
+            throw new Error(
+              `HTTP ${healthResponse.status}: ${healthResponse.statusText}`
+            );
+          }
+
+          const healthData = await healthResponse.json();
+
+          // Ensure we have a valid structure with defaults - be extra careful with recommendations
+          this.systemHealth = {
+            overall_status: Boolean(healthData?.overall_status),
+            services:
+              healthData?.services && typeof healthData.services === "object"
+                ? healthData.services
+                : {},
+            summary: {
+              healthy_services:
+                Number(healthData?.summary?.healthy_services) || 0,
+              total_services: Number(healthData?.summary?.total_services) || 0,
+            },
+            recommendations: Array.isArray(healthData?.recommendations)
+              ? healthData.recommendations.filter(
+                  (rec) => rec && typeof rec === "string"
+                )
+              : [],
+            timestamp:
+              Number(healthData?.timestamp) || Math.floor(Date.now() / 1000),
+          };
+        } catch (error) {
+          console.error("Failed to load system health:", error);
+          // Set safe default values on error
+          this.systemHealth = {
+            overall_status: false,
+            services: {},
+            summary: {
+              healthy_services: 0,
+              total_services: 0,
+            },
+            recommendations: [], // Always ensure this is an empty array, never null
+            timestamp: Math.floor(Date.now() / 1000),
+          };
+        }
+      },
+
       async analyzeToken() {
-        if (!this.$parent.isValidSolanaAddress(this.analysisForm.tokenMint)) {
-          this.$parent.showNotification(
+        if (!this.isValidSolanaAddress(this.analysisForm.tokenMint)) {
+          this.showNotification(
             "error",
             "Invalid Address",
             "Please enter a valid Solana token mint address"
@@ -481,7 +526,7 @@ AI{% endblock %} {% block content %}
 
           if (response.ok) {
             this.analysisResult = result;
-            this.$parent.showNotification(
+            this.showNotification(
               "success",
               "Analysis Complete",
               "Token analysis completed successfully"
@@ -505,11 +550,7 @@ AI{% endblock %} {% block content %}
             throw new Error(result.message || "Analysis failed");
           }
         } catch (error) {
-          this.$parent.showNotification(
-            "error",
-            "Analysis Failed",
-            error.message
-          );
+          this.showNotification("error", "Analysis Failed", error.message);
         } finally {
           this.isAnalyzing = false;
         }
@@ -518,22 +559,22 @@ AI{% endblock %} {% block content %}
       async pasteFromClipboard() {
         try {
           const text = await navigator.clipboard.readText();
-          if (this.$parent.isValidSolanaAddress(text)) {
+          if (this.isValidSolanaAddress(text)) {
             this.analysisForm.tokenMint = text;
-            this.$parent.showNotification(
+            this.showNotification(
               "success",
               "Pasted",
               "Token address pasted from clipboard"
             );
           } else {
-            this.$parent.showNotification(
+            this.showNotification(
               "warning",
               "Invalid Format",
               "Clipboard content is not a valid Solana address"
             );
           }
         } catch (error) {
-          this.$parent.showNotification(
+          this.showNotification(
             "error",
             "Paste Failed",
             "Failed to access clipboard"
@@ -549,21 +590,47 @@ AI{% endblock %} {% block content %}
 
       viewAnalysis(id) {
         const analysis = this.recentAnalyses.find((a) => a.id === id);
-        if (analysis) {
+        if (analysis && analysis.mint) {
           window.location.href = `/analysis?token=${analysis.mint}`;
         }
       },
 
       formatTime(timestamp) {
         if (!timestamp) return "Unknown";
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diff = now - date;
+        try {
+          const date = new Date(timestamp);
+          const now = new Date();
+          const diff = now - date;
 
-        if (diff < 60000) return "Just now";
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-        return date.toLocaleDateString();
+          if (diff < 60000) return "Just now";
+          if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+          if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+          return date.toLocaleDateString();
+        } catch (error) {
+          return "Invalid date";
+        }
+      },
+
+      isValidSolanaAddress(address) {
+        if (!address || typeof address !== "string") return false;
+        if (address.length < 32 || address.length > 44) return false;
+        return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
+      },
+
+      showNotification(type, title, message) {
+        // Try to use parent notification system
+        if (this.$parent && this.$parent.showNotification) {
+          this.$parent.showNotification(type, title, message);
+        }
+        // Fallback to SolanaAI notifications
+        else if (window.SolanaAI && window.SolanaAI.notifications) {
+          window.SolanaAI.notifications[type](title, message);
+        }
+        // Absolute fallback
+        else {
+          console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+          alert(`${title}: ${message}`);
+        }
       },
     };
   }

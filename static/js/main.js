@@ -758,29 +758,47 @@ document.addEventListener("DOMContentLoaded", function () {
   // Initialize configuration
   window.SolanaAI.config.apiBaseUrl = window.location.origin;
 
-  // Setup global error handling with better notifications
+  // Setup global error handling with enhanced filtering
   window.addEventListener("error", function (e) {
-    console.error("Global error:", e.error);
+    // Filter out null errors and minor Alpine errors
+    if (!e.error || e.error === null) {
+      console.debug("Ignoring null error event");
+      return;
+    }
 
     // Don't show notifications for minor errors or Alpine.js evaluation errors
     if (
       e.error &&
       e.error.message &&
       (e.error.message.includes("Alpine Expression Error") ||
-        e.error.message.includes("Cannot read properties of null"))
+        e.error.message.includes("Cannot read properties of null") ||
+        e.error.message.includes("Cannot read properties of undefined") ||
+        e.error.message.includes("reading 'recommendations'") ||
+        e.error.message.includes("reading 'summary'"))
     ) {
       console.debug("Ignoring Alpine.js evaluation error:", e.error.message);
       return;
     }
 
-    window.SolanaAI.notifications.error(
-      "System Error",
-      "An unexpected error occurred. Please refresh the page if problems persist."
-    );
+    console.error("Global error:", e.error);
+
+    // Only show user notifications for significant errors
+    if (e.error.message && !e.error.message.includes("Alpine")) {
+      window.SolanaAI.notifications.error(
+        "System Error",
+        "An unexpected error occurred. Please refresh the page if problems persist."
+      );
+    }
   });
 
   // Setup unhandled promise rejection handling
   window.addEventListener("unhandledrejection", function (e) {
+    // Filter out null promise rejections
+    if (!e.reason || e.reason === null) {
+      console.debug("Ignoring null promise rejection");
+      return;
+    }
+
     console.error("Unhandled promise rejection:", e.reason);
 
     // Don't show notifications for network errors that are already handled
@@ -805,7 +823,7 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       const health = await window.SolanaAI.api.getSystemHealth();
       window.SolanaAI.state.systemHealth = health;
-      window.SolanaAI.state.connected = health.overall_status;
+      window.SolanaAI.state.connected = health && health.overall_status;
 
       // Also check API services health
       const apiHealth = await window.SolanaAI.api.getApiServicesHealth();
@@ -821,7 +839,7 @@ document.addEventListener("DOMContentLoaded", function () {
     try {
       const health = await window.SolanaAI.api.getSystemHealth();
       window.SolanaAI.state.systemHealth = health;
-      window.SolanaAI.state.connected = health.overall_status;
+      window.SolanaAI.state.connected = health && health.overall_status;
       console.log("✅ Initial system health check completed");
     } catch (error) {
       console.warn("Initial health check failed:", error);

@@ -25,7 +25,11 @@
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-    <!-- Alpine.js -->
+    <!-- Alpine.js with Collapse Plugin -->
+    <script
+      defer
+      src="https://cdn.jsdelivr.net/npm/@alpinejs/collapse@3.x.x/dist/cdn.min.js"
+    ></script>
     <script
       defer
       src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"
@@ -303,6 +307,7 @@
           currentPage: "{{ request.url.path }}",
           systemHealth: null,
           notification: null,
+          quickSearchQuery: "", // Added missing property
           realMetrics: {
             totalAnalyses: 0,
             successRate: 0,
@@ -356,9 +361,55 @@
           async loadSystemHealth() {
             try {
               const response = await fetch("/health");
-              this.systemHealth = await response.json();
+              if (!response.ok) {
+                throw new Error(
+                  `HTTP ${response.status}: ${response.statusText}`
+                );
+              }
+
+              const healthData = await response.json();
+
+              // Ensure we have a valid structure with defaults - be extra careful with recommendations
+              this.systemHealth = {
+                overall_status: Boolean(healthData?.overall_status),
+                services:
+                  healthData?.services &&
+                  typeof healthData.services === "object"
+                    ? healthData.services
+                    : {},
+                summary: {
+                  healthy_services:
+                    Number(healthData?.summary?.healthy_services) || 0,
+                  total_services:
+                    Number(healthData?.summary?.total_services) || 0,
+                },
+                recommendations: Array.isArray(healthData?.recommendations)
+                  ? healthData.recommendations.filter(
+                      (rec) => rec && typeof rec === "string"
+                    )
+                  : [],
+                timestamp:
+                  Number(healthData?.timestamp) ||
+                  Math.floor(Date.now() / 1000),
+              };
+
+              console.log(
+                "✅ System health loaded successfully:",
+                this.systemHealth
+              );
             } catch (error) {
               console.error("Failed to load system health:", error);
+              // Set safe default values on error
+              this.systemHealth = {
+                overall_status: false,
+                services: {},
+                summary: {
+                  healthy_services: 0,
+                  total_services: 0,
+                },
+                recommendations: [], // Always ensure this is an empty array, never null
+                timestamp: Math.floor(Date.now() / 1000),
+              };
             }
           },
 
@@ -470,6 +521,23 @@
             } finally {
               this.isAnalyzing = false;
             }
+          },
+
+          // Add method for header search functionality
+          async performQuickAnalysis() {
+            if (!this.quickSearchQuery) return;
+
+            if (!this.isValidSolanaAddress(this.quickSearchQuery)) {
+              this.showNotification(
+                "error",
+                "Invalid Address",
+                "Please enter a valid Solana token mint address"
+              );
+              return;
+            }
+
+            // Navigate to analysis page with the token
+            window.location.href = `/analysis?token=${this.quickSearchQuery}`;
           },
         };
       }
