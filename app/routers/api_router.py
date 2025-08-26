@@ -44,7 +44,6 @@ async def analyze_token_endpoint(
     
     Returns LLM-optimized structured analysis combining data from:
     - Helius: On-chain data and metadata
-    - Chainbase: Holder analysis and smart contract data  
     - Birdeye: Price data and market information
     - SolanaFM: Additional on-chain metrics
     - GOplus: Transaction simulation and token security

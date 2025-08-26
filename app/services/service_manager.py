@@ -5,7 +5,6 @@ from loguru import logger
 
 from app.services.helius_client import HeliusClient, check_helius_health
 from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
-from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
 from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
 from app.services.dexscreener_client import DexScreenerClient, check_dexscreener_health
@@ -19,7 +18,6 @@ class APIManager:
         self.clients = {
             "helius": None,
             "birdeye": None,
-            "dataimpulse": None,
             "solanafm": None,
             "goplus": None,
             "dexscreener": None,
@@ -34,7 +32,6 @@ class APIManager:
             self.clients = {
                 "helius": HeliusClient(),
                 "birdeye": BirdeyeClient(),
-                "dataimpulse": DataImpulseClient(),
                 "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient(),
                 "dexscreener": DexScreenerClient(),
@@ -69,7 +66,6 @@ class APIManager:
         health_checks = {
             "helius": check_helius_health(),
             "birdeye": check_birdeye_health(),
-            "dataimpulse": check_dataimpulse_health(),
             "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health(),
             "dexscreener": check_dexscreener_health(),

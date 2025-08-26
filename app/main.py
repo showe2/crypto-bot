@@ -373,7 +373,7 @@ async def analysis_health_check():
                     "onchain_analysis": any(
                         service in analysis_health.get("services", {}) and 
                         analysis_health["services"][service].get("healthy", False)
-                        for service in ["helius", "chainbase", "solanafm"]
+                        for service in ["helius", "solanafm"]
                     )
                 }
             },

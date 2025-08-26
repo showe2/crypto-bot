@@ -94,6 +94,7 @@ class ComprehensiveServiceTester:
             ]
         }
         
+        # 🔧 Service configurations with your specific structure
         self.services = {
             "helius": ServiceConfig(
                 name="Helius",
@@ -154,16 +155,6 @@ class ComprehensiveServiceTester:
                 client_module="app.services.rugcheck_client.RugCheckClient",
                 test_methods=["check_token", "get_token_holders", "analyze_creator"],
                 icon="🛡️"
-            ),
-            "dataimpulse": ServiceConfig(
-                name="DataImpulse",
-                category=ServiceCategory.PREMIUM,
-                cost_per_1k=1.00,
-                requires_auth=True,
-                health_check_module="app.services.dataimpulse_client.check_dataimpulse_health",
-                client_module="app.services.dataimpulse_client.DataImpulseClient",
-                test_methods=["analyze_token_buzz"],
-                icon="📱"
             )
         }
     

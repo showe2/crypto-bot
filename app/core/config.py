@@ -51,12 +51,6 @@ class Settings(BaseSettings):
     GOPLUS_BASE_URL: str = "https://api.gopluslabs.io"
 
     # ==============================================
-    # SOCIAL NETWORKS
-    # ==============================================
-    DATAIMPULSE_API_KEY: Optional[str] = None
-    DATAIMPULSE_BASE_URL: str = "https://api.dataimpulse.com"
-
-    # ==============================================
     # WEBHOOKS
     # ==============================================
     QUICKNODE_WEBHOOK_SECRET: Optional[str] = None
@@ -85,17 +79,6 @@ class Settings(BaseSettings):
     CELERY_RESULT_SERIALIZER: str = "json"
     CELERY_ACCEPT_CONTENT: str = "json"
     CELERY_TIMEZONE: str = "UTC"
-
-    # ==============================================
-    # AI MODELS
-    # ==============================================
-    MISTRAL_API_KEY: Optional[str] = None
-    MISTRAL_API_URL: str = "https://api.mistral.ai/v1"
-    MISTRAL_MODEL: str = "mistral-7b-instruct"
-
-    LLAMA_API_KEY: Optional[str] = None
-    LLAMA_API_URL: str = "https://api.together.xyz/v1"
-    LLAMA_MODEL: str = "meta-llama/Llama-3-70b-chat-hf"
 
     # ==============================================
     # TRADING APIS
@@ -221,8 +204,6 @@ class Settings(BaseSettings):
         critical_keys = [
             ('WEBHOOK_BASE_URL', 'Webhook Base URL'),
             ('HELIUS_API_KEY', 'Helius API'),
-            ('MISTRAL_API_KEY', 'Mistral AI'),
-            ('LLAMA_API_KEY', 'LLaMA AI'),
         ]
         for key, name in critical_keys:
             if not getattr(self, key):
@@ -233,8 +214,6 @@ class Settings(BaseSettings):
         keys_status = {}
         api_keys = [
             'HELIUS_API_KEY', 'BIRDEYE_API_KEY',
-            'DATAIMPULSE_API_KEY',
-            'MISTRAL_API_KEY', 'LLAMA_API_KEY',
             'PUMPFUN_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
             'WALLET_SECRET_KEY'
