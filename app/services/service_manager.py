@@ -9,6 +9,7 @@ from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
 from app.services.goplus_client import GOplusClient, check_goplus_health
 from app.services.dexscreener_client import DexScreenerClient, check_dexscreener_health
 from app.services.rugcheck_client import RugCheckClient, check_rugcheck_health
+from app.services.solsniffer_client import SolSnifferClient, check_solsniffer_health
 
 
 class APIManager:
@@ -21,7 +22,8 @@ class APIManager:
             "solanafm": None,
             "goplus": None,
             "dexscreener": None,
-            "rugcheck": None
+            "rugcheck": None,
+            "solsniffer": None
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
@@ -35,7 +37,8 @@ class APIManager:
                 "solanafm": SolanaFMClient(),
                 "goplus": GOplusClient(),
                 "dexscreener": DexScreenerClient(),
-                "rugcheck": RugCheckClient()
+                "rugcheck": RugCheckClient(),
+                "solsniffer": SolSnifferClient()
             }
             logger.info("✅ All API clients initialized")
         except Exception as e:
@@ -69,7 +72,8 @@ class APIManager:
             "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health(),
             "dexscreener": check_dexscreener_health(),
-            "rugcheck": check_rugcheck_health()
+            "rugcheck": check_rugcheck_health(),
+            "solsniffer": check_solsniffer_health()
         }
         
         # Run all health checks concurrently

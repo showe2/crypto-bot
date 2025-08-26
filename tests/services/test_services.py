@@ -94,7 +94,7 @@ class ComprehensiveServiceTester:
             ]
         }
         
-        # 🔧 Service configurations with your specific structure
+        # 🔧 Service configurations
         self.services = {
             "helius": ServiceConfig(
                 name="Helius",
@@ -155,6 +155,16 @@ class ComprehensiveServiceTester:
                 client_module="app.services.rugcheck_client.RugCheckClient",
                 test_methods=["check_token", "get_token_holders", "analyze_creator"],
                 icon="🛡️"
+            ),
+            "solsniffer": ServiceConfig(
+                name="SolSniffer",
+                category=ServiceCategory.PAID,
+                cost_per_1k=0.12,
+                requires_auth=True,
+                health_check_module="app.services.solsniffer_client.check_solsniffer_health",
+                client_module="app.services.solsniffer_client.SolSnifferClient",
+                test_methods=["analyze_token", "get_token_info", "get_trending_tokens", "search_tokens", "get_wallet_analysis"],
+                icon="🐕‍🦺"
             )
         }
     
@@ -664,7 +674,7 @@ class ComprehensiveServiceTester:
             return False
     
     async def _test_service_comprehensive(self, service_name: str, config: ServiceConfig) -> List[TestResult]:
-        """🔧 Comprehensive service testing based on your examples"""
+        """🔧 Comprehensive service testing"""
         print(f"   {config.icon} Testing {config.name}...")
         results = []
         
@@ -681,8 +691,11 @@ class ComprehensiveServiceTester:
             elif service_name == "goplus":
                 api_results = await self._test_goplus_api_calls()
                 results.extend(api_results)
-            elif service_name == "rugcheck":  # Added RugCheck testing
+            elif service_name == "rugcheck":
                 api_results = await self._test_rugcheck_api_calls()
+                results.extend(api_results)
+            elif service_name == "solsniffer":  # Add SolSniffer API testing
+                api_results = await self._test_solsniffer_api_calls()
                 results.extend(api_results)
         
         return results
@@ -1290,6 +1303,75 @@ class ComprehensiveServiceTester:
         
         return results
     
+    async def _test_solsniffer_api_calls(self) -> List[TestResult]:
+        """🐕‍🦺 Test SolSniffer API calls"""
+        print(f"      🐕‍🦺 Testing SolSniffer API calls...")
+        results = []
+        
+        try:
+            from app.services.solsniffer_client import SolSnifferClient
+            
+            async with SolSnifferClient() as client:
+                # Test 1: Token analysis
+                print(f"         📋 Testing token info...")
+                start_time = time.time()
+                
+                try:
+                    analysis_result = await client.get_token_info(self.test_tokens["solana"][1])
+                    analysis_time = time.time() - start_time
+                    
+                    if analysis_result:
+                        print(f"            ✅ Token data collected ({analysis_time:.3f}s)")
+                        
+                        results.append(TestResult(
+                            service="solsniffer",
+                            endpoint="/v2/token/{token_address}",
+                            success=True,
+                            response_time=analysis_time,
+                            cost_estimate="$0.002",
+                            category=ServiceCategory.PAID,
+                            data_size=len(str(analysis_result))
+                        ))
+                    else:
+                        print(f"            ⚠️ No analysis data ({analysis_time:.3f}s)")
+                        results.append(TestResult(
+                            service="solsniffer",
+                            endpoint="/v2/token/{token_address}",
+                            success=False,
+                            response_time=analysis_time,
+                            cost_estimate="$0.002",
+                            category=ServiceCategory.PAID,
+                            error="No analysis data returned"
+                        ))
+                        
+                except Exception as e:
+                    analysis_time = time.time() - start_time
+                    print(f"            ❌ Token analysis error: {str(e)} ({analysis_time:.3f}s)")
+                    results.append(TestResult(
+                        service="solsniffer",
+                        endpoint="/v2/token/{token_address}",
+                        success=False,
+                        response_time=analysis_time,
+                        cost_estimate="FREE",
+                        category=ServiceCategory.PAID,
+                        error=str(e)
+                    ))
+                
+        except Exception as e:
+            print(f"         ❌ SolSniffer client error: {str(e)}")
+            results.append(TestResult(
+                service="solsniffer",
+                endpoint="/client_error",
+                success=False,
+                response_time=0,
+                cost_estimate="FREE",
+                category=ServiceCategory.PAID,
+                error=str(e)
+            ))
+        
+        return results
+    
+    
     async def run_comprehensive_tests(self) -> Dict[str, Any]:
         """🚀 Run comprehensive test suite"""
         self.print_header()
@@ -1516,15 +1598,16 @@ async def save_results(summary: Dict[str, Any], filename_prefix: str, save_optio
 async def main():
     """🚀 Main function"""
     parser = argparse.ArgumentParser(
-        description="🧪 Comprehensive Service Testing Suite (Now with DexScreener!)",
+        description="🧪 Comprehensive Service Testing Suite (Now with SolSniffer!)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python -m tests.services.test_services --mode free
-  python -m tests.services.test_services --dexscreener-only
-  python -m tests.services.test_services --solanafm-only
-  python -m tests.services.test_services --goplus-only --mode limited
-  python -m tests.services.test_services --mode full --confirm
+python -m tests.services.test_services --mode free
+python -m tests.services.test_services --dexscreener-only
+python -m tests.services.test_services --solanafm-only
+python -m tests.services.test_services --goplus-only --mode limited
+python -m tests.services.test_services --solsniffer-only --mode limited
+python -m tests.services.test_services --mode full --confirm
         """
     )
     
@@ -1546,6 +1629,8 @@ Examples:
                        help="Test only Helius services")
     parser.add_argument("--rugcheck-only", action="store_true",
                         help="Test only RugCheck services")
+    parser.add_argument("--solsniffer-only", action="store_true",
+                        help="Test only SolSniffer services")
     parser.add_argument("--free-only", action="store_true",
                        help="Test only FREE services (SolanaFM + DexScreener)")
     
@@ -1572,34 +1657,30 @@ Examples:
         mode=mode_map[args.mode]
     )
     
-    # Handle DexScreener-only testing
+    # Handle service-specific testing
     if args.dexscreener_only:
         await handle_dexscreener_only_testing(tester, args)
         return
-    
-    # Handle other service-specific testing
-    if args.solanafm_only:
+    elif args.solanafm_only:
         await handle_solanafm_only_testing(tester, args)
         return
-    
-    if args.free_only:
+    elif args.free_only:
         await handle_free_only_testing(tester, args)
         return
-    
-    if args.goplus_only:
+    elif args.goplus_only:
         await handle_goplus_only_testing(tester, args)
         return
-    
-    if args.birdeye_only:
+    elif args.birdeye_only:
         await handle_birdeye_only_testing(tester, args)
         return
-    
-    if args.helius_only:
+    elif args.helius_only:
         await handle_helius_only_testing(tester, args)
         return
-    
-    if args.rugcheck_only:
+    elif args.rugcheck_only:
         await handle_rugcheck_only_testing(tester, args)
+        return
+    elif args.solsniffer_only:  # Add SolSniffer handler
+        await handle_solsniffer_only_testing(tester, args)
         return
     
     # Auto-confirm for paid testing if flag is set
@@ -1795,6 +1876,38 @@ async def handle_rugcheck_only_testing(tester: ComprehensiveServiceTester, args)
             
     except Exception as e:
         print(f"❌ RugCheck testing failed: {str(e)}")
+        return
+    
+    
+async def handle_solsniffer_only_testing(tester: ComprehensiveServiceTester, args):
+    """🐕‍🦺 Handle SolSniffer-only testing"""
+    if args.mode == 'mock':
+        print(f"⚠️ SolSniffer testing requires at least 'limited' mode")
+        print(f"   Use --mode limited for minimal SolSniffer testing")
+        return
+    
+    print(f"🐕‍🦺 SolSniffer-only testing mode")
+    print(f"=" * 60)
+    print(f"🎯 Testing SolSniffer API comprehensively")
+    print(f"💰 Cost: Paid service - token analysis and monitoring")
+    print(f"🔍 Coverage: Token analysis, trending tokens, search, wallet analysis")
+    print(f"=" * 60)
+    
+    start_time = time.time()
+    
+    try:
+        results = await tester._test_solsniffer_api_calls()
+        total_time = time.time() - start_time
+        
+        summary = create_service_summary("solsniffer_only", results, total_time, paid=True)
+        tester.print_comprehensive_summary(summary)
+        
+        # Save results
+        if args.save_results != "none":
+            await save_results(summary, "solsniffer_test", args.save_results)
+            
+    except Exception as e:
+        print(f"❌ SolSniffer testing failed: {str(e)}")
         return
 
 

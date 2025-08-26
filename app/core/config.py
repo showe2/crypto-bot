@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # DexScreener
     DEXSCREENER_BASE_URL: str = "https://api.dexscreener.com"
 
+    # SolSniffer - Solana token analysis and monitoring
+    SOLSNIFFER_API_KEY: Optional[str] = None
+    SOLSNIFFER_BASE_URL: str = "https://api.solsniffer.com"
+
     # PumpFun API
     PUMPFUN_API_KEY: Optional[str] = None
 
@@ -214,7 +218,7 @@ class Settings(BaseSettings):
         keys_status = {}
         api_keys = [
             'HELIUS_API_KEY', 'BIRDEYE_API_KEY',
-            'PUMPFUN_API_KEY',
+            'PUMPFUN_API_KEY', 'SOLSNIFFER_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
             'WALLET_SECRET_KEY'
         ]
