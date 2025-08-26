@@ -447,18 +447,6 @@ window.SolanaAI.api = {
     });
   },
 
-  // Comprehensive token analysis using API router
-  async analyzeTokenComprehensive(tokenMint, forceRefresh = false) {
-    console.log(`🔍 Starting comprehensive analysis for ${tokenMint}`);
-    return this.request("/api/analyze/token", {
-      method: "POST",
-      body: JSON.stringify({
-        token_address: tokenMint,
-        force_refresh: forceRefresh,
-      }),
-    });
-  },
-
   // Batch analysis
   async batchAnalyzeTokens(tokenAddresses, maxConcurrent = 3) {
     console.log(
@@ -504,36 +492,12 @@ window.SolanaAI.api = {
   },
 
   // Helper function to choose the best analysis endpoint based on requirements
-  async analyzeToken(tokenMint, analysisType = "quick", options = {}) {
+  async analyzeToken(tokenMint) {
     const startTime = Date.now();
+    console.log(`🚀 Starting analysis for ${tokenMint}`);
 
     try {
-      let result;
-
-      switch (analysisType) {
-        case "quick":
-          result = await this.quickAnalysis(tokenMint);
-          break;
-
-        case "deep":
-          result = await this.deepAnalysis(tokenMint);
-          break;
-
-        case "comprehensive":
-          result = await this.analyzeTokenComprehensive(
-            tokenMint,
-            options.forceRefresh
-          );
-          break;
-
-        case "legacy":
-          // Use legacy tweet/name commands for backward compatibility
-          result = await this.tweetCommand(tokenMint);
-          break;
-
-        default:
-          throw new Error(`Unknown analysis type: ${analysisType}`);
-      }
+      const result = await this.quickAnalysis(tokenMint);
 
       // Add timing information
       const processingTime = (Date.now() - startTime) / 1000;
@@ -542,6 +506,7 @@ window.SolanaAI.api = {
       }
 
       console.log(`✅ Analysis completed in ${processingTime.toFixed(2)}s`);
+      console.log("📊 Analysis result:", result);
       return result;
     } catch (error) {
       const processingTime = (Date.now() - startTime) / 1000;
@@ -848,9 +813,9 @@ window.SolanaAI.version = "1.0.0";
 window.SolanaAI.initialized = true;
 
 // Enhanced global functions for Alpine.js components
-window.analyzeTokenGlobal = async function (tokenMint, analysisType = "quick") {
+window.analyzeTokenGlobal = async function (tokenMint) {
   try {
-    return await window.SolanaAI.api.analyzeToken(tokenMint, analysisType);
+    return await window.SolanaAI.api.analyzeToken(tokenMint);
   } catch (error) {
     console.error("Global token analysis failed:", error);
     window.SolanaAI.notifications.error(

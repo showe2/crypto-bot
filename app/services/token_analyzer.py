@@ -366,11 +366,12 @@ class TokenAnalyzer:
             try:
                 score_value = float(score)
                 
-                # If score is 1 AND no other meaningful data exists, treat as no data
+                # THIS IS THE KEY FIX: If score is 1 AND no other meaningful data exists, treat as no data
                 if score_value == 1 and not rugged and not has_risks and not has_verification:
+                    logger.warning("⚠️ RugCheck returned score 1 with no meaningful data - ignoring for security decision")
                     return {"critical": [], "warnings": [], "insufficient_data": True}
                 
-                # If score is 1 but we have other data, treat score 1 as legitimate low score
+                # If score is 1 but we have other meaningful data, treat score 1 as legitimate low score
                 if score_value == 1 and (rugged or has_risks or has_verification):
                     critical_issues.append(f"Very low RugCheck score: {score_value}")
                 elif score_value < 20:
@@ -392,6 +393,7 @@ class TokenAnalyzer:
         
         if not has_meaningful_data:
             # RugCheck has no meaningful data - ignore this service for security decision
+            logger.warning("⚠️ RugCheck returned insufficient data - ignoring for security decision")
             return {"critical": [], "warnings": [], "insufficient_data": True}
         
         return {"critical": critical_issues, "warnings": warnings}
@@ -516,7 +518,7 @@ class TokenAnalyzer:
             except Exception as e:
                 logger.error(f"Market analysis execution failed: {str(e)}")
                 analysis_response["errors"].append(f"Market analysis failed: {str(e)}")
-    
+
     async def _generate_security_focused_analysis(self, security_data: Dict[str, Any], token_address: str, passed: bool) -> Dict[str, Any]:
         """Generate analysis focused on security results when security check fails"""
         
@@ -553,56 +555,177 @@ class TokenAnalyzer:
     async def _generate_comprehensive_analysis(self, service_responses: Dict[str, Any], security_data: Dict[str, Any], token_address: str) -> Dict[str, Any]:
         """Generate comprehensive analysis when security checks pass"""
         
-        scores = [75]  # Base score for passing security
+        # START WITH SECURITY BASE SCORE (60-95 range)
+        security_base = 60  # Minimum for passing security
+        if not security_data.get("warnings"):
+            security_base = 95  # Excellent security, no warnings
+        else:
+            warning_count = len(security_data.get("warnings", []))
+            security_base = max(60, 90 - (warning_count * 8))  # Reduce by 8 per warning
+        
+        total_points = security_base
         positive_signals = ["Security checks passed"]
         risk_factors = []
         
-        # Add security warnings if any (but not critical since we passed)
+        # Add security warnings to risk factors
         if security_data.get("warnings"):
             risk_factors.extend(security_data["warnings"])
-            scores.append(60)  # Lower score for warnings
         
-        # Process market data
+        # MARKET DATA QUALITY SCORING (0-20 points)
         birdeye_data = service_responses.get("birdeye", {})
         if birdeye_data:
             price_data = birdeye_data.get("price")
             if price_data and price_data.get("value") and float(price_data["value"]) > 0:
+                total_points += 10  # Has price data
                 positive_signals.append("Token has market price")
-                scores.append(65)
                 
-                volume = price_data.get("volume_24h")
-                if volume and float(volume) > 1000:
-                    positive_signals.append("Good trading volume")
-                    scores.append(70)
+                # Additional points for price stability/change data
+                if price_data.get("price_change_24h") is not None:
+                    total_points += 5  # Has price change data
+                if price_data.get("update_unix_time"):
+                    total_points += 5  # Recent price update
         
-        # Process Helius data
+        # VOLUME RANGE SCORING (0-25 points)
+        if birdeye_data and birdeye_data.get("price"):
+            volume = birdeye_data["price"].get("volume_24h")
+            if volume:
+                try:
+                    volume_val = float(volume)
+                    if volume_val >= 1000000:  # $1M+
+                        total_points += 25
+                        positive_signals.append("Excellent trading volume ($1M+)")
+                    elif volume_val >= 100000:  # $100K+
+                        total_points += 20
+                        positive_signals.append("Very good trading volume ($100K+)")
+                    elif volume_val >= 10000:  # $10K+
+                        total_points += 15
+                        positive_signals.append("Good trading volume ($10K+)")
+                    elif volume_val >= 1000:  # $1K+
+                        total_points += 10
+                        positive_signals.append("Moderate trading volume")
+                    else:  # < $1K
+                        total_points += 3
+                        risk_factors.append("Low trading volume")
+                except (ValueError, TypeError):
+                    pass
+        
+        # LIQUIDITY RANGE SCORING (0-15 points)
+        if birdeye_data and birdeye_data.get("price"):
+            liquidity = birdeye_data["price"].get("liquidity")
+            if liquidity:
+                try:
+                    liquidity_val = float(liquidity)
+                    if liquidity_val >= 500000:  # $500K+
+                        total_points += 15
+                        positive_signals.append("Excellent liquidity ($500K+)")
+                    elif liquidity_val >= 100000:  # $100K+
+                        total_points += 12
+                        positive_signals.append("Very good liquidity ($100K+)")
+                    elif liquidity_val >= 50000:  # $50K+
+                        total_points += 10
+                        positive_signals.append("Good liquidity ($50K+)")
+                    elif liquidity_val >= 10000:  # $10K+
+                        total_points += 6
+                        positive_signals.append("Moderate liquidity")
+                    else:  # < $10K
+                        total_points += 2
+                        risk_factors.append("Low liquidity")
+                except (ValueError, TypeError):
+                    pass
+        
+        # PRICE STABILITY SCORING (0-10 points)
+        if birdeye_data and birdeye_data.get("price"):
+            price_change = birdeye_data["price"].get("price_change_24h")
+            if price_change is not None:
+                try:
+                    change_val = abs(float(price_change))
+                    if change_val <= 5:  # Very stable
+                        total_points += 10
+                        positive_signals.append("Price stability (±5%)")
+                    elif change_val <= 15:  # Moderate volatility
+                        total_points += 6
+                    elif change_val <= 30:  # High volatility but not extreme
+                        total_points += 3
+                    else:  # Extreme volatility
+                        risk_factors.append("High price volatility")
+                except (ValueError, TypeError):
+                    pass
+        
+        # DATA SOURCE DIVERSITY (0-10 points)
+        source_count = len(service_responses)
+        if source_count >= 5:
+            total_points += 10
+            positive_signals.append("Comprehensive data coverage (5+ sources)")
+        elif source_count >= 4:
+            total_points += 8
+            positive_signals.append("Very good data coverage")
+        elif source_count >= 3:
+            total_points += 6
+            positive_signals.append("Good data coverage")
+        elif source_count >= 2:
+            total_points += 3
+            positive_signals.append("Basic data coverage")
+        else:
+            risk_factors.append("Limited data sources")
+        
+        # METADATA COMPLETENESS (0-5 points)
+        has_name = False
+        has_symbol = False
+        
+        # Check Helius metadata (keep existing logic)
         helius_data = service_responses.get("helius", {})
         if helius_data:
             if helius_data.get("supply"):
+                total_points += 2
                 positive_signals.append("On-chain supply data available")
-                scores.append(65)
             if helius_data.get("metadata"):
+                total_points += 2
                 positive_signals.append("Token metadata available")
-                scores.append(60)
+                # Try to extract name/symbol from metadata
+                metadata = helius_data["metadata"]
+                if isinstance(metadata, dict):
+                    has_name = bool(metadata.get("name"))
+                    has_symbol = bool(metadata.get("symbol"))
         
-        # Calculate overall score
-        overall_score = sum(scores) / len(scores) if scores else 50
+        # Check SolanaFM data (keep existing logic)
+        solanafm_data = service_responses.get("solanafm", {})
+        if solanafm_data and solanafm_data.get("token"):
+            token_info = solanafm_data["token"]
+            if token_info.get("name"):
+                has_name = True
+            if token_info.get("symbol"):
+                has_symbol = True
         
-        # Determine risk level (more lenient since security passed)
-        if overall_score >= 70:
+        if has_name and has_symbol:
+            total_points += 1
+            positive_signals.append("Complete token information")
+        
+        # NORMALIZE TO 0-100 SCALE
+        # Maximum possible points: 95 (security) + 20 (market) + 25 (volume) + 15 (liquidity) + 10 (stability) + 10 (sources) + 5 (metadata) = 180
+        max_possible = 180
+        final_score = min(100, (total_points / max_possible) * 100)
+        
+        # Ensure minimum score for tokens that pass security
+        final_score = max(60, final_score)
+        
+        # Determine risk level (keep existing thresholds)
+        if final_score >= 85:
             risk_level = "low"
             recommendation = "consider"
-        elif overall_score >= 55:
+        elif final_score >= 70:
+            risk_level = "low"
+            recommendation = "consider"
+        elif final_score >= 55:
             risk_level = "medium"
             recommendation = "caution"
         else:
             risk_level = "medium"  # Max medium risk if security passed
             recommendation = "caution"
         
-        confidence = min(100, 80 + len(service_responses) * 5)  # High confidence since security passed
+        confidence = min(100, 80 + len(service_responses) * 5)  # Keep existing confidence calculation
         
         return {
-            "score": round(overall_score, 1),
+            "score": round(final_score, 1),
             "risk_level": risk_level,
             "recommendation": recommendation,
             "confidence": round(confidence, 1),

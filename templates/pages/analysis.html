@@ -104,916 +104,1057 @@
         </span>
       </button>
 
-      <!-- Progress Bar -->
-      <div x-show="isAnalyzing" class="mt-3">
-        <div class="progress-bar">
-          <div
-            class="progress-bar-fill bg-blue-600"
-            :style="`width: ${analysisProgress.percent}%`"
-          ></div>
-        </div>
-        <div class="flex justify-between text-sm text-gray-600 mt-1">
-          <span x-text="analysisProgress.step"></span>
-          <span x-text="analysisProgress.percent + '%'"></span>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Analysis Results -->
-  <div x-show="hasResults" x-transition class="space-y-6">
-    <!-- Security Failure Alert -->
-    <div
-      x-show="getSecurityStatus() === 'unsafe' && results.metadata?.analysis_stopped_at_security"
-      class="bg-red-50 border-l-4 border-red-400 p-6 rounded-r-xl"
-    >
-      <div class="flex">
-        <div class="flex-shrink-0">
-          <i class="fas fa-shield-alt text-red-400 text-2xl"></i>
-        </div>
-        <div class="ml-4">
-          <h3 class="text-lg font-medium text-red-800">
-            ⚠️ SECURITY CHECK FAILED
-          </h3>
-          <div class="mt-2">
-            <p class="text-sm text-red-700">
-              This token has failed critical security checks and analysis was
-              stopped to protect users.
-            </p>
+      <!-- Analysis Results -->
+      <div x-show="hasResults" x-transition class="space-y-6">
+        <!-- Security Failure Alert -->
+        <div
+          x-show="getSecurityStatus() === 'unsafe' && results.metadata?.analysis_stopped_at_security"
+          class="bg-red-50 border-l-4 border-red-400 p-6 rounded-r-xl"
+        >
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <i class="fas fa-shield-alt text-red-400 text-2xl"></i>
+            </div>
+            <div class="ml-4">
+              <h3 class="text-lg font-medium text-red-800">
+                ⚠️ SECURITY CHECK FAILED
+              </h3>
+              <div class="mt-2">
+                <p class="text-sm text-red-700">
+                  This token has failed critical security checks and analysis
+                  was stopped to protect users.
+                </p>
+              </div>
+              <div class="mt-4">
+                <div class="flex">
+                  <button
+                    @click="showSecurityDetails = !showSecurityDetails"
+                    class="bg-red-100 px-4 py-2 rounded text-red-800 text-sm hover:bg-red-200 mr-3"
+                  >
+                    <span x-show="!showSecurityDetails"
+                      >Show Security Details</span
+                    >
+                    <span x-show="showSecurityDetails"
+                      >Hide Security Details</span
+                    >
+                  </button>
+                  <span
+                    class="inline-flex items-center px-3 py-2 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                  >
+                    <i class="fas fa-ban mr-1"></i>
+                    NOT RECOMMENDED
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="mt-4">
-            <div class="flex">
-              <button
-                @click="showSecurityDetails = !showSecurityDetails"
-                class="bg-red-100 px-4 py-2 rounded text-red-800 text-sm hover:bg-red-200 mr-3"
-              >
-                <span x-show="!showSecurityDetails">Show Security Details</span>
-                <span x-show="showSecurityDetails">Hide Security Details</span>
-              </button>
-              <span
-                class="inline-flex items-center px-3 py-2 rounded-full text-xs font-medium bg-red-100 text-red-800"
-              >
-                <i class="fas fa-ban mr-1"></i>
-                NOT RECOMMENDED
-              </span>
+
+          <!-- Expandable Security Details -->
+          <div
+            x-show="showSecurityDetails"
+            x-collapse
+            class="mt-4 pt-4 border-t border-red-200"
+          >
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h4 class="font-medium text-red-800 mb-2">
+                  Critical Issues Found:
+                </h4>
+                <ul class="space-y-1">
+                  <template x-for="issue in getCriticalIssues()" :key="issue">
+                    <li class="text-sm text-red-700 flex items-start">
+                      <i
+                        class="fas fa-times-circle text-red-500 mr-2 mt-0.5 flex-shrink-0"
+                      ></i>
+                      <span x-text="issue"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
+              <div x-show="getSecurityWarnings().length > 0">
+                <h4 class="font-medium text-red-800 mb-2">
+                  Additional Warnings:
+                </h4>
+                <ul class="space-y-1">
+                  <template
+                    x-for="warning in getSecurityWarnings()"
+                    :key="warning"
+                  >
+                    <li class="text-sm text-red-600 flex items-start">
+                      <i
+                        class="fas fa-exclamation-triangle text-red-400 mr-2 mt-0.5 flex-shrink-0"
+                      ></i>
+                      <span x-text="warning"></span>
+                    </li>
+                  </template>
+                </ul>
+              </div>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Expandable Security Details -->
-      <div
-        x-show="showSecurityDetails"
-        x-collapse
-        class="mt-4 pt-4 border-t border-red-200"
-      >
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <h4 class="font-medium text-red-800 mb-2">
-              Critical Issues Found:
-            </h4>
-            <ul class="space-y-1">
-              <template x-for="issue in getCriticalIssues()" :key="issue">
-                <li class="text-sm text-red-700 flex items-start">
-                  <i
-                    class="fas fa-times-circle text-red-500 mr-2 mt-0.5 flex-shrink-0"
-                  ></i>
-                  <span x-text="issue"></span>
-                </li>
-              </template>
-            </ul>
-          </div>
-          <div x-show="getSecurityWarnings().length > 0">
-            <h4 class="font-medium text-red-800 mb-2">Additional Warnings:</h4>
-            <ul class="space-y-1">
-              <template x-for="warning in getSecurityWarnings()" :key="warning">
-                <li class="text-sm text-red-600 flex items-start">
-                  <i
-                    class="fas fa-exclamation-triangle text-red-400 mr-2 mt-0.5 flex-shrink-0"
-                  ></i>
-                  <span x-text="warning"></span>
-                </li>
-              </template>
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Token Overview -->
-    <div
-      x-show="results && !shouldHideOverview()"
-      class="bg-white rounded-xl shadow-lg p-6"
-    >
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-xl font-semibold text-gray-900">Token Overview</h3>
-        <!-- Security Badge in Overview Header -->
-        <div x-show="getSecurityAnalysis()" class="flex items-center space-x-2">
-          <span class="text-xs text-gray-500">Security:</span>
-          <span
-            class="px-2 py-1 rounded-full text-xs font-medium"
-            :class="{
+        <!-- Token Overview -->
+        <div
+          x-show="results && !shouldHideOverview()"
+          class="bg-white rounded-xl shadow-lg p-6"
+        >
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-xl font-semibold text-gray-900">Token Overview</h3>
+            <!-- Security Badge in Overview Header -->
+            <div
+              x-show="getSecurityAnalysis()"
+              class="flex items-center space-x-2"
+            >
+              <span class="text-xs text-gray-500">Security:</span>
+              <span
+                class="px-2 py-1 rounded-full text-xs font-medium"
+                :class="{
               'bg-green-100 text-green-800': getSecurityStatus() === 'safe',
               'bg-red-100 text-red-800': getSecurityStatus() === 'unsafe',
               'bg-yellow-100 text-yellow-800': getSecurityStatus() === 'warning'
             }"
-            x-text="getSecurityStatusText()"
-          ></span>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <!-- Token Info -->
-        <div class="text-center">
-          <div
-            class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3"
-          >
-            <i class="fas fa-coins text-blue-600 text-2xl"></i>
+                x-text="getSecurityStatusText()"
+              ></span>
+            </div>
           </div>
-          <h4 class="font-semibold text-gray-900" x-text="getTokenName()"></h4>
-          <p class="text-sm text-gray-500" x-text="getTokenSymbol()"></p>
-          <p
-            class="text-xs text-gray-400 font-mono mt-1"
-            x-text="truncateAddress(results?.token_address || form.tokenMint)"
-          ></p>
-        </div>
 
-        <!-- Price Data -->
-        <div class="text-center" x-show="getPriceData().value">
-          <div
-            class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"
-          >
-            <i class="fas fa-dollar-sign text-green-600 text-2xl"></i>
-          </div>
-          <h4
-            class="font-semibold text-gray-900"
-            x-text="formatCurrency(getPriceData().value)"
-          ></h4>
-          <p
-            class="text-sm"
-            :class="getPriceChangeClass(getPriceData().price_change_24h)"
-            x-text="formatPercent(getPriceData().price_change_24h)"
-          ></p>
-          <p class="text-xs text-gray-400">24h Change</p>
-        </div>
-
-        <!-- Market Cap -->
-        <div class="text-center" x-show="getPriceData().liquidity">
-          <div
-            class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
-          >
-            <i class="fas fa-chart-pie text-purple-600 text-2xl"></i>
-          </div>
-          <h4
-            class="font-semibold text-gray-900"
-            x-text="formatNumber(getPriceData().market_cap)"
-          ></h4>
-          <p class="text-sm text-gray-500">Market Cap</p>
-          <p
-            class="text-xs text-gray-400"
-            x-text="formatNumber(getPriceData().volume_24h) + ' Vol'"
-          ></p>
-        </div>
-
-        <!-- Analysis Score -->
-        <div class="text-center" x-show="getAnalysisScore() !== null">
-          <div
-            class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3"
-          >
-            <i class="fas fa-star text-yellow-600 text-2xl"></i>
-          </div>
-          <h4
-            class="font-semibold text-gray-900"
-            x-text="getAnalysisScore() ? getAnalysisScore() + '%' : 'N/A'"
-          ></h4>
-          <p class="text-sm text-gray-500">Analysis Score</p>
-          <p class="text-xs text-gray-400" x-text="getRiskLevel()"></p>
-        </div>
-      </div>
-    </div>
-
-    <!-- Security Warning for Caution Status -->
-    <div
-      x-show="getSecurityStatus() === 'warning' && !results.metadata?.analysis_stopped_at_security"
-      class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"
-    >
-      <div class="flex">
-        <div class="flex-shrink-0">
-          <i class="fas fa-exclamation-triangle text-yellow-400"></i>
-        </div>
-        <div class="ml-3">
-          <h3 class="text-sm font-medium text-yellow-800">
-            Security Warnings Detected
-          </h3>
-          <div class="mt-2 text-sm text-yellow-700">
-            <p>
-              This token has some security warnings. Please review the security
-              analysis before trading.
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TWO COLUMN LAYOUT: Quick Analysis (LEFT) + Security Analysis (RIGHT) -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <!-- LEFT COLUMN: Quick Analysis -->
-      <div
-        x-show="getQuickAnalysis() && !shouldHideOverview()"
-        class="bg-white rounded-xl shadow-lg p-6"
-      >
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900">Quick Analysis</h3>
-          <div class="flex items-center space-x-2">
-            <i class="fas fa-bolt text-yellow-500"></i>
-            <span class="text-sm text-gray-500">Frontend</span>
-          </div>
-        </div>
-
-        <template x-if="getQuickAnalysis()">
-          <div class="space-y-4">
-            <!-- Score -->
-            <div class="text-center p-4 bg-gray-50 rounded-lg">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- Token Info -->
+            <div class="text-center">
               <div
-                class="text-3xl font-bold text-blue-600"
-                x-text="Math.round((getQuickAnalysis().score || 0) * 100)"
-              ></div>
-              <div class="text-sm text-gray-500">Overall Score</div>
-              <div class="progress-bar mt-2">
-                <div
-                  class="progress-bar-fill bg-blue-600"
-                  :style="`width: ${(getQuickAnalysis().score || 0) * 100}%`"
-                ></div>
+                class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3"
+              >
+                <i class="fas fa-coins text-blue-600 text-2xl"></i>
               </div>
+              <h4
+                class="font-semibold text-gray-900"
+                x-text="getTokenName()"
+              ></h4>
+              <p class="text-sm text-gray-500" x-text="getTokenSymbol()"></p>
+              <p
+                class="text-xs text-gray-400 font-mono mt-1"
+                x-text="truncateAddress(results?.token_address || form.tokenMint)"
+              ></p>
             </div>
 
-            <!-- Risk and Recommendation -->
-            <div class="space-y-2">
-              <div class="flex items-center justify-between">
-                <span class="text-gray-700">Risk Level:</span>
-                <span
-                  class="px-3 py-1 rounded-full text-sm font-medium"
-                  :class="getRiskLevelClass(getQuickAnalysis().risk_level)"
-                  x-text="(getQuickAnalysis().risk_level || 'unknown').toUpperCase()"
-                ></span>
+            <!-- Price Data -->
+            <div class="text-center" x-show="getPriceData().value">
+              <div
+                class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"
+              >
+                <i class="fas fa-dollar-sign text-green-600 text-2xl"></i>
               </div>
-
-              <div class="flex items-center justify-between">
-                <span class="text-gray-700">Recommendation:</span>
-                <span
-                  class="px-3 py-1 rounded-full text-sm font-medium"
-                  :class="getRecommendationClass(getQuickAnalysis().recommendation)"
-                  x-text="getQuickAnalysis().recommendation || 'HOLD'"
-                ></span>
-              </div>
+              <h4
+                class="font-semibold text-gray-900"
+                x-text="formatCurrency(getPriceData().value)"
+              ></h4>
+              <p
+                class="text-sm"
+                :class="getPriceChangeClass(getPriceData().price_change_24h)"
+                x-text="formatPercent(getPriceData().price_change_24h)"
+              ></p>
+              <p class="text-xs text-gray-400">24h Change</p>
             </div>
 
-            <!-- Key Insights -->
-            <div x-show="getQuickAnalysis().key_insights?.length">
-              <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
-              <ul class="space-y-1">
-                <template
-                  x-for="insight in getQuickAnalysis().key_insights"
-                  :key="insight"
-                >
-                  <li class="text-sm text-gray-600 flex items-start">
-                    <i
-                      class="fas fa-chevron-right text-blue-500 mr-2 mt-0.5 text-xs"
-                    ></i>
-                    <span x-text="insight"></span>
-                  </li>
-                </template>
-              </ul>
+            <!-- Market Cap -->
+            <div class="text-center" x-show="getPriceData().liquidity">
+              <div
+                class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
+              >
+                <i class="fas fa-chart-pie text-purple-600 text-2xl"></i>
+              </div>
+              <h4
+                class="font-semibold text-gray-900"
+                x-text="formatNumber(getPriceData().market_cap)"
+              ></h4>
+              <p class="text-sm text-gray-500">Market Cap</p>
+              <p
+                class="text-xs text-gray-400"
+                x-text="formatNumber(getPriceData().volume_24h) + ' Vol'"
+              ></p>
             </div>
 
-            <!-- Processing Time -->
-            <div class="text-xs text-gray-500 text-center">
-              Processed in
-              <span
-                x-text="(getQuickAnalysis().processing_time || 0).toFixed(2)"
-              ></span
-              >s
+            <!-- Analysis Score -->
+            <div class="text-center" x-show="getAnalysisScore() !== null">
+              <div
+                class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3"
+              >
+                <i class="fas fa-star text-yellow-600 text-2xl"></i>
+              </div>
+              <h4
+                class="font-semibold text-gray-900"
+                x-text="getAnalysisScore() ? getAnalysisScore() + '%' : 'N/A'"
+              ></h4>
+              <p class="text-sm text-gray-500">Analysis Score</p>
+              <p class="text-xs text-gray-400" x-text="getRiskLevel()"></p>
             </div>
           </div>
-        </template>
-      </div>
+        </div>
 
-      <!-- RIGHT COLUMN: Security Analysis (THIS IS THE RED BOX!) -->
-      <div
-        x-show="getSecurityAnalysis() && !shouldHideOverview()"
-        class="bg-white rounded-xl shadow-lg p-6"
-      >
-        <div class="flex items-center justify-between mb-4">
-          <h3 class="text-lg font-semibold text-gray-900">Security Analysis</h3>
-          <div class="flex items-center space-x-2">
-            <div
-              class="w-3 h-3 rounded-full"
-              :class="{
+        <!-- Security Warning for Caution Status -->
+        <div
+          x-show="getSecurityStatus() === 'warning' && !results.metadata?.analysis_stopped_at_security"
+          class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"
+        >
+          <div class="flex">
+            <div class="flex-shrink-0">
+              <i class="fas fa-exclamation-triangle text-yellow-400"></i>
+            </div>
+            <div class="ml-3">
+              <h3 class="text-sm font-medium text-yellow-800">
+                Security Warnings Detected
+              </h3>
+              <div class="mt-2 text-sm text-yellow-700">
+                <p>
+                  This token has some security warnings. Please review the
+                  security analysis before trading.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TWO COLUMN LAYOUT: Quick Analysis (LEFT) + Security Analysis (RIGHT) -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <!-- LEFT COLUMN: Quick Analysis -->
+          <div
+            x-show="getQuickAnalysis() && !shouldHideOverview()"
+            class="bg-white rounded-xl shadow-lg p-6"
+          >
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-gray-900">
+                Quick Analysis
+              </h3>
+              <div class="flex items-center space-x-2">
+                <i class="fas fa-bolt text-yellow-500"></i>
+                <span class="text-sm text-gray-500">Frontend</span>
+              </div>
+            </div>
+
+            <template x-if="getQuickAnalysis()">
+              <div class="space-y-4">
+                <!-- Score -->
+                <div class="text-center p-4 bg-gray-50 rounded-lg">
+                  <div
+                    class="text-3xl font-bold text-blue-600"
+                    x-text="Math.round((getQuickAnalysis().score || 0) * 100)"
+                  ></div>
+                  <div class="text-sm text-gray-500">Overall Score</div>
+                  <div class="progress-bar mt-2">
+                    <div
+                      class="progress-bar-fill bg-blue-600"
+                      :style="`width: ${(getQuickAnalysis().score || 0) * 100}%`"
+                    ></div>
+                  </div>
+                </div>
+
+                <!-- Risk and Recommendation -->
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between">
+                    <span class="text-gray-700">Risk Level:</span>
+                    <span
+                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      :class="getRiskLevelClass(getQuickAnalysis().risk_level)"
+                      x-text="(getQuickAnalysis().risk_level || 'unknown').toUpperCase()"
+                    ></span>
+                  </div>
+
+                  <div class="flex items-center justify-between">
+                    <span class="text-gray-700">Recommendation:</span>
+                    <span
+                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      :class="getRecommendationClass(getQuickAnalysis().recommendation)"
+                      x-text="getQuickAnalysis().recommendation || 'HOLD'"
+                    ></span>
+                  </div>
+                </div>
+
+                <!-- Key Insights -->
+                <div x-show="getQuickAnalysis().key_insights?.length">
+                  <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
+                  <ul class="space-y-1">
+                    <template
+                      x-for="insight in getQuickAnalysis().key_insights"
+                      :key="insight"
+                    >
+                      <li class="text-sm text-gray-600 flex items-start">
+                        <i
+                          class="fas fa-chevron-right text-blue-500 mr-2 mt-0.5 text-xs"
+                        ></i>
+                        <span x-text="insight"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+
+                <!-- Processing Time -->
+                <div class="text-xs text-gray-500 text-center">
+                  Processed in
+                  <span
+                    x-text="(getQuickAnalysis().processing_time || 0).toFixed(2)"
+                  ></span
+                  >s
+                </div>
+              </div>
+            </template>
+          </div>
+
+          <!-- RIGHT COLUMN: Security Analysis (THIS IS THE RED BOX!) -->
+          <div
+            x-show="getSecurityAnalysis() && !shouldHideOverview()"
+            class="bg-white rounded-xl shadow-lg p-6"
+          >
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-lg font-semibold text-gray-900">
+                Security Analysis
+              </h3>
+              <div class="flex items-center space-x-2">
+                <div
+                  class="w-3 h-3 rounded-full"
+                  :class="{
                 'bg-green-500': getSecurityStatus() === 'safe',
                 'bg-red-500': getSecurityStatus() === 'unsafe',
                 'bg-yellow-500': getSecurityStatus() === 'warning'
               }"
-            ></div>
-            <span
-              class="text-sm font-medium"
-              :class="{
+                ></div>
+                <span
+                  class="text-sm font-medium"
+                  :class="{
                 'text-green-700': getSecurityStatus() === 'safe',
                 'text-red-700': getSecurityStatus() === 'unsafe', 
                 'text-yellow-700': getSecurityStatus() === 'warning'
               }"
-              x-text="getSecurityStatusText()"
-            ></span>
-          </div>
-        </div>
+                  x-text="getSecurityStatusText()"
+                ></span>
+              </div>
+            </div>
 
-        <!-- Security Status Summary -->
-        <div class="grid grid-cols-1 gap-4 mb-4">
-          <!-- Overall Security Score -->
-          <div
-            class="text-center p-4 rounded-lg"
-            :class="{
+            <!-- Security Status Summary -->
+            <div class="grid grid-cols-1 gap-4 mb-4">
+              <!-- Overall Security Score -->
+              <div
+                class="text-center p-4 rounded-lg"
+                :class="{
                  'bg-green-50': getSecurityStatus() === 'safe',
                  'bg-red-50': getSecurityStatus() === 'unsafe',
                  'bg-yellow-50': getSecurityStatus() === 'warning'
                }"
-          >
-            <div
-              class="text-2xl font-bold"
-              :class="{
+              >
+                <div
+                  class="text-2xl font-bold"
+                  :class="{
                    'text-green-700': getSecurityStatus() === 'safe',
                    'text-red-700': getSecurityStatus() === 'unsafe',
                    'text-yellow-700': getSecurityStatus() === 'warning'
                  }"
-              x-text="getSecurityScore() || 'N/A'"
-            ></div>
-            <div class="text-sm text-gray-600 mt-1">Security Score</div>
-          </div>
+                  x-text="getSecurityScore() || 'N/A'"
+                ></div>
+                <div class="text-sm text-gray-600 mt-1">Security Score</div>
+              </div>
 
-          <!-- Issues Summary -->
-          <div class="grid grid-cols-2 gap-3">
-            <!-- Critical Issues -->
-            <div class="text-center p-3 bg-gray-50 rounded-lg">
-              <div
-                class="text-xl font-bold text-red-600"
-                x-text="getCriticalIssuesCount()"
-              ></div>
-              <div class="text-xs text-gray-600 mt-1">Critical</div>
+              <!-- Issues Summary -->
+              <div class="grid grid-cols-2 gap-3">
+                <!-- Critical Issues -->
+                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                  <div
+                    class="text-xl font-bold text-red-600"
+                    x-text="getCriticalIssuesCount()"
+                  ></div>
+                  <div class="text-xs text-gray-600 mt-1">Critical</div>
+                </div>
+
+                <!-- Warnings -->
+                <div class="text-center p-3 bg-gray-50 rounded-lg">
+                  <div
+                    class="text-xl font-bold text-yellow-600"
+                    x-text="getSecurityWarningsCount()"
+                  ></div>
+                  <div class="text-xs text-gray-600 mt-1">Warnings</div>
+                </div>
+              </div>
             </div>
 
-            <!-- Warnings -->
-            <div class="text-center p-3 bg-gray-50 rounded-lg">
-              <div
-                class="text-xl font-bold text-yellow-600"
-                x-text="getSecurityWarningsCount()"
-              ></div>
-              <div class="text-xs text-gray-600 mt-1">Warnings</div>
+            <!-- Critical Issues List -->
+            <div x-show="getCriticalIssues().length > 0" class="mb-4">
+              <h4
+                class="font-medium text-red-700 mb-2 flex items-center text-sm"
+              >
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Critical Issues
+              </h4>
+              <div class="space-y-2">
+                <template x-for="issue in getCriticalIssues()" :key="issue">
+                  <div
+                    class="flex items-start p-2 bg-red-50 border-l-4 border-red-400 rounded-r-lg"
+                  >
+                    <i
+                      class="fas fa-times-circle text-red-500 mt-0.5 mr-2 flex-shrink-0 text-xs"
+                    ></i>
+                    <span class="text-red-800 text-xs" x-text="issue"></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Security Warnings List -->
+            <div x-show="getSecurityWarnings().length > 0" class="mb-4">
+              <h4
+                class="font-medium text-yellow-700 mb-2 flex items-center text-sm"
+              >
+                <i class="fas fa-exclamation-triangle mr-2"></i>
+                Warnings
+              </h4>
+              <div class="space-y-2">
+                <template
+                  x-for="warning in getSecurityWarnings()"
+                  :key="warning"
+                >
+                  <div
+                    class="flex items-start p-2 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg"
+                  >
+                    <i
+                      class="fas fa-exclamation-triangle text-yellow-500 mt-0.5 mr-2 flex-shrink-0 text-xs"
+                    ></i>
+                    <span
+                      class="text-yellow-800 text-xs"
+                      x-text="warning"
+                    ></span>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            <!-- Data Sources -->
+            <div class="text-center pt-3 border-t border-gray-200">
+              <p class="text-xs text-gray-500">
+                Security data from:
+                <span
+                  x-text="getSecurityDataSources().join(', ') || 'N/A'"
+                ></span>
+              </p>
             </div>
           </div>
         </div>
 
-        <!-- Critical Issues List -->
-        <div x-show="getCriticalIssues().length > 0" class="mb-4">
-          <h4 class="font-medium text-red-700 mb-2 flex items-center text-sm">
-            <i class="fas fa-exclamation-triangle mr-2"></i>
-            Critical Issues
-          </h4>
-          <div class="space-y-2">
-            <template x-for="issue in getCriticalIssues()" :key="issue">
+        <!-- Analysis Metadata -->
+        <div class="bg-gray-50 rounded-xl p-6">
+          <h3 class="text-lg font-semibold text-gray-900 mb-4">
+            Analysis Details
+          </h3>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <div class="text-sm text-gray-500">Analysis ID</div>
               <div
-                class="flex items-start p-2 bg-red-50 border-l-4 border-red-400 rounded-r-lg"
-              >
-                <i
-                  class="fas fa-times-circle text-red-500 mt-0.5 mr-2 flex-shrink-0 text-xs"
-                ></i>
-                <span class="text-red-800 text-xs" x-text="issue"></span>
-              </div>
-            </template>
+                class="font-mono text-sm"
+                x-text="results?.analysis_id || 'N/A'"
+              ></div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500">Processing Time</div>
+              <div
+                class="font-medium"
+                x-text="(results?.metadata.processing_time_seconds || 0).toFixed(2) + 's'"
+              ></div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500">Data Sources</div>
+              <div
+                class="font-medium"
+                x-text="getDataSources().join(', ') || 'N/A'"
+              ></div>
+            </div>
+            <div>
+              <div class="text-sm text-gray-500">Analysis Date</div>
+              <div
+                class="font-medium"
+                x-text="results?.timestamp ? new Date(results.timestamp).toLocaleDateString() : 'N/A'"
+              ></div>
+            </div>
           </div>
         </div>
-
-        <!-- Security Warnings List -->
-        <div x-show="getSecurityWarnings().length > 0" class="mb-4">
-          <h4
-            class="font-medium text-yellow-700 mb-2 flex items-center text-sm"
-          >
-            <i class="fas fa-exclamation-triangle mr-2"></i>
-            Warnings
-          </h4>
-          <div class="space-y-2">
-            <template x-for="warning in getSecurityWarnings()" :key="warning">
-              <div
-                class="flex items-start p-2 bg-yellow-50 border-l-4 border-yellow-400 rounded-r-lg"
-              >
-                <i
-                  class="fas fa-exclamation-triangle text-yellow-500 mt-0.5 mr-2 flex-shrink-0 text-xs"
-                ></i>
-                <span class="text-yellow-800 text-xs" x-text="warning"></span>
-              </div>
-            </template>
-          </div>
-        </div>
-
-        <!-- Data Sources -->
-        <div class="text-center pt-3 border-t border-gray-200">
-          <p class="text-xs text-gray-500">
-            Security data from:
-            <span x-text="getSecurityDataSources().join(', ') || 'N/A'"></span>
-          </p>
-        </div>
       </div>
-    </div>
 
-    <!-- Analysis Metadata -->
-    <div class="bg-gray-50 rounded-xl p-6">
-      <h3 class="text-lg font-semibold text-gray-900 mb-4">Analysis Details</h3>
+      <script>
+        function analysisData() {
+          return {
+            form: {
+              tokenMint: '{{ selected_token or "" }}',
+            },
+            isAnalyzing: false,
+            hasResults: false,
+            results: null,
+            showSecurityDetails: false,
+            analysisProgress: {
+              step: "Initializing...",
+              message: "Starting analysis...",
+              percent: 0,
+            },
 
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div>
-          <div class="text-sm text-gray-500">Analysis ID</div>
-          <div
-            class="font-mono text-sm"
-            x-text="results?.analysis_id || 'N/A'"
-          ></div>
-        </div>
-        <div>
-          <div class="text-sm text-gray-500">Processing Time</div>
-          <div
-            class="font-medium"
-            x-text="(results?.metadata.processing_time_seconds || 0).toFixed(2) + 's'"
-          ></div>
-        </div>
-        <div>
-          <div class="text-sm text-gray-500">Data Sources</div>
-          <div
-            class="font-medium"
-            x-text="getDataSources().join(', ') || 'N/A'"
-          ></div>
-        </div>
-        <div>
-          <div class="text-sm text-gray-500">Analysis Date</div>
-          <div
-            class="font-medium"
-            x-text="results?.timestamp ? new Date(results.timestamp).toLocaleDateString() : 'N/A'"
-          ></div>
-        </div>
-      </div>
-    </div>
-  </div>
+            get isValidAddress() {
+              return this.isValidSolanaAddress(this.form.tokenMint);
+            },
 
-  <script>
-    function analysisData() {
-      return {
-        form: {
-          tokenMint: '{{ selected_token or "" }}',
-        },
-        isAnalyzing: false,
-        hasResults: false,
-        results: null,
-        showSecurityDetails: false,
-        analysisProgress: {
-          step: "Initializing...",
-          message: "Starting analysis...",
-          percent: 0,
-        },
+            initAnalysis() {
+              const urlParams = new URLSearchParams(window.location.search);
+              const token = urlParams.get("token");
+              if (token) {
+                this.form.tokenMint = token;
+                if (this.isValidAddress) {
+                  setTimeout(() => this.analyzeToken(), 1000);
+                }
+              }
+            },
 
-        get isValidAddress() {
-          return this.isValidSolanaAddress(this.form.tokenMint);
-        },
+            async analyzeToken() {
+              if (!this.isValidAddress) {
+                this.showNotification(
+                  "error",
+                  "Invalid Address",
+                  "Please enter a valid Solana token mint address"
+                );
+                return;
+              }
 
-        initAnalysis() {
-          const urlParams = new URLSearchParams(window.location.search);
-          const token = urlParams.get("token");
-          if (token) {
-            this.form.tokenMint = token;
-            if (this.isValidAddress) {
-              setTimeout(() => this.analyzeToken(), 1000);
-            }
-          }
-        },
+              this.isAnalyzing = true;
+              this.hasResults = false;
+              this.results = null;
 
-        async analyzeToken() {
-          if (!this.isValidAddress) {
-            this.showNotification(
-              "error",
-              "Invalid Address",
-              "Please enter a valid Solana token mint address"
-            );
-            return;
-          }
+              try {
+                const result = await this.callQuickAnalysis(
+                  this.form.tokenMint
+                );
+                this.results = result;
+                this.hasResults = true;
+                this.showNotification(
+                  "success",
+                  "Analysis Complete",
+                  "Token analysis completed successfully"
+                );
+              } catch (error) {
+                this.showNotification(
+                  "error",
+                  "Analysis Failed",
+                  error.message || "Failed to analyze token"
+                );
+              } finally {
+                this.isAnalyzing = false;
+              }
+            },
 
-          this.isAnalyzing = true;
-          this.hasResults = false;
-          this.results = null;
+            async callQuickAnalysis(tokenMint) {
+              const response = await fetch(`/quick/${tokenMint}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              });
 
-          try {
-            const result = await this.callQuickAnalysis(this.form.tokenMint);
-            this.results = result;
-            this.hasResults = true;
-            this.showNotification(
-              "success",
-              "Analysis Complete",
-              "Token analysis completed successfully"
-            );
-          } catch (error) {
-            this.showNotification(
-              "error",
-              "Analysis Failed",
-              error.message || "Failed to analyze token"
-            );
-          } finally {
-            this.isAnalyzing = false;
-          }
-        },
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                  errorData.message ||
+                    errorData.detail ||
+                    `HTTP ${response.status}`
+                );
+              }
 
-        async callQuickAnalysis(tokenMint) {
-          const response = await fetch(`/quick/${tokenMint}`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-          });
+              return await response.json();
+            },
 
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => ({}));
-            throw new Error(
-              errorData.message || errorData.detail || `HTTP ${response.status}`
-            );
-          }
+            // Control visibility of overview based on security status
+            shouldHideOverview() {
+              return (
+                this.results?.metadata?.analysis_stopped_at_security === true
+              );
+            },
 
-          return await response.json();
-        },
+            // Security Analysis Functions
+            getSecurityAnalysis() {
+              return this.results?.security_analysis || null;
+            },
 
-        // Control visibility of overview based on security status
-        shouldHideOverview() {
-          return this.results?.metadata?.analysis_stopped_at_security === true;
-        },
+            getSecurityScore() {
+              const security = this.getSecurityAnalysis();
+              if (!security) return null;
 
-        // Security Analysis Functions
-        getSecurityAnalysis() {
-          return this.results?.security_analysis || null;
-        },
+              // Start with maximum security score
+              let securityScore = 100;
 
-        getSecurityStatus() {
-          const security = this.getSecurityAnalysis();
-          if (!security) return "unknown";
+              // CRITICAL FAILURE CASES
+              if (this.results.metadata?.analysis_stopped_at_security) {
+                const criticalCount = this.getCriticalIssues().length;
 
-          if (this.results.metadata?.analysis_stopped_at_security)
-            return "unsafe";
+                // Severe penalty for analysis being stopped
+                securityScore = 20; // Base for stopped analysis
 
-          const criticalIssues = security.critical_issues || [];
-          if (criticalIssues.length > 0) return "unsafe";
+                // Additional penalties for critical issues
+                if (criticalCount >= 3)
+                  securityScore = 5; // Multiple critical issues
+                else if (criticalCount >= 2)
+                  securityScore = 8; // Two critical issues
+                else if (criticalCount >= 1) securityScore = 12; // One critical issue
 
-          if (security.overall_safe === true) return "safe";
+                return securityScore.toString();
+              }
 
-          const warnings = security.warnings || [];
-          if (warnings.length > 0) return "warning";
+              const criticalCount = this.getCriticalIssues().length;
+              const warningCount = this.getSecurityWarnings().length;
 
-          return "unknown";
-        },
+              // PENALTY FOR CRITICAL ISSUES (should not happen if analysis continued, but handle gracefully)
+              if (criticalCount > 0) {
+                securityScore -= criticalCount * 30; // 30 points per critical issue
+              }
 
-        getSecurityStatusText() {
-          const status = this.getSecurityStatus();
-          const statusMap = {
-            safe: "SECURE",
-            unsafe: "UNSAFE",
-            warning: "CAUTION",
-            unknown: "UNKNOWN",
-          };
-          return statusMap[status] || "UNKNOWN";
-        },
+              // PENALTY FOR WARNINGS (graduated penalty system)
+              if (warningCount > 0) {
+                // First warning: -10, second: -15, third: -20, etc.
+                let warningPenalty = 0;
+                for (let i = 0; i < warningCount; i++) {
+                  warningPenalty += 10 + i * 5;
+                }
+                securityScore -= warningPenalty;
+              }
 
-        getSecurityScore() {
-          const security = this.getSecurityAnalysis();
-          if (!security) return null;
+              // BONUS FOR DATA CONFIDENCE
+              const securitySources = this.getSecurityDataSources();
+              if (securitySources.length >= 2) {
+                securityScore += 5; // Bonus for multiple security validations
+              }
 
-          if (this.results.metadata?.analysis_stopped_at_security) return "10";
+              // BONUS FOR COMPREHENSIVE SECURITY CHECK
+              const hasGoPlusData = security.goplus_result;
+              const hasRugCheckData = security.rugcheck_result;
 
-          const criticalCount = this.getCriticalIssues().length;
-          const warningCount = this.getSecurityWarnings().length;
+              if (hasGoPlusData && hasRugCheckData) {
+                securityScore += 3; // Bonus for comprehensive security check
+              }
 
-          if (criticalCount > 0) return "15";
-          if (warningCount > 0)
-            return Math.max(50 - warningCount * 10, 30).toString();
+              // CHECK FOR SPECIFIC POSITIVE SECURITY INDICATORS
+              // Check if GOplus shows good security practices
+              if (hasGoPlusData && typeof security.goplus_result === "object") {
+                const goplus = security.goplus_result;
 
-          return "85";
-        },
+                // Bonus for tokens without dangerous authorities
+                let authorityBonus = 0;
+                if (
+                  goplus.mintable === "0" ||
+                  (goplus.mintable && goplus.mintable.status === "0")
+                ) {
+                  authorityBonus += 2; // No mint authority
+                }
+                if (
+                  goplus.freezable === "0" ||
+                  (goplus.freezable && goplus.freezable.status === "0")
+                ) {
+                  authorityBonus += 2; // No freeze authority
+                }
 
-        getCriticalIssues() {
-          const security = this.getSecurityAnalysis();
-          return security ? security.critical_issues || [] : [];
-        },
+                securityScore += authorityBonus;
+              }
 
-        getSecurityWarnings() {
-          const security = this.getSecurityAnalysis();
-          return security ? security.warnings || [] : [];
-        },
+              // CHECK RUGCHECK POSITIVE INDICATORS
+              if (
+                hasRugCheckData &&
+                typeof security.rugcheck_result === "object"
+              ) {
+                const rugcheck = security.rugcheck_result;
 
-        getCriticalIssuesCount() {
-          return this.getCriticalIssues().length;
-        },
+                // Bonus for verified tokens
+                if (
+                  rugcheck.verification &&
+                  rugcheck.verification.verified === true
+                ) {
+                  securityScore += 3;
+                }
 
-        getSecurityWarningsCount() {
-          return this.getSecurityWarnings().length;
-        },
+                // Bonus for good RugCheck score (if meaningful data exists)
+                const score = rugcheck.score;
+                if (score && score !== 1) {
+                  // Ignore score 1 as per existing logic
+                  try {
+                    const scoreValue = parseFloat(score);
+                    if (scoreValue >= 80) securityScore += 5;
+                    else if (scoreValue >= 60) securityScore += 2;
+                  } catch (e) {
+                    // Invalid score, ignore
+                  }
+                }
+              }
 
-        getSecurityDataSources() {
-          const security = this.getSecurityAnalysis();
-          if (!security) return [];
+              // Ensure score stays within reasonable bounds
+              securityScore = Math.max(5, Math.min(100, securityScore));
 
-          const sources = [];
-          if (security.goplus_result) sources.push("GOplus");
-          if (security.rugcheck_result) sources.push("RugCheck");
-          return sources;
-        },
+              return Math.round(securityScore).toString();
+            },
 
-        // Token Info Functions
-        getTokenName() {
-          if (!this.results) return "Unknown Token";
-          const heliusName =
-            this.results?.service_responses?.helius?.metadata?.onChainMetadata
-              ?.metadata?.data?.name;
-          if (heliusName) return heliusName;
-          const solanafmName =
-            this.results?.service_responses?.solanafm?.token?.name;
-          if (solanafmName) return solanafmName;
-          return "Unknown Token";
-        },
+            getSecurityStatus() {
+              const security = this.getSecurityAnalysis();
+              if (!security) return "unknown";
 
-        getTokenSymbol() {
-          if (!this.results) return "N/A";
-          const heliusSymbol =
-            this.results?.service_responses?.helius?.metadata?.onChainMetadata
-              ?.metadata?.data?.symbol;
-          if (heliusSymbol) return heliusSymbol;
-          const solanafmSymbol =
-            this.results?.service_responses?.solanafm?.token?.symbol;
-          if (solanafmSymbol) return solanafmSymbol;
-          return "N/A";
-        },
+              // Critical failure cases
+              if (this.results.metadata?.analysis_stopped_at_security)
+                return "unsafe";
 
-        getPriceData() {
-          if (!this.results) return {};
-          const birdeyePrice = this.results?.service_responses?.birdeye?.price;
-          if (birdeyePrice) {
-            return {
-              value: birdeyePrice.value,
-              price_change_24h: birdeyePrice.price_change_24h,
-              volume_24h: birdeyePrice.volume_24h,
-              market_cap: birdeyePrice.market_cap,
-              liquidity: birdeyePrice.liquidity,
-            };
-          }
-          return {};
-        },
+              const criticalIssues = security.critical_issues || [];
+              if (criticalIssues.length > 0) return "unsafe";
 
-        getQuickAnalysis() {
-          if (!this.results) return null;
-          if (this.results.overall_analysis) {
-            return {
-              score: this.results.overall_analysis.score / 100,
-              risk_level: this.results.overall_analysis.risk_level,
-              recommendation: this.results.overall_analysis.recommendation,
-              key_insights:
-                this.results.overall_analysis.positive_signals || [],
-              processing_time:
-                this.results.metadata?.processing_time_seconds || 0,
-              confidence: this.results.overall_analysis.confidence_score || 0,
-            };
-          }
-          return null;
-        },
+              // Check if analysis indicates safety
+              if (security.overall_safe === true) {
+                const warnings = security.warnings || [];
+                // Even if safe, show caution if there are warnings
+                return warnings.length > 0 ? "warning" : "safe";
+              }
 
-        getAnalysisScore() {
-          if (!this.results) return null;
-          if (this.results.overall_analysis?.score) {
-            return Math.round(this.results.overall_analysis.score);
-          }
-          return null;
-        },
+              // Default to warning if we have security data but no clear safe signal
+              const warnings = security.warnings || [];
+              if (warnings.length > 0) return "warning";
 
-        getRiskLevel() {
-          if (!this.results) return "UNKNOWN";
-          if (this.results.overall_analysis?.risk_level) {
-            return this.results.overall_analysis.risk_level.toUpperCase();
-          }
-          return "UNKNOWN";
-        },
+              return "unknown";
+            },
 
-        getDataSources() {
-          if (!this.results) return [];
-          if (
-            this.results.data_sources &&
-            Array.isArray(this.results.data_sources)
-          ) {
-            return this.results.data_sources;
-          }
-          if (this.results.service_responses) {
-            return Object.keys(this.results.service_responses);
-          }
-          return [];
-        },
+            getSecurityStatusText() {
+              const status = this.getSecurityStatus();
+              const criticalCount = this.getCriticalIssues().length;
+              const warningCount = this.getSecurityWarnings().length;
 
-        // Utility Functions
-        async pasteFromClipboard() {
-          try {
-            const text = await navigator.clipboard.readText();
-            if (this.isValidSolanaAddress(text)) {
-              this.form.tokenMint = text;
+              const statusMap = {
+                safe:
+                  criticalCount === 0 && warningCount === 0
+                    ? "SECURE"
+                    : "SECURE*",
+                unsafe: "UNSAFE",
+                warning: "CAUTION",
+                unknown: "UNKNOWN",
+              };
+              return statusMap[status] || "UNKNOWN";
+            },
+
+            getCriticalIssues() {
+              const security = this.getSecurityAnalysis();
+              return security ? security.critical_issues || [] : [];
+            },
+
+            getSecurityWarnings() {
+              const security = this.getSecurityAnalysis();
+              return security ? security.warnings || [] : [];
+            },
+
+            getCriticalIssuesCount() {
+              return this.getCriticalIssues().length;
+            },
+
+            getSecurityWarningsCount() {
+              return this.getSecurityWarnings().length;
+            },
+
+            getSecurityDataSources() {
+              const security = this.getSecurityAnalysis();
+              if (!security) return [];
+
+              const sources = [];
+              if (security.goplus_result) sources.push("GOplus");
+              if (security.rugcheck_result) sources.push("RugCheck");
+              return sources;
+            },
+
+            // Token Info Functions
+            getTokenName() {
+              if (!this.results) return "Unknown Token";
+              const heliusName =
+                this.results?.service_responses?.helius?.metadata
+                  ?.onChainMetadata?.metadata?.data?.name;
+              if (heliusName) return heliusName;
+              const solanafmName =
+                this.results?.service_responses?.solanafm?.token?.name;
+              if (solanafmName) return solanafmName;
+              return "Unknown Token";
+            },
+
+            getTokenSymbol() {
+              if (!this.results) return "N/A";
+              const heliusSymbol =
+                this.results?.service_responses?.helius?.metadata
+                  ?.onChainMetadata?.metadata?.data?.symbol;
+              if (heliusSymbol) return heliusSymbol;
+              const solanafmSymbol =
+                this.results?.service_responses?.solanafm?.token?.symbol;
+              if (solanafmSymbol) return solanafmSymbol;
+              return "N/A";
+            },
+
+            getPriceData() {
+              if (!this.results) return {};
+              const birdeyePrice =
+                this.results?.service_responses?.birdeye?.price;
+              if (birdeyePrice) {
+                return {
+                  value: birdeyePrice.value,
+                  price_change_24h: birdeyePrice.price_change_24h,
+                  volume_24h: birdeyePrice.volume_24h,
+                  market_cap: birdeyePrice.market_cap,
+                  liquidity: birdeyePrice.liquidity,
+                };
+              }
+              return {};
+            },
+
+            getQuickAnalysis() {
+              if (!this.results) return null;
+              if (this.results.overall_analysis) {
+                return {
+                  score: this.results.overall_analysis.score / 100,
+                  risk_level: this.results.overall_analysis.risk_level,
+                  recommendation: this.results.overall_analysis.recommendation,
+                  key_insights:
+                    this.results.overall_analysis.positive_signals || [],
+                  processing_time:
+                    this.results.metadata?.processing_time_seconds || 0,
+                  confidence:
+                    this.results.overall_analysis.confidence_score || 0,
+                };
+              }
+              return null;
+            },
+
+            getAnalysisScore() {
+              if (!this.results) return null;
+              if (this.results.overall_analysis?.score) {
+                return Math.round(this.results.overall_analysis.score);
+              }
+              return null;
+            },
+
+            getRiskLevel() {
+              if (!this.results) return "UNKNOWN";
+              if (this.results.overall_analysis?.risk_level) {
+                return this.results.overall_analysis.risk_level.toUpperCase();
+              }
+              return "UNKNOWN";
+            },
+
+            getDataSources() {
+              if (!this.results) return [];
+              if (
+                this.results.data_sources &&
+                Array.isArray(this.results.data_sources)
+              ) {
+                return this.results.data_sources;
+              }
+              if (this.results.service_responses) {
+                return Object.keys(this.results.service_responses);
+              }
+              return [];
+            },
+
+            // Utility Functions
+            async pasteFromClipboard() {
+              try {
+                const text = await navigator.clipboard.readText();
+                if (this.isValidSolanaAddress(text)) {
+                  this.form.tokenMint = text;
+                  this.showNotification(
+                    "success",
+                    "Pasted",
+                    "Token address pasted from clipboard"
+                  );
+                } else {
+                  this.showNotification(
+                    "warning",
+                    "Invalid Format",
+                    "Clipboard content is not a valid Solana address"
+                  );
+                }
+              } catch (error) {
+                this.showNotification(
+                  "error",
+                  "Paste Failed",
+                  "Failed to access clipboard"
+                );
+              }
+            },
+
+            clearResults() {
+              this.hasResults = false;
+              this.results = null;
+              this.form.tokenMint = "";
+            },
+
+            exportResults() {
+              if (!this.results) return;
+              const data = {
+                ...this.results,
+                exported_at: new Date().toISOString(),
+                export_format: "json",
+              };
+              const blob = new Blob([JSON.stringify(data, null, 2)], {
+                type: "application/json",
+              });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `token-analysis-${this.form.tokenMint.substring(
+                0,
+                8
+              )}-${new Date().toISOString().split("T")[0]}.json`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
               this.showNotification(
                 "success",
-                "Pasted",
-                "Token address pasted from clipboard"
+                "Export Complete",
+                "Analysis results exported successfully"
               );
-            } else {
-              this.showNotification(
-                "warning",
-                "Invalid Format",
-                "Clipboard content is not a valid Solana address"
+            },
+
+            truncateAddress(address) {
+              if (!address) return "N/A";
+              return address.length > 16
+                ? `${address.substring(0, 8)}...${address.substring(
+                    address.length - 8
+                  )}`
+                : address;
+            },
+
+            formatCurrency(value) {
+              if (!value && value !== 0) return "N/A";
+              return parseFloat(value).toFixed(6);
+            },
+
+            formatNumber(num) {
+              if (!num && num !== 0) return "0";
+              if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
+              if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+              if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+              return Math.round(num).toString();
+            },
+
+            formatPercent(num) {
+              if (!num && num !== 0) return "0%";
+              return `${num > 0 ? "+" : ""}${num.toFixed(2)}%`;
+            },
+
+            isValidSolanaAddress(address) {
+              if (!address || typeof address !== "string") return false;
+              if (address.length < 32 || address.length > 44) return false;
+              return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
+            },
+
+            getPriceChangeClass(change) {
+              if (!change) return "text-gray-500";
+              return parseFloat(change) >= 0
+                ? "text-green-600"
+                : "text-red-600";
+            },
+
+            getRiskLevelClass(level) {
+              const classes = {
+                low: "bg-green-100 text-green-800",
+                medium: "bg-yellow-100 text-yellow-800",
+                high: "bg-red-100 text-red-800",
+                critical: "bg-red-200 text-red-900",
+              };
+              return (
+                classes[level?.toLowerCase()] || "bg-gray-100 text-gray-800"
               );
-            }
-          } catch (error) {
-            this.showNotification(
-              "error",
-              "Paste Failed",
-              "Failed to access clipboard"
-            );
-          }
-        },
+            },
 
-        clearResults() {
-          this.hasResults = false;
-          this.results = null;
-          this.form.tokenMint = "";
-        },
+            getRecommendationClass(recommendation) {
+              const classes = {
+                BUY: "bg-green-100 text-green-800",
+                CONSIDER: "bg-blue-100 text-blue-800",
+                HOLD: "bg-yellow-100 text-yellow-800",
+                CAUTION: "bg-orange-100 text-orange-800",
+                AVOID: "bg-red-100 text-red-800",
+              };
+              return classes[recommendation] || "bg-gray-100 text-gray-800";
+            },
 
-        exportResults() {
-          if (!this.results) return;
-          const data = {
-            ...this.results,
-            exported_at: new Date().toISOString(),
-            export_format: "json",
+            showNotification(type, title, message) {
+              if (this.$parent && this.$parent.showNotification) {
+                this.$parent.showNotification(type, title, message);
+              } else if (window.SolanaAI && window.SolanaAI.notifications) {
+                window.SolanaAI.notifications[type](title, message);
+              } else if (window.showToast) {
+                window.showToast(type, title, message);
+              } else {
+                console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+                alert(`${title}: ${message}`);
+              }
+            },
           };
-          const blob = new Blob([JSON.stringify(data, null, 2)], {
-            type: "application/json",
-          });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url;
-          a.download = `token-analysis-${this.form.tokenMint.substring(0, 8)}-${
-            new Date().toISOString().split("T")[0]
-          }.json`;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          this.showNotification(
-            "success",
-            "Export Complete",
-            "Analysis results exported successfully"
-          );
-        },
+        }
+      </script>
 
-        truncateAddress(address) {
-          if (!address) return "N/A";
-          return address.length > 16
-            ? `${address.substring(0, 8)}...${address.substring(
-                address.length - 8
-              )}`
-            : address;
-        },
+      <!-- Toast Notification System -->
+      <style>
+        #toast-container {
+          position: fixed;
+          top: 1rem;
+          right: 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          z-index: 99999;
+        }
+        .toast {
+          min-width: 250px;
+          max-width: 350px;
+          padding: 12px 16px;
+          border-radius: 8px;
+          color: #fff;
+          font-size: 14px;
+          box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+          opacity: 0;
+          transform: translateY(-10px);
+          transition: all 0.3s ease;
+        }
+        .toast.show {
+          opacity: 1;
+          transform: translateY(0);
+        }
+        .toast.success {
+          background: #16a34a;
+        }
+        .toast.error {
+          background: #dc2626;
+        }
+        .toast.warning {
+          background: #d97706;
+        }
+        .toast.info {
+          background: #2563eb;
+        }
+        .toast-title {
+          font-weight: bold;
+          display: block;
+        }
+        .toast-message {
+          font-size: 13px;
+          opacity: 0.9;
+        }
+      </style>
 
-        formatCurrency(value) {
-          if (!value && value !== 0) return "N/A";
-          return parseFloat(value).toFixed(6);
-        },
+      <div id="toast-container"></div>
 
-        formatNumber(num) {
-          if (!num && num !== 0) return "0";
-          if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
-          if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
-          if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
-          return Math.round(num).toString();
-        },
-
-        formatPercent(num) {
-          if (!num && num !== 0) return "0%";
-          return `${num > 0 ? "+" : ""}${num.toFixed(2)}%`;
-        },
-
-        isValidSolanaAddress(address) {
-          if (!address || typeof address !== "string") return false;
-          if (address.length < 32 || address.length > 44) return false;
-          return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
-        },
-
-        getPriceChangeClass(change) {
-          if (!change) return "text-gray-500";
-          return parseFloat(change) >= 0 ? "text-green-600" : "text-red-600";
-        },
-
-        getRiskLevelClass(level) {
-          const classes = {
-            low: "bg-green-100 text-green-800",
-            medium: "bg-yellow-100 text-yellow-800",
-            high: "bg-red-100 text-red-800",
-            critical: "bg-red-200 text-red-900",
-          };
-          return classes[level?.toLowerCase()] || "bg-gray-100 text-gray-800";
-        },
-
-        getRecommendationClass(recommendation) {
-          const classes = {
-            BUY: "bg-green-100 text-green-800",
-            CONSIDER: "bg-blue-100 text-blue-800",
-            HOLD: "bg-yellow-100 text-yellow-800",
-            CAUTION: "bg-orange-100 text-orange-800",
-            AVOID: "bg-red-100 text-red-800",
-          };
-          return classes[recommendation] || "bg-gray-100 text-gray-800";
-        },
-
-        showNotification(type, title, message) {
-          if (this.$parent && this.$parent.showNotification) {
-            this.$parent.showNotification(type, title, message);
-          } else if (window.SolanaAI && window.SolanaAI.notifications) {
-            window.SolanaAI.notifications[type](title, message);
-          } else if (window.showToast) {
-            window.showToast(type, title, message);
-          } else {
-            console.log(`${type.toUpperCase()}: ${title} - ${message}`);
-            alert(`${title}: ${message}`);
-          }
-        },
-      };
-    }
-  </script>
-
-  <!-- Toast Notification System -->
-  <style>
-    #toast-container {
-      position: fixed;
-      top: 1rem;
-      right: 1rem;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      z-index: 99999;
-    }
-    .toast {
-      min-width: 250px;
-      max-width: 350px;
-      padding: 12px 16px;
-      border-radius: 8px;
-      color: #fff;
-      font-size: 14px;
-      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
-      opacity: 0;
-      transform: translateY(-10px);
-      transition: all 0.3s ease;
-    }
-    .toast.show {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    .toast.success {
-      background: #16a34a;
-    }
-    .toast.error {
-      background: #dc2626;
-    }
-    .toast.warning {
-      background: #d97706;
-    }
-    .toast.info {
-      background: #2563eb;
-    }
-    .toast-title {
-      font-weight: bold;
-      display: block;
-    }
-    .toast-message {
-      font-size: 13px;
-      opacity: 0.9;
-    }
-  </style>
-
-  <div id="toast-container"></div>
-
-  <script>
-    window.showToast = function (type, title, message, timeout = 4000) {
-      const container = document.getElementById("toast-container");
-      const toast = document.createElement("div");
-      toast.className = `toast ${type}`;
-      toast.innerHTML = `
+      <script>
+        window.showToast = function (type, title, message, timeout = 4000) {
+          const container = document.getElementById("toast-container");
+          const toast = document.createElement("div");
+          toast.className = `toast ${type}`;
+          toast.innerHTML = `
         <span class="toast-title">${title}</span>
         <span class="toast-message">${message}</span>
       `;
-      container.appendChild(toast);
-      setTimeout(() => toast.classList.add("show"), 50);
-      setTimeout(() => {
-        toast.classList.remove("show");
-        setTimeout(() => toast.remove(), 300);
-      }, timeout);
-    };
-  </script>
+          container.appendChild(toast);
+          setTimeout(() => toast.classList.add("show"), 50);
+          setTimeout(() => {
+            toast.classList.remove("show");
+            setTimeout(() => toast.remove(), 300);
+          }, timeout);
+        };
+      </script>
 
-  {% endblock %}
+      {% endblock %}
+    </div>
+  </div>
 </div>
