@@ -473,16 +473,6 @@ window.SolanaAI.api = {
     });
   },
 
-  // Get analysis statistics
-  async getAnalysisStats() {
-    return this.request("/api/analyze/stats");
-  },
-
-  // Get services status
-  async getServicesStatus() {
-    return this.request("/api/services/status");
-  },
-
   // Get recent webhook analyses
   async getRecentAnalyses(limit = 10) {
     return this.request(`/api/analyze/recent?limit=${limit}`);
@@ -497,10 +487,6 @@ window.SolanaAI.api = {
   async nameCommand(tokenMint) {
     console.log(`📝 Name command for ${tokenMint}`);
     return this.request(`/name/${tokenMint}`, { method: "POST" });
-  },
-
-  async searchCommand() {
-    return this.request("/search");
   },
 
   async whalesCommand(tokenMint = null) {

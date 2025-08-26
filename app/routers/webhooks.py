@@ -156,39 +156,3 @@ async def helius_mint_webhook(request: Request, background_tasks: BackgroundTask
             "error_type": type(e).__name__,
             "response_time_ms": round(response_time, 1)
         }, status_code=200)  # Return 200 to prevent Helius retries
-
-@router.get("/status/fast", summary="Fast Webhook Status")
-async def webhook_status_fast():
-    """Get webhook status and queue info"""
-    from app.utils.webhook_tasks import get_webhook_queue_stats
-    
-    queue_stats = await get_webhook_queue_stats()
-    
-    return {
-        "webhook_system": "ultra-fast",
-        "queue": queue_stats,
-        "endpoints": {
-            "mint": "/webhooks/helius/mint",
-            "pool": "/webhooks/helius/pool", 
-            "tx": "/webhooks/helius/tx"
-        },
-        "performance": {
-            "target_response_time": "< 100ms",
-            "processing_model": "immediate_response_with_background_processing"
-        }
-    }
-
-@router.get("/stats", summary="Webhook Statistics")
-async def webhook_stats():
-    """Get detailed webhook statistics"""
-    from app.utils.webhook_tasks import get_webhook_queue_stats
-    from app.utils.webhooks import get_webhook_stats
-    
-    queue_stats = await get_webhook_queue_stats()
-    webhook_stats = await get_webhook_stats()
-    
-    return {
-        "queue_stats": queue_stats,
-        "webhook_config": webhook_stats,
-        "system_status": "operational"
-    }

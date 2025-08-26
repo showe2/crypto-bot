@@ -35,9 +35,9 @@
   <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
     <h2 class="text-xl font-semibold text-gray-900 mb-6">Analyze Token</h2>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 gap-6">
       <!-- Token Input -->
-      <div class="lg:col-span-2">
+      <div>
         <label class="form-label">Token Mint Address</label>
         <div class="relative">
           <input
@@ -85,21 +85,6 @@
           </div>
         </div>
       </div>
-
-      <!-- Analysis Options -->
-      <div class="space-y-4">
-        <div>
-          <label class="form-label">Analysis Type</label>
-          <select
-            x-model="form.analysisType"
-            class="form-input form-select"
-            :disabled="isAnalyzing"
-          >
-            <option value="quick">Quick Analysis (API)</option>
-            <option value="deep">Deep Analysis (API+LLM)</option>
-          </select>
-        </div>
-      </div>
     </div>
 
     <!-- Analyze Button -->
@@ -111,7 +96,7 @@
       >
         <span x-show="!isAnalyzing" class="flex items-center justify-center">
           <i class="fas fa-search mr-2"></i>
-          <span x-text="getAnalyzeButtonText()"></span>
+          Analyze Token
         </span>
         <span x-show="isAnalyzing" class="flex items-center justify-center">
           <div class="loading-spinner mr-2"></div>
@@ -580,9 +565,6 @@
       return {
         form: {
           tokenMint: '{{ selected_token or "" }}',
-          analysisType: "quick",
-          priority: "normal",
-          forceRefresh: false,
         },
         isAnalyzing: false,
         hasResults: false,
@@ -606,17 +588,6 @@
             if (this.isValidAddress) {
               setTimeout(() => this.analyzeToken(), 1000);
             }
-          }
-        },
-
-        getAnalyzeButtonText() {
-          switch (this.form.analysisType) {
-            case "quick":
-              return "Quick Analysis (Frontend API)";
-            case "deep":
-              return "Deep Analysis (LLM API)";
-            default:
-              return "Analyze Token";
           }
         },
 
@@ -879,7 +850,6 @@
             ...this.results,
             exported_at: new Date().toISOString(),
             export_format: "json",
-            analysis_type: this.form.analysisType,
           };
           const blob = new Blob([JSON.stringify(data, null, 2)], {
             type: "application/json",

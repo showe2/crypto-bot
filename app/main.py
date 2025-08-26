@@ -192,7 +192,6 @@ async def lifespan(app: FastAPI):
     logger.info("   📊 Token Analysis: http://localhost:8000/api/analyze/token")
     logger.info("   📈 Batch Analysis: http://localhost:8000/api/analyze/batch")
     logger.info("   🏥 API Health: http://localhost:8000/api/health")
-    logger.info("   📋 Analysis Stats: http://localhost:8000/api/analyze/stats")
     
     # Log webhook endpoints
     logger.info("🔗 WebHook endpoints:")
@@ -535,13 +534,11 @@ if __name__ == "__main__":
         logger.info("🔍 Analysis Health: http://localhost:8000/health/analysis")
         logger.info("📊 Metrics: http://localhost:8000/metrics")
         logger.info("🌐 Web Interface: http://localhost:8000/")
-        logger.info("🔗 WebHooks Status: http://localhost:8000/webhooks/status/fast")
         logger.info("")
         logger.info("🚀 Token Analysis Endpoints:")
         logger.info("   POST /api/analyze/token - Comprehensive token analysis")
         logger.info("   POST /api/analyze/batch - Batch token analysis")
         logger.info("   GET  /api/analyze/cached/{token} - Get cached analysis")
-        logger.info("   GET  /api/analyze/stats - Analysis system statistics")
         logger.info("   GET  /api/llm/analysis-format - LLM format documentation")
     
     # Run the application
