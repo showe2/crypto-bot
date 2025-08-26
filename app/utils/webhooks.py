@@ -53,7 +53,7 @@ class WebhookProcessor:
     async def process_mint_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Process new token mint events"""
         try:
-            logger.info(f"Processing mint event: {payload.get('type', 'unknown')}")
+            logger.info("Processing mint event")
             
             # Extract mint information with flexible handling
             mint_data = {
@@ -94,104 +94,6 @@ class WebhookProcessor:
                 "event": "mint",
                 "error": str(e)
             }
-    
-    async def process_pool_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Process new liquidity pool events"""
-        try:
-            logger.info(f"Processing pool event: {payload.get('type', 'unknown')}")
-            
-            # Extract pool information with flexible handling
-            pool_data = {
-                "event_type": "new_pool",
-                "pool_address": payload.get("pool"),
-                "token_a": payload.get("tokenA"),
-                "token_b": payload.get("tokenB"),
-                "timestamp": payload.get("blockTime", int(time.time())),
-                "slot": payload.get("slot"),
-                "signature": payload.get("signature"),
-                "wrapped_type": payload.get("type"),
-                "raw_payload": payload
-            }
-            
-            # Handle wrapped data types
-            if payload.get("type") in ["HELIUS_POOL_STRING_DATA", "HELIUS_POOL_ARRAY_DATA"]:
-                pool_data["original_data"] = payload.get("data")
-            
-            # Log the event
-            logger.info(
-                f"New liquidity pool detected: {pool_data['pool_address']}",
-                extra={
-                    "webhook": True,
-                    "event_type": "pool",
-                    "pool_address": pool_data['pool_address'],
-                    "token_a": pool_data['token_a'],
-                    "token_b": pool_data['token_b']
-                }
-            )
-            
-            return {
-                "status": "processed",
-                "event": "pool",
-                "data": pool_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing pool event: {str(e)}")
-            return {
-                "status": "error",
-                "event": "pool",
-                "error": str(e)
-            }
-    
-    async def process_transaction_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Process large transaction events"""
-        try:
-            logger.info(f"Processing transaction event: {payload.get('type', 'unknown')}")
-            
-            # Extract transaction information with flexible handling
-            tx_data = {
-                "event_type": "large_transaction",
-                "signature": payload.get("signature"),
-                "timestamp": payload.get("blockTime", int(time.time())),
-                "slot": payload.get("slot"),
-                "fee": payload.get("fee"),
-                "accounts": payload.get("accountKeys", []),
-                "amount": payload.get("amount"),
-                "token": payload.get("mint"),
-                "wrapped_type": payload.get("type"),
-                "raw_payload": payload
-            }
-            
-            # Handle wrapped data types
-            if payload.get("type") in ["HELIUS_TX_STRING_DATA", "HELIUS_TX_ARRAY_DATA"]:
-                tx_data["original_data"] = payload.get("data")
-            
-            # Log the event
-            logger.info(
-                f"Large transaction detected: {tx_data['signature']}",
-                extra={
-                    "webhook": True,
-                    "event_type": "transaction",
-                    "signature": tx_data['signature'],
-                    "amount": tx_data['amount'],
-                    "token": tx_data['token']
-                }
-            )
-            
-            return {
-                "status": "processed",
-                "event": "transaction",
-                "data": tx_data
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing transaction event: {str(e)}")
-            return {
-                "status": "error",
-                "event": "transaction",
-                "error": str(e)
-            }
-
 
 class WebhookManager:
     """Main webhook management class"""
@@ -217,10 +119,6 @@ class WebhookManager:
             # Process based on webhook type
             if webhook_type == "mint":
                 result = await self.processor.process_mint_event(payload)
-            elif webhook_type == "pool":
-                result = await self.processor.process_pool_event(payload)
-            elif webhook_type == "tx":
-                result = await self.processor.process_transaction_event(payload)
             else:
                 raise HTTPException(status_code=400, detail=f"Unknown webhook type: {webhook_type}")
             
@@ -286,9 +184,7 @@ async def process_helius_webhook(
 def create_webhook_urls(base_url: str) -> Dict[str, str]:
     """Generate webhook URLs for Helius configuration"""
     return {
-        "mint_webhook": f"{base_url}/webhooks/helius/mint",
-        "pool_webhook": f"{base_url}/webhooks/helius/pool", 
-        "transaction_webhook": f"{base_url}/webhooks/helius/tx"
+        "mint_webhook": f"{base_url}/webhooks/helius/mint"
     }
 
 
@@ -306,7 +202,7 @@ async def get_webhook_stats() -> Dict[str, Any]:
     
     return {
         "base_url": base_url,
-        "supported_types": ["mint", "pool", "tx"],
+        "supported_types": ["mint"],
         "webhook_urls": webhook_urls
     }
 

@@ -29,10 +29,6 @@ class Settings(BaseSettings):
     HELIUS_RPC_URL: str = "https://rpc.helius.xyz/?api-key="
     HELIUS_BASE_URL: str = "https://mainnet.helius-rpc.com"
 
-    # Chainbase
-    CHAINBASE_API_KEY: Optional[str] = None
-    CHAINBASE_BASE_URL: str = "https://api.chainbase.online/v1"
-
     # Birdeye
     BIRDEYE_API_KEY: Optional[str] = None
     BIRDEYE_BASE_URL: str = "https://public-api.birdeye.so"
@@ -236,7 +232,7 @@ class Settings(BaseSettings):
     def get_all_api_keys_status(self) -> dict:
         keys_status = {}
         api_keys = [
-            'HELIUS_API_KEY', 'CHAINBASE_API_KEY', 'BIRDEYE_API_KEY',
+            'HELIUS_API_KEY', 'BIRDEYE_API_KEY',
             'DATAIMPULSE_API_KEY',
             'MISTRAL_API_KEY', 'LLAMA_API_KEY',
             'PUMPFUN_API_KEY',

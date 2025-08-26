@@ -54,7 +54,6 @@ class TestBasicServiceHealth:
         service_health_modules = [
             ("helius", "app.services.helius_client.check_helius_health"),
             ("birdeye", "app.services.birdeye_client.check_birdeye_health"),
-            ("chainbase", "app.services.chainbase_client.check_chainbase_health"),
             ("solanafm", "app.services.solanafm_client.check_solanafm_health"),
             ("dexscreener", "app.services.dexscreener_client.check_dexscreener_health"),
             ("goplus", "app.services.goplus_client.check_goplus_health"),
@@ -181,7 +180,6 @@ class TestServiceConfiguration:
         service_clients = [
             ("HeliusClient", "app.services.helius_client.HeliusClient"),
             ("BirdeyeClient", "app.services.birdeye_client.BirdeyeClient"),
-            ("ChainbaseClient", "app.services.chainbase_client.ChainbaseClient"),
             ("SolanaFMClient", "app.services.solanafm_client.SolanaFMClient"),
             ("DexScreenerClient", "app.services.dexscreener_client.DexScreenerClient"),
             ("GOplusClient", "app.services.goplus_client.GOplusClient"),

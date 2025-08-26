@@ -91,20 +91,9 @@ class WebhookTaskQueue:
         """Process a single webhook task"""
         start_time = time.time()
         event_type = task["event_type"]
-        payload = task["payload"]
         
         try:
             logger.debug(f"Worker {worker_name} processing {event_type} event")
-            
-            # Process based on event type
-            if event_type == "mint":
-                await self._process_mint_background(payload)
-            elif event_type == "pool":
-                await self._process_pool_background(payload)
-            elif event_type == "transaction":
-                await self._process_transaction_background(payload)
-            else:
-                logger.warning(f"Unknown event type: {event_type}")
             
             processing_time = time.time() - start_time
             self.stats["total_processed"] += 1
@@ -139,66 +128,6 @@ class WebhookTaskQueue:
                 task["retries"] += 1
                 await self.queue.put(task)
                 logger.info(f"Retrying {event_type} task (attempt {task['retries']})")
-    
-    async def _process_mint_background(self, payload: Dict[str, Any]):
-        """Background processing for mint events"""
-        mint_address = payload.get("mint")
-        if not mint_address:
-            logger.warning("Mint event received without mint address")
-            return
-        
-        logger.info(f"Background processing mint: {mint_address}")
-        
-        # Simulate some processing time
-        await asyncio.sleep(0.1)
-        
-        # Here you would add your actual mint processing logic:
-        # - Save to database
-        # - Trigger token analysis
-        # - Send notifications
-        # - Update cache with new token info
-        
-        logger.debug(f"Mint processing completed for: {mint_address}")
-        
-    async def _process_pool_background(self, payload: Dict[str, Any]):
-        """Background processing for pool events"""
-        pool_address = payload.get("pool")
-        if not pool_address:
-            logger.warning("Pool event received without pool address")
-            return
-        
-        logger.info(f"Background processing pool: {pool_address}")
-        
-        # Simulate processing time
-        await asyncio.sleep(0.1)
-        
-        # Here you would add your actual pool processing logic:
-        # - Analyze new trading pair
-        # - Update liquidity tracking
-        # - Alert for interesting pairs
-        # - Store pool data
-        
-        logger.debug(f"Pool processing completed for: {pool_address}")
-        
-    async def _process_transaction_background(self, payload: Dict[str, Any]):
-        """Background processing for transaction events"""
-        signature = payload.get("signature")
-        if not signature:
-            logger.warning("Transaction event received without signature")
-            return
-        
-        logger.info(f"Background processing transaction: {signature}")
-        
-        # Simulate processing time
-        await asyncio.sleep(0.1)
-        
-        # Here you would add your actual transaction processing logic:
-        # - Analyze whale movements
-        # - Track suspicious activities
-        # - Update transaction metrics
-        # - Store transaction data
-        
-        logger.debug(f"Transaction processing completed for: {signature}")
     
     def get_stats(self) -> Dict[str, Any]:
         """Get queue statistics"""

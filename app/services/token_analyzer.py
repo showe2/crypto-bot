@@ -15,7 +15,6 @@ class TokenAnalyzer:
     def __init__(self):
         self.services = {
             "helius": True,
-            "chainbase": True,
             "birdeye": True,
             "solanafm": True,
             "goplus": True,
@@ -136,31 +135,10 @@ class TokenAnalyzer:
                     api_manager.clients["helius"].get_token_metadata, 
                     [token_address]
                 )
-                # TEMPORARILY UNAVAILABLE
-                # service_tasks["helius_accounts"] = self._safe_service_call(
-                #     api_manager.clients["helius"].get_token_accounts, 
-                #     token_address, account_limit  # Use reduced limit
-                # )
                 analysis_response["metadata"]["services_attempted"] += 1
                 logger.info(f"🔗 Helius tasks prepared (account limit: {account_limit})")
             except Exception as e:
                 analysis_response["warnings"].append(f"Helius initialization failed: {str(e)}")
-        
-        # Chainbase - Holder analysis
-        if api_manager.clients.get("chainbase"):
-            try:
-                service_tasks["chainbase_metadata"] = self._safe_service_call(
-                    api_manager.clients["chainbase"].get_token_metadata, 
-                    token_address, "solana"
-                )
-                service_tasks["chainbase_holders"] = self._safe_service_call(
-                    api_manager.clients["chainbase"].get_token_holders, 
-                    token_address, "solana", 50
-                )
-                analysis_response["metadata"]["services_attempted"] += 1
-                logger.info("🔧 Chainbase tasks prepared")
-            except Exception as e:
-                analysis_response["warnings"].append(f"Chainbase initialization failed: {str(e)}")
         
         # SolanaFM - On-chain data
         if api_manager.clients.get("solanafm"):
@@ -191,11 +169,6 @@ class TokenAnalyzer:
                     api_manager.clients["goplus"].analyze_token_security, 
                     token_address
                 )
-                # DOESN'T SUPPORT SOLANA TOKENS 
-                # service_tasks["goplus_rugpull"] = self._safe_service_call(
-                #     api_manager.clients["goplus"].detect_rugpull, 
-                #     token_address, "solana"
-                # )
                 analysis_response["metadata"]["services_attempted"] += 1
             except Exception as e:
                 analysis_response["errors"].append(f"GOplus initialization failed: {str(e)}")
@@ -261,7 +234,7 @@ class TokenAnalyzer:
                     analysis_response["errors"].append(error_msg)
                     logger.warning(f"❌ {error_msg}")
         
-        # Continue with rest of the analysis (same as before)
+        # Continue with rest of the analysis
         analysis_response["metadata"]["services_successful"] = len(analysis_response["data_sources"])
         analysis_response["metadata"]["data_sources_available"] = len(analysis_response["data_sources"])
         

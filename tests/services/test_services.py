@@ -94,7 +94,6 @@ class ComprehensiveServiceTester:
             ]
         }
         
-        # 🔧 Service configurations with your specific structure
         self.services = {
             "helius": ServiceConfig(
                 name="Helius",
@@ -115,16 +114,6 @@ class ComprehensiveServiceTester:
                 client_module="app.services.birdeye_client.BirdeyeClient",
                 test_methods=["get_token_price", "get_trending_tokens", "get_token_trades", "get_price_history", "get_top_traders"],
                 icon="🦅"
-            ),
-            "chainbase": ServiceConfig(
-                name="Chainbase",
-                category=ServiceCategory.PAID,
-                cost_per_1k=0.50,
-                requires_auth=True,
-                health_check_module="app.services.chainbase_client.check_chainbase_health",
-                client_module="app.services.chainbase_client.ChainbaseClient",
-                test_methods=["get_token_metadata", "get_token_holders"],
-                icon="🔗"
             ),
             "solanafm": ServiceConfig(
                 name="SolanaFM",
@@ -698,9 +687,6 @@ class ComprehensiveServiceTester:
             if service_name == "birdeye":
                 api_results = await self._test_birdeye_api_calls()
                 results.extend(api_results)
-            elif service_name == "chainbase":
-                api_results = await self._test_chainbase_api_calls()
-                results.extend(api_results)
             elif service_name == "goplus":
                 api_results = await self._test_goplus_api_calls()
                 results.extend(api_results)
@@ -1027,130 +1013,6 @@ class ComprehensiveServiceTester:
             print(f"         ❌ Birdeye client error: {str(e)}")
             results.append(TestResult(
                 service="birdeye",
-                endpoint="/client_error",
-                success=False,
-                response_time=0,
-                cost_estimate="FREE",
-                category=ServiceCategory.PAID,
-                error=str(e)
-            ))
-        
-        return results
-    
-    async def _test_chainbase_api_calls(self) -> List[TestResult]:
-        """🔗 Test Chainbase API calls"""
-        print(f"      🔗 Testing Chainbase API calls...")
-        results = []
-        
-        try:
-            from app.services.chainbase_client import ChainbaseClient
-            
-            async with ChainbaseClient() as client:
-                # Test metadata and holders
-                test_token = self.test_tokens["ethereum"][0]  # WETH
-                print(f"         🪙 Testing token: {test_token[:8]}...{test_token[-4:]}")
-                
-                print(f"         📊 Testing token metadata...")
-                start_time = time.time()
-                
-                try:
-                    metadata = await client.get_token_metadata(test_token, "ethereum")
-                    metadata_time = time.time() - start_time
-                    
-                    if metadata:                        
-                        results.append(TestResult(
-                            service="chainbase",
-                            endpoint="/token/metadata",
-                            success=True,
-                            response_time=metadata_time,
-                            cost_estimate="$0.001",
-                            category=ServiceCategory.PAID,
-                            data_size=len(str(metadata))
-                        ))
-                    else:
-                        print(f"            ⚠️ No metadata returned ({metadata_time:.3f}s)")
-                        print(f"            📋 Response was: {metadata}")
-                        results.append(TestResult(
-                            service="chainbase",
-                            endpoint="/token/metadata",
-                            success=False,
-                            response_time=metadata_time,
-                            cost_estimate="$0.001",
-                            category=ServiceCategory.PAID,
-                            error="No metadata returned"
-                        ))
-                        
-                except Exception as e:
-                    metadata_time = time.time() - start_time
-                    print(f"            ❌ Metadata error: {str(e)} ({metadata_time:.3f}s)")
-                    print(f"            📋 Full error: {repr(e)}")
-                    results.append(TestResult(
-                        service="chainbase",
-                        endpoint="/token/metadata",
-                        success=False,
-                        response_time=metadata_time,
-                        cost_estimate="FREE",
-                        category=ServiceCategory.PAID,
-                        error=str(e)
-                    ))
-                
-                # Rate limiting between calls
-                await asyncio.sleep(1)
-                
-                # Test token holders
-                print(f"         👥 Testing token holders...")
-                start_time = time.time()
-                
-                try:
-                    holders = await client.get_token_holders(test_token, "ethereum", limit=5)
-                    holders_time = time.time() - start_time
-                    
-                    if holders:                        
-                        if isinstance(holders, dict):
-                            print(f"            ✅ Holders data retrieved")
-                            print(f"               Response time: {holders_time:.3f}s")
-                            
-                        results.append(TestResult(
-                            service="chainbase",
-                            endpoint="/token/top-holders",
-                            success=True,
-                            response_time=holders_time,
-                            cost_estimate="$0.001",
-                            category=ServiceCategory.PAID,
-                            data_size=len(str(holders))
-                        ))
-                    else:
-                        print(f"            ⚠️ No holder data returned ({holders_time:.3f}s)")
-                        print(f"            📋 Response was: {holders}")
-                        results.append(TestResult(
-                            service="chainbase",
-                            endpoint="/token/top-holders",
-                            success=False,
-                            response_time=holders_time,
-                            cost_estimate="$0.001",
-                            category=ServiceCategory.PAID,
-                            error="No holder data returned"
-                        ))
-                        
-                except Exception as e:
-                    holders_time = time.time() - start_time
-                    print(f"            ❌ Holders error: {str(e)} ({holders_time:.3f}s)")
-                    print(f"            📋 Full error: {repr(e)}")
-                    results.append(TestResult(
-                        service="chainbase",
-                        endpoint="/token/top-holders",
-                        success=False,
-                        response_time=holders_time,
-                        cost_estimate="FREE",
-                        category=ServiceCategory.PAID,
-                        error=str(e)
-                    ))
-                
-        except Exception as e:
-            print(f"         ❌ Chainbase client error: {str(e)}")
-            print(f"         📋 Full client error: {repr(e)}")
-            results.append(TestResult(
-                service="chainbase",
                 endpoint="/client_error",
                 success=False,
                 response_time=0,
@@ -1689,8 +1551,6 @@ Examples:
                        help="Test only GOplus services")
     parser.add_argument("--birdeye-only", action="store_true",
                        help="Test only Birdeye services")
-    parser.add_argument("--chainbase-only", action="store_true",
-                       help="Test only Chainbase services")
     parser.add_argument("--helius-only", action="store_true",
                        help="Test only Helius services")
     parser.add_argument("--rugcheck-only", action="store_true",
@@ -1741,10 +1601,6 @@ Examples:
     
     if args.birdeye_only:
         await handle_birdeye_only_testing(tester, args)
-        return
-    
-    if args.chainbase_only:
-        await handle_chainbase_only_testing(tester, args)
         return
     
     if args.helius_only:
@@ -1901,25 +1757,6 @@ async def handle_birdeye_only_testing(tester: ComprehensiveServiceTester, args):
         await save_results(summary, "birdeye_test", args.save_results)
 
 
-async def handle_chainbase_only_testing(tester: ComprehensiveServiceTester, args):
-    """🔗 Handle Chainbase-only testing"""
-    if args.mode == 'mock':
-        print(f"⚠️ Chainbase testing requires at least 'limited' mode")
-        return
-    
-    print(f"🔗 Chainbase-only testing mode")
-    start_time = time.time()
-    
-    results = await tester._test_chainbase_api_calls()
-    total_time = time.time() - start_time
-    
-    summary = create_service_summary("chainbase_only", results, total_time, paid=True)
-    tester.print_comprehensive_summary(summary)
-    
-    if args.save_results != "none":
-        await save_results(summary, "chainbase_test", args.save_results)
-
-
 async def handle_helius_only_testing(tester: ComprehensiveServiceTester, args):
     """🌞 Handle Helius-only testing"""
     if args.mode == 'mock':
@@ -2057,7 +1894,7 @@ if __name__ == "__main__":
     print("🧪 Comprehensive Service Testing Suite")
     print("=" * 40)
     print("🎯 Modes: mock (safe) → free → limited → full (expensive)")
-    print("🔧 Services: SolanaFM (free), DexScreener (free), Birdeye, Chainbase, GOplus, etc.")
+    print("🔧 Services: SolanaFM (free), DexScreener (free), Birdeye, GOplus, etc.")
     print("🔍 --dexscreener-only flag for testing DexScreener API only!")
     print("💡 Use --help for all options")
     print()
@@ -2068,7 +1905,7 @@ if __name__ == "__main__":
     print("🧪 Comprehensive Service Testing Suite")
     print("=" * 40)
     print("🎯 Modes: mock (safe) → free → limited → full (expensive)")
-    print("🔧 Services: SolanaFM (free), Birdeye, Chainbase, GOplus, etc.")
+    print("🔧 Services: SolanaFM (free), Birdeye, GOplus, etc.")
     print("💡 Use --help for all options")
     print()
     

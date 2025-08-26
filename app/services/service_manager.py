@@ -4,7 +4,6 @@ from typing import Dict, Any, List, Optional, Union
 from loguru import logger
 
 from app.services.helius_client import HeliusClient, check_helius_health
-from app.services.chainbase_client import ChainbaseClient, check_chainbase_health
 from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
 from app.services.dataimpulse_client import DataImpulseClient, check_dataimpulse_health
 from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
@@ -19,13 +18,12 @@ class APIManager:
     def __init__(self):
         self.clients = {
             "helius": None,
-            "chainbase": None,
             "birdeye": None,
             "dataimpulse": None,
             "solanafm": None,
             "goplus": None,
             "dexscreener": None,
-            "rugcheck": None  # Added RugCheck
+            "rugcheck": None
         }
         self._health_cache = {}
         self._cache_duration = 300  # 5 minutes
@@ -35,7 +33,6 @@ class APIManager:
         try:
             self.clients = {
                 "helius": HeliusClient(),
-                "chainbase": ChainbaseClient(),
                 "birdeye": BirdeyeClient(),
                 "dataimpulse": DataImpulseClient(),
                 "solanafm": SolanaFMClient(),
@@ -71,13 +68,12 @@ class APIManager:
         # Health check functions
         health_checks = {
             "helius": check_helius_health(),
-            "chainbase": check_chainbase_health(),
             "birdeye": check_birdeye_health(),
             "dataimpulse": check_dataimpulse_health(),
             "solanafm": check_solanafm_health(),
             "goplus": check_goplus_health(),
             "dexscreener": check_dexscreener_health(),
-            "rugcheck": check_rugcheck_health()  # Added RugCheck
+            "rugcheck": check_rugcheck_health()
         }
         
         # Run all health checks concurrently
@@ -158,7 +154,7 @@ api_manager = APIManager()
 
 # Convenience functions
 async def initialize_api_services():
-    """Initialize all API services including RugCheck"""
+    """Initialize all API services"""
     await api_manager.initialize_clients()
 
 

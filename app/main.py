@@ -456,7 +456,6 @@ async def config_status():
         },
         "api_urls": {
             "helius_rpc": bool(settings.HELIUS_RPC_URL),
-            "chainbase": bool(settings.CHAINBASE_BASE_URL),
             "birdeye": bool(settings.BIRDEYE_BASE_URL),
             "solanafm": bool(settings.SOLANAFM_BASE_URL),
             "dexscreener": bool(settings.DEXSCREENER_BASE_URL),
