@@ -510,8 +510,7 @@ AI{% endblock %} {% block content %}
         this.analysisResult = null;
 
         try {
-          const endpoint =
-            this.analysisForm.analysisType === "quick" ? "tweet" : "name";
+          const endpoint = this.analysisForm.analysisType;
           const response = await fetch(
             `/${endpoint}/${this.analysisForm.tokenMint}`,
             {
