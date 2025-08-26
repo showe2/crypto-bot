@@ -83,7 +83,7 @@ class RugCheckClient:
             
         try:
             self._wallet = Keypair.from_base58_string(self.wallet_private_key)
-            logger.debug(f"RugCheck wallet initialized: {str(self._wallet.pubkey())[:8]}...")
+            logger.debug(f"RugCheck wallet initialized")
             return self._wallet
         except Exception as e:
             logger.error(f"Failed to initialize RugCheck wallet: {str(e)}")

@@ -26,7 +26,7 @@ class DexScreenerClient:
         self._last_request_time = 0
         self.timeout = settings.API_TIMEOUT
         
-        logger.info("DexScreener client initialized (FREE service)")
+        logger.info("DexScreener client initialized (no API key required)")
     
     async def __aenter__(self):
         """Async context manager entry"""

@@ -26,8 +26,7 @@ class SolSnifferClient:
         self.timeout = settings.API_TIMEOUT
         
         if self.api_key:
-            masked_key = f"{self.api_key[:8]}***{self.api_key[-4:]}" if len(self.api_key) > 12 else f"{self.api_key[:4]}***"
-            logger.debug(f"SolSniffer API key configured: {masked_key}")
+            logger.debug(f"SolSniffer API key configured")
         else:
             logger.warning("SolSniffer API key not configured - set SOLSNIFFER_API_KEY")
     

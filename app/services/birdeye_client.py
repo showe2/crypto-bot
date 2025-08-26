@@ -37,8 +37,7 @@ class BirdeyeClient:
         self._max_requests_per_second = 1  # Conservative rate limit
         
         if self.api_key:
-            masked_key = f"{self.api_key[:8]}***{self.api_key[-4:]}" if len(self.api_key) > 12 else f"{self.api_key[:4]}***"
-            logger.debug(f"Birdeye API key configured: {masked_key}")
+            logger.debug(f"Birdeye API key configured")
         else:
             logger.debug("Birdeye API key not configured")
     
@@ -420,7 +419,7 @@ class BirdeyeClient:
                 }
             
             # Simple endpoint test without actually making API calls to avoid rate limits
-            logger.debug(f"Birdeye API key configured: {self.api_key[:8]}*** (length: {len(self.api_key)})")
+            logger.debug(f"Birdeye API key configured")
             
             # For testing purposes, just validate API key format and return success
             # Real health checks can be expensive with rate limits

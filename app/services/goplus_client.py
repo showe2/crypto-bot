@@ -39,8 +39,7 @@ class GOplusClient:
     def _log_api_key_status(self):
         """Log masked API key status"""
         if self.app_key and self.app_secret:
-            masked_key = f"{self.app_key[:8]}***" if len(self.app_key) > 8 else f"{self.app_key[:4]}***"
-            logger.debug(f"GOplus APP key configured: {masked_key}")
+            logger.debug(f"GOplus APP key configured")
         else:
             logger.warning("GOplus APP key/secret not configured - set GOPLUS_APP_KEY and GOPLUS_APP_SECRET")
     
