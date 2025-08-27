@@ -1,5 +1,6 @@
 import asyncio
 import time
+import json
 from typing import Dict, Any, Optional, List, Tuple
 from loguru import logger
 from datetime import datetime
@@ -13,14 +14,16 @@ class TokenAnalyzer:
     """Token analyzer with security-first approach"""
     
     def __init__(self):
-        self.services = {
-            "helius": True,
-            "birdeye": True,
-            "solanafm": True,
-            "goplus": True,
-            "dexscreener": True,
-            "rugcheck": True
-        }
+        def __init__(self):
+            self.services = {
+                "helius": True,
+                "birdeye": True,
+                "solanafm": True,
+                "goplus": True,
+                "dexscreener": True,
+                "rugcheck": True,
+                "solsniffer": True
+            }
     
     async def analyze_token_comprehensive(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
         """Comprehensive token analysis with security-first approach"""
@@ -135,11 +138,12 @@ class TokenAnalyzer:
         security_data = {
             "goplus_result": None,
             "rugcheck_result": None,
+            "solsniffer_result": None,
             "critical_issues": [],
             "warnings": [],
             "overall_safe": False
         }
-        
+                
         security_tasks = {}
         
         # Prepare GOplus security check
@@ -165,6 +169,18 @@ class TokenAnalyzer:
         else:
             logger.warning("RugCheck client not available")
             analysis_response["warnings"].append("RugCheck analysis unavailable")
+
+                # Prepare SolSniffer analysis
+        if api_manager.clients.get("solsniffer"):
+            security_tasks["solsniffer"] = self._safe_service_call(
+                api_manager.clients["solsniffer"].get_token_info, 
+                token_address
+            )
+            analysis_response["metadata"]["services_attempted"] += 1
+            logger.info("🔍 SolSniffer analysis prepared")
+        else:
+            logger.warning("SolSniffer client not available")
+            analysis_response["warnings"].append("SolSniffer analysis unavailable")
         
         if not security_tasks:
             logger.error("❌ NO SECURITY SERVICES AVAILABLE - Cannot perform security check")
@@ -241,6 +257,22 @@ class TokenAnalyzer:
                         logger.warning("⚠️ RugCheck returned insufficient data - ignoring for security decision")
                     
                     logger.info(f"✅ RugCheck analysis completed: {len(rugcheck_issues['critical'])} critical, {len(rugcheck_issues['warnings'])} warnings")
+
+                # Analyze SolSniffer results
+                elif task_name == "solsniffer":
+                    security_data["solsniffer_result"] = result
+                    solsniffer_issues = self._analyze_solsniffer_security(result)
+                    if solsniffer_issues["critical"]:
+                        critical_issues_found = True
+                        security_data["critical_issues"].extend(solsniffer_issues["critical"])
+                    security_data["warnings"].extend(solsniffer_issues["warnings"])
+                    
+                    # Check if SolSniffer has insufficient data
+                    if solsniffer_issues.get("insufficient_data"):
+                        security_data["solsniffer_insufficient_data"] = True
+                        logger.warning("⚠️ SolSniffer returned insufficient data - ignoring for security decision")
+                    
+                    logger.info(f"✅ SolSniffer analysis completed: {len(solsniffer_issues['critical'])} critical, {len(solsniffer_issues['warnings'])} warnings")
                     
             except Exception as e:
                 logger.error(f"Error processing {task_name}: {str(e)}")
@@ -255,14 +287,15 @@ class TokenAnalyzer:
         # Check if we have at least one successful security check with meaningful data
         goplus_meaningful = "goplus" in analysis_response["data_sources"] and not security_data.get("goplus_insufficient_data", False)
         rugcheck_meaningful = "rugcheck" in analysis_response["data_sources"] and not security_data.get("rugcheck_insufficient_data", False)
-        
-        if not goplus_meaningful and not rugcheck_meaningful:
+        solsniffer_meaningful = "solsniffer" in analysis_response["data_sources"] and not security_data.get("solsniffer_insufficient_data", False)
+
+        if not goplus_meaningful and not rugcheck_meaningful and not solsniffer_meaningful:
             logger.warning("❌ NO MEANINGFUL SECURITY DATA - Cannot verify safety")
             security_data["overall_safe"] = False
             return False, security_data
-        
+
         # If we have at least one meaningful security check and no critical issues, pass
-        meaningful_checks = sum([goplus_meaningful, rugcheck_meaningful])
+        meaningful_checks = sum([goplus_meaningful, rugcheck_meaningful, solsniffer_meaningful])
         logger.info(f"✅ SECURITY CHECKS PASSED ({meaningful_checks} meaningful security services responded)")
         security_data["overall_safe"] = True
         return True, security_data
@@ -398,6 +431,58 @@ class TokenAnalyzer:
         
         return {"critical": critical_issues, "warnings": warnings}
     
+    def _analyze_solsniffer_security(self, solsniffer_result: Dict[str, Any]) -> Dict[str, List[str]]:
+        """Analyze SolSniffer results for critical security issues"""
+        critical_issues = []
+        warnings = []
+        
+        if not solsniffer_result:
+            return {"critical": critical_issues, "warnings": warnings, "insufficient_data": True}
+        
+        # Extract the main data
+        token_data = None
+        if isinstance(solsniffer_result, list) and len(solsniffer_result) > 0:
+            token_data = solsniffer_result[0]
+        elif isinstance(solsniffer_result, dict):
+            token_data = solsniffer_result
+        
+        if not token_data or not token_data.get("indicatorData"):
+            return {"critical": critical_issues, "warnings": warnings, "insufficient_data": True}
+        
+        # Check SolSniffer score - only extremely low scores matter
+        score = token_data.get("score")
+        if score is not None:
+            try:
+                score_value = float(score)
+                # Only flag scores below 3 as critical (extremely low threshold)
+                if score_value < 3:
+                    critical_issues.append(f"Extremely low SolSniffer score: {score_value}")
+                elif score_value < 10:
+                    warnings.append(f"Low SolSniffer score: {score_value}")
+            except (ValueError, TypeError):
+                pass
+        
+        # Only flag a few specific high-risk indicators as warnings
+        # Skip most common risks that are normal for established tokens
+        indicator_data = token_data["indicatorData"]
+        
+        high_risks = indicator_data.get("high", {})
+        if high_risks.get("count", 0) > 3:  # Only if many high risks
+            try:
+                high_details = json.loads(high_risks.get("details", "{}"))
+                
+                # Only warn about liquidity issues, skip control/authority warnings
+                if high_details.get("Very low liquidity"):
+                    warnings.append("Very low liquidity detected")
+                    
+            except json.JSONDecodeError:
+                pass
+        
+        # Skip moderate warnings entirely - they're too common
+        
+        # Always return meaningful data if we have any indicator data
+        return {"critical": critical_issues, "warnings": warnings}
+
     async def _run_market_analysis_services(self, token_address: str, analysis_response: Dict[str, Any]) -> None:
         """Run market analysis services (Birdeye, Helius, SolanaFM, DexScreener)"""
         

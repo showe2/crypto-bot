@@ -399,7 +399,7 @@
             </template>
           </div>
 
-          <!-- RIGHT COLUMN: Security Analysis (THIS IS THE RED BOX!) -->
+          <!-- Security Analysis -->
           <div
             x-show="getSecurityAnalysis() && !shouldHideOverview()"
             class="bg-white rounded-xl shadow-lg p-6"
@@ -853,6 +853,7 @@
               const sources = [];
               if (security.goplus_result) sources.push("GOplus");
               if (security.rugcheck_result) sources.push("RugCheck");
+              if (security.solsniffer_result) sources.push("SolSniffer");
               return sources;
             },
 
