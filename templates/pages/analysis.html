@@ -231,10 +231,6 @@
                 x-text="getTokenName()"
               ></h4>
               <p class="text-sm text-gray-500" x-text="getTokenSymbol()"></p>
-              <p
-                class="text-xs text-gray-400 font-mono mt-1"
-                x-text="truncateAddress(results?.token_address || form.tokenMint)"
-              ></p>
             </div>
 
             <!-- Price Data -->
@@ -253,7 +249,6 @@
                 :class="getPriceChangeClass(getPriceData().price_change_24h)"
                 x-text="formatPercent(getPriceData().price_change_24h)"
               ></p>
-              <p class="text-xs text-gray-400">24h Change</p>
             </div>
 
             <!-- Market Cap -->
@@ -268,10 +263,6 @@
                 x-text="formatNumber(getPriceData().market_cap)"
               ></h4>
               <p class="text-sm text-gray-500">Market Cap</p>
-              <p
-                class="text-xs text-gray-400"
-                x-text="formatNumber(getPriceData().volume_24h) + ' Vol'"
-              ></p>
             </div>
 
             <!-- Analysis Score -->
@@ -286,7 +277,6 @@
                 x-text="getAnalysisScore() ? getAnalysisScore() + '%' : 'N/A'"
               ></h4>
               <p class="text-sm text-gray-500">Analysis Score</p>
-              <p class="text-xs text-gray-400" x-text="getRiskLevel()"></p>
             </div>
           </div>
         </div>
@@ -886,12 +876,16 @@
               if (!this.results) return {};
               const birdeyePrice =
                 this.results?.service_responses?.birdeye?.price;
+              const solSnifferData =
+                this.results?.service_responses?.solsniffer;
+
               if (birdeyePrice) {
                 return {
                   value: birdeyePrice.value,
                   price_change_24h: birdeyePrice.price_change_24h,
                   volume_24h: birdeyePrice.volume_24h,
-                  market_cap: birdeyePrice.market_cap,
+                  market_cap:
+                    birdeyePrice.market_cap || solSnifferData.marketCap,
                   liquidity: birdeyePrice.liquidity,
                 };
               }
