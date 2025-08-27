@@ -15,23 +15,28 @@ class TokenAnalyzer:
     """Token analyzer with security-first approach"""
     
     def __init__(self):
-        def __init__(self):
-            self.services = {
-                "helius": True,
-                "birdeye": True,
-                "solanafm": True,
-                "goplus": True,
-                "dexscreener": True,
-                "rugcheck": True,
-                "solsniffer": True
-            }
+        """Initialize analyzer with cache manager"""
+        self.cache = cache_manager
+        self.cache_namespace = "token_analysis"
+        self.cache_ttl = {
+            "webhook": 7200,  # 2 hours for webhook requests
+            "api_request": 3600,  # 1 hour for API requests
+            "frontend_quick": 1800  # 30 minutes for frontend
+        }
+        self.services = {
+            "helius": True,
+            "birdeye": True,
+            "solanafm": True,
+            "goplus": True,
+            "dexscreener": True,
+            "rugcheck": True,
+            "solsniffer": True
+        }
     
     async def analyze_token_comprehensive(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
         """Comprehensive token analysis with security-first approach"""
         start_time = time.time()
         analysis_id = f"analysis_{int(time.time())}_{token_address[:8]}"
-        
-        logger.info(f"🔍 Starting SECURITY-FIRST analysis for {token_address} from {source_event}")
         
         # Initialize response structure
         analysis_response = {
@@ -54,12 +59,15 @@ class TokenAnalyzer:
             }
         }
         
-        # Check cache first
-        cache_key = f"token_analysis:{token_address}"
+        # Check cache first with proper namespace
+        cache_key = f"analysis:{token_address}"
         try:
-            cached_result = await cache_manager.get(cache_key, namespace="analysis")
-            if cached_result and source_event == "webhook":
-                logger.info(f"📋 Returning cached analysis for {token_address}")
+            cached_result = await self.cache.get(
+                key=cache_key, 
+                namespace=self.cache_namespace
+            )
+            if cached_result:
+                logger.info(f"📋 Found cached analysis for {token_address}")
                 return cached_result
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {str(e)}")
@@ -119,11 +127,16 @@ class TokenAnalyzer:
         processing_time = time.time() - start_time
         analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
         
-        # Cache the result
+        # Cache the result with proper TTL
         try:
-            cache_ttl = 300 if source_event == "webhook" else 120
-            await cache_manager.set(cache_key, analysis_response, ttl=cache_ttl, namespace="analysis")
-            logger.debug(f"Analysis cached with TTL {cache_ttl}s")
+            ttl = self.cache_ttl.get(source_event, 7200)  # default 2 hours
+            await self.cache.set(
+                key=cache_key,
+                value=analysis_response,
+                ttl=ttl,
+                namespace=self.cache_namespace
+            )
+            logger.info(f"💾 Cached analysis for {token_address} with TTL {ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")

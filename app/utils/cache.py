@@ -14,11 +14,8 @@ class CacheManager:
     """Advanced cache manager with Redis backend and memory fallback"""
     
     def __init__(self):
-        self.redis_client = None
         self._memory_cache = {}
         self._memory_expiry = {}
-        self.default_ttl = settings.CACHE_TTL_MEDIUM
-        self.prefix = "solana_ai_cache:"
         self._stats = {
             "hits": 0,
             "misses": 0,
@@ -26,128 +23,76 @@ class CacheManager:
             "deletes": 0,
             "errors": 0
         }
-    
-    async def get_client(self):
+        self.redis_client = None
+        self.prefix = "cache:"
+
+    async def get_redis_client(self):
         """Get Redis client with lazy initialization"""
         if self.redis_client is None:
             try:
                 from app.utils.redis_client import get_redis_client
                 self.redis_client = await get_redis_client()
             except Exception as e:
-                logger.debug(f"Redis not available for cache: {str(e)}")
-                self.redis_client = False  # Mark as unavailable
-        return self.redis_client
+                logger.debug(f"Redis initialization failed: {str(e)}")
+                self.redis_client = False
+        return self.redis_client if self.redis_client != False else None
     
     def _make_key(self, key: str, namespace: str = "default") -> str:
-        """Create cache key with prefix and namespace"""
-        return f"{self.prefix}{namespace}:{key}"
+        """Create a namespaced cache key"""
+        return f"{namespace}:{key}"
     
-    def _clean_expired_memory_keys(self):
-        """Clean expired keys from memory storage"""
-        current_time = time.time()
-        expired_keys = [
-            key for key, expiry_time in self._memory_expiry.items()
-            if expiry_time <= current_time
-        ]
+    async def get(self, key: str, namespace: str = "default") -> Any:
+        """Get value from cache with namespace support"""
+        namespaced_key = self._make_key(key, namespace)
+        # Clean expired keys
+        self._clean_expired_memory_keys()
         
-        for key in expired_keys:
-            self._memory_cache.pop(key, None)
-            self._memory_expiry.pop(key, None)
-    
-    def _serialize_value(self, value: Any) -> str:
-        """Serialize value to JSON string"""
-        try:
-            return json.dumps(value, default=str, ensure_ascii=False)
-        except Exception as e:
-            logger.warning(f"Failed to serialize cache value: {str(e)}")
-            return json.dumps(str(value))
-    
-    def _deserialize_value(self, data: str) -> Any:
-        """Deserialize JSON string to value"""
-        try:
-            return json.loads(data)
-        except Exception as e:
-            logger.warning(f"Failed to deserialize cache value: {str(e)}")
-            return data
-    
-    async def get(self, key: str, namespace: str = "default", default: Any = None) -> Any:
-        """Get value from cache"""
-        try:
-            cache_key = self._make_key(key, namespace)
-            
-            # Try Redis first
-            client = await self.get_client()
-            if client and client != False:
-                try:
-                    data = await client.get(cache_key)
-                    if data is not None:
-                        self._stats["hits"] += 1
-                        return self._deserialize_value(data)
-                except Exception as e:
-                    logger.debug(f"Redis cache GET error: {str(e)}")
-                    self._stats["errors"] += 1
-            
-            # Fallback to memory
-            self._clean_expired_memory_keys()
-            if cache_key in self._memory_cache:
-                entry = self._memory_cache[cache_key]
-                expiry = self._memory_expiry.get(cache_key)
-                
-                if expiry is None or expiry > time.time():
+        # Try Redis first
+        redis_client = await self.get_redis_client()
+        if redis_client:
+            try:
+                data = await redis_client.get(namespaced_key)
+                if data:
                     self._stats["hits"] += 1
-                    return entry
-                else:
-                    # Expired
-                    del self._memory_cache[cache_key]
-                    self._memory_expiry.pop(cache_key, None)
-            
-            self._stats["misses"] += 1
-            return default
-            
-        except Exception as e:
-            logger.debug(f"Cache GET error for key {key}: {str(e)}")
-            self._stats["errors"] += 1
-            return default
+                    return self._deserialize_value(data)
+            except Exception as e:
+                logger.debug(f"Redis cache GET error: {str(e)}")
+                self._stats["errors"] += 1
+        
+        # Memory fallback
+        if namespaced_key in self._memory_cache:
+            if self._memory_expiry[namespaced_key] > time.time():
+                self._stats["hits"] += 1
+                return self._memory_cache[namespaced_key]
+            else:
+                # Clean up expired entry
+                del self._memory_cache[namespaced_key]
+                del self._memory_expiry[namespaced_key]
+        
+        self._stats["misses"] += 1
+        return None
     
-    async def set(
-        self, 
-        key: str, 
-        value: Any, 
-        ttl: Optional[int] = None, 
-        namespace: str = "default",
-        nx: bool = False  # Set only if not exists
-    ) -> bool:
-        """Set value in cache with TTL"""
+    async def set(self, key: str, value: Any, ttl: int = 7200, namespace: str = "default") -> bool:
+        """Set cache value with namespace support"""
         try:
-            cache_key = self._make_key(key, namespace)
-            cache_ttl = ttl or self.default_ttl
-            serialized_value = self._serialize_value(value)
+            namespaced_key = self._make_key(key, namespace)
             
             # Try Redis first
-            client = await self.get_client()
-            if client and client != False:
+            client = await self.get_redis_client()
+            if client:
                 try:
-                    success = await client.set(cache_key, serialized_value, ex=cache_ttl, nx=nx)
+                    serialized_value = self._serialize_value(value)
+                    success = await client.set(namespaced_key, serialized_value, ex=ttl)
                     if success:
                         self._stats["sets"] += 1
                         return True
                 except Exception as e:
                     logger.debug(f"Redis cache SET error: {str(e)}")
                     self._stats["errors"] += 1
-            
-            # Fallback to memory
-            # Handle nx condition for memory
-            if nx and cache_key in self._memory_cache:
-                expiry = self._memory_expiry.get(cache_key)
-                if expiry is None or expiry > time.time():
-                    return False  # Key exists and not expired
-            
-            self._memory_cache[cache_key] = value
-            if cache_ttl:
-                self._memory_expiry[cache_key] = time.time() + cache_ttl
-            else:
-                self._memory_expiry.pop(cache_key, None)
-            
+
+            # Memory fallback
+            self._memory_cache[namespaced_key] = value
+            self._memory_expiry[namespaced_key] = time.time() + ttl
             self._stats["sets"] += 1
             return True
             
@@ -156,6 +101,25 @@ class CacheManager:
             self._stats["errors"] += 1
             return False
     
+    def _clean_expired_memory_keys(self) -> None:
+        """Remove expired keys from memory cache"""
+        current_time = time.time()
+        expired_keys = [
+            k for k, exp in self._memory_expiry.items() 
+            if exp <= current_time
+        ]
+        for k in expired_keys:
+            self._memory_cache.pop(k, None)
+            self._memory_expiry.pop(k, None)
+    
+    def _serialize_value(self, value: Any) -> str:
+        """Serialize value for storage"""
+        return json.dumps(value)
+    
+    def _deserialize_value(self, value: str) -> Any:
+        """Deserialize value from storage"""
+        return json.loads(value)
+    
     async def delete(self, key: str, namespace: str = "default") -> bool:
         """Delete key from cache"""
         try:
@@ -163,7 +127,7 @@ class CacheManager:
             deleted = False
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False:
                 try:
                     count = await client.delete(cache_key)
@@ -195,7 +159,7 @@ class CacheManager:
             cache_key = self._make_key(key, namespace)
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False:
                 try:
                     exists = await client.exists(cache_key)
@@ -217,7 +181,7 @@ class CacheManager:
             cache_key = self._make_key(key, namespace)
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False:
                 try:
                     success = await client.expire(cache_key, ttl)
@@ -243,7 +207,7 @@ class CacheManager:
             cache_key = self._make_key(key, namespace)
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False:
                 try:
                     ttl_value = await client.ttl(cache_key)
@@ -271,7 +235,7 @@ class CacheManager:
             cache_key = self._make_key(key, namespace)
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False:
                 try:
                     result = await client.incr(cache_key, amount)
@@ -369,7 +333,7 @@ class CacheManager:
             deleted_count = 0
             
             # Try Redis first
-            client = await self.get_client()
+            client = await self.get_redis_client()
             if client and client != False and hasattr(client, 'client') and client.client:
                 try:
                     # Get all keys matching pattern
