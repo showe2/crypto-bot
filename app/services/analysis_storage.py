@@ -148,7 +148,15 @@ class AnalysisStorageService:
     
     def _extract_token_name(self, analysis_result: Dict[str, Any]) -> str:
         """Extract token name from analysis result"""
-        # Try Helius metadata first
+        # Try Solsniffer info first
+        solsniffer_name = (analysis_result
+                        .get("service_responses", {})
+                        .get("solsniffer", {})
+                        .get("tokenName"))
+        if solsniffer_name:
+            return solsniffer_name
+
+        # Try Helius metadata
         helius_name = (analysis_result
                       .get("service_responses", {})
                       .get("helius", {})
@@ -173,7 +181,15 @@ class AnalysisStorageService:
     
     def _extract_token_symbol(self, analysis_result: Dict[str, Any]) -> str:
         """Extract token symbol from analysis result"""
-        # Try Helius metadata first
+        # Try Solsniffer info first
+        solsniffer_symbol = (analysis_result
+                        .get("service_responses", {})
+                        .get("solsniffer", {})
+                        .get("tokenSymbol"))
+        if solsniffer_symbol:
+            return solsniffer_symbol
+        
+        # Try Helius metadata
         helius_symbol = (analysis_result
                         .get("service_responses", {})
                         .get("helius", {})

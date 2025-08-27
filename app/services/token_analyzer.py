@@ -56,7 +56,6 @@ class TokenAnalyzer:
         
         # Check cache first
         cache_key = f"token_analysis:{token_address}"
-        print(cache_manager._memory_cache)
         try:
             cached_result = await cache_manager.get(cache_key, namespace="analysis")
             if cached_result and source_event == "webhook":

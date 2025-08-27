@@ -207,22 +207,26 @@ async def dashboard_api():
         healthy_services = health_data.get("summary", {}).get("healthy_services", 0)
         total_services = health_data.get("summary", {}).get("total_services", 1)
         
-        # 🆕 GET REAL ANALYSIS DATA FROM CHROMADB
         recent_analyses_data = await _get_recent_analyses_from_chromadb()
         total_analyses = recent_analyses_data.get("total_count", 0)
         recent_analyses = recent_analyses_data.get("analyses", [])
         
         # Calculate success rate from recent analyses
         if recent_analyses:
-            successful_analyses = len([a for a in recent_analyses if a.get("status") == "completed"])
+            # Count successful analyses (completed, warnings are still successful)
+            successful_analyses = len([a for a in recent_analyses if a.get("status") in ["completed", "warnings"]])
             success_rate = (successful_analyses / len(recent_analyses)) * 100
+            logger.debug(f"Success rate calculation: {successful_analyses}/{len(recent_analyses)} = {success_rate}%")
         else:
+            # Fallback to system health if no analysis data
             success_rate = (healthy_services / total_services * 100) if total_services > 0 else 0
         
-        # Calculate average response time from recent analyses
+        # Calculate average response time from recent analyses (only successful ones)
         if recent_analyses:
-            processing_times = [a.get("processing_time", 0) for a in recent_analyses if a.get("processing_time")]
+            processing_times = [a.get("processing_time", 0) for a in recent_analyses 
+                              if a.get("processing_time", 0) > 0 and a.get("status") in ["completed", "warnings"]]
             avg_response_time = sum(processing_times) / len(processing_times) if processing_times else 0
+            logger.debug(f"Avg response time: {avg_response_time}s from {len(processing_times)} analyses")
         else:
             avg_response_time = 0
         
@@ -310,13 +314,14 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
             metadata = result.get("metadata", {})
             
             # Determine status based on analysis result
-            status = "completed"
+            status = "completed"  # Default to completed
             if metadata.get("analysis_stopped_at_security"):
                 status = "security_failed"
             elif metadata.get("critical_issues_count", 0) > 0:
                 status = "critical_issues"
             elif metadata.get("warnings_count", 0) > 0:
                 status = "warnings"
+            # Note: "warnings" status is still considered successful for success rate calculation
             
             # Format for dashboard display
             analysis_item = {
