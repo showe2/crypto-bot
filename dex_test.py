@@ -1,5 +1,5 @@
 import asyncio
-from app.services.dexscreener_client import DexScreenerClient
+from app.services.api.dexscreener_client import DexScreenerClient
 
 async def main():
     async with DexScreenerClient() as client:

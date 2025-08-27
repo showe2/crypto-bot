@@ -294,6 +294,250 @@
       </div>
     </div>
 
+    <!-- Analysis Popup -->
+    <div
+      x-show="showAnalysisPopup"
+      class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
+    >
+      <div
+        class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        @click.stop
+      >
+        <!-- Header -->
+        <div
+          class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl"
+        >
+          <div class="flex justify-between items-center">
+            <div>
+              <h2
+                class="text-2xl font-bold"
+                x-text="(popupAnalysis?.token_symbol || 'Unknown') + ' Analysis'"
+              ></h2>
+              <p
+                class="opacity-90"
+                x-text="popupAnalysis?.token_name || 'Token Analysis Results'"
+              ></p>
+            </div>
+            <button
+              @click="closeAnalysisPopup()"
+              class="text-white hover:text-gray-300 text-2xl"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+
+        <!-- Content -->
+        <div class="p-6" x-show="popupAnalysis">
+          <!-- Status Cards -->
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <!-- Security -->
+            <div
+              class="text-center p-4 rounded-lg"
+              :class="{
+               'bg-green-50 border-green-200': popupAnalysis?.security_status === 'passed',
+               'bg-red-50 border-red-200': popupAnalysis?.security_status === 'failed',
+               'bg-yellow-50 border-yellow-200': popupAnalysis?.security_status === 'warning',
+               'bg-gray-50 border-gray-200': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
+             }"
+              class="border-2"
+            >
+              <div
+                class="text-2xl mb-2"
+                :class="{
+                 'text-green-600': popupAnalysis?.security_status === 'passed',
+                 'text-red-600': popupAnalysis?.security_status === 'failed',
+                 'text-yellow-600': popupAnalysis?.security_status === 'warning',
+                 'text-gray-600': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
+               }"
+              >
+                🛡️
+              </div>
+              <div
+                class="font-bold"
+                x-text="popupAnalysis?.security_status === 'passed' ? 'SECURE' :
+                      popupAnalysis?.security_status === 'failed' ? 'UNSAFE' :
+                      popupAnalysis?.security_status === 'warning' ? 'CAUTION' : 'UNKNOWN'"
+              ></div>
+              <div class="text-xs text-gray-500">Security</div>
+            </div>
+
+            <!-- Score -->
+            <div
+              class="text-center p-4 rounded-lg bg-blue-50 border-2 border-blue-200"
+            >
+              <div class="text-2xl mb-2 text-blue-600">⭐</div>
+              <div
+                class="font-bold text-blue-900"
+                x-text="popupAnalysis?.overall_score ? Math.round(popupAnalysis.overall_score) + '%' : 'N/A'"
+              ></div>
+              <div class="text-xs text-gray-500">Score</div>
+            </div>
+
+            <!-- Risk -->
+            <div
+              class="text-center p-4 rounded-lg"
+              :class="{
+               'bg-green-50 border-green-200': popupAnalysis?.risk_level === 'low',
+               'bg-yellow-50 border-yellow-200': popupAnalysis?.risk_level === 'medium',
+               'bg-orange-50 border-orange-200': popupAnalysis?.risk_level === 'high',
+               'bg-red-50 border-red-200': popupAnalysis?.risk_level === 'critical',
+               'bg-gray-50 border-gray-200': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
+             }"
+              class="border-2"
+            >
+              <div
+                class="text-2xl mb-2"
+                :class="{
+                 'text-green-600': popupAnalysis?.risk_level === 'low',
+                 'text-yellow-600': popupAnalysis?.risk_level === 'medium',
+                 'text-orange-600': popupAnalysis?.risk_level === 'high',
+                 'text-red-600': popupAnalysis?.risk_level === 'critical',
+                 'text-gray-600': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
+               }"
+              >
+                ⚠️
+              </div>
+              <div
+                class="font-bold"
+                x-text="(popupAnalysis?.risk_level || 'unknown').toUpperCase()"
+              ></div>
+              <div class="text-xs text-gray-500">Risk</div>
+            </div>
+
+            <!-- Recommendation -->
+            <div
+              class="text-center p-4 rounded-lg bg-purple-50 border-2 border-purple-200"
+            >
+              <div class="text-2xl mb-2 text-purple-600">👍</div>
+              <div
+                class="font-bold text-purple-900"
+                x-text="(popupAnalysis?.recommendation || 'unknown').toUpperCase()"
+              ></div>
+              <div class="text-xs text-gray-500">Action</div>
+            </div>
+          </div>
+
+          <!-- Security Details -->
+          <div class="mb-6">
+            <h3 class="font-bold text-lg mb-3">🔍 Security Details</h3>
+
+            <!-- Critical Issues -->
+            <div
+              x-show="(popupAnalysis?.critical_issues || 0) > 0"
+              class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg"
+            >
+              <div class="flex items-center mb-2">
+                <span class="text-red-500 text-xl mr-2">🚨</span>
+                <div class="font-bold text-red-800">
+                  Critical Security Issues
+                </div>
+              </div>
+              <div
+                class="text-red-700 mb-2"
+                x-text="(popupAnalysis?.critical_issues || 0) + ' critical issue(s) detected'"
+              ></div>
+              <div class="text-sm text-red-600 bg-red-100 p-2 rounded">
+                <strong>⚠️ High Risk:</strong> This token has failed critical
+                security checks. Issues may include active mint authority
+                (unlimited supply), freeze authority (can freeze accounts), or
+                other dangerous permissions that could harm investors.
+              </div>
+            </div>
+
+            <!-- Warnings -->
+            <div
+              x-show="(popupAnalysis?.warnings || 0) > 0"
+              class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg"
+            >
+              <div class="flex items-center mb-2">
+                <span class="text-yellow-500 text-xl mr-2">⚠️</span>
+                <div class="font-bold text-yellow-800">Security Warnings</div>
+              </div>
+              <div
+                class="text-yellow-700 mb-2"
+                x-text="(popupAnalysis?.warnings || 0) + ' warning(s) detected'"
+              ></div>
+              <div class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
+                <strong>⚠️ Moderate Risk:</strong> This token has some
+                concerning features that warrant caution. Warnings may include
+                upgradeable transfer fees, closable accounts, low holder count,
+                or other factors that could indicate potential risks. Research
+                thoroughly before trading.
+              </div>
+            </div>
+
+            <!-- All Clear -->
+            <div
+              x-show="(popupAnalysis?.critical_issues || 0) === 0 && (popupAnalysis?.warnings || 0) === 0 && popupAnalysis?.security_status === 'passed'"
+              class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg"
+            >
+              <div class="flex items-center mb-2">
+                <span class="text-green-500 text-xl mr-2">✅</span>
+                <div class="font-bold text-green-800">Security Verified</div>
+              </div>
+              <div class="text-sm text-green-700 bg-green-100 p-2 rounded">
+                <strong>✅ Low Risk:</strong> This token has passed all security
+                checks. No critical issues or warnings detected. The token
+                appears to have safe configurations with minimal dangerous
+                authorities.
+              </div>
+            </div>
+
+            <!-- Analysis Info -->
+            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+              <div class="flex items-center mb-2">
+                <span class="text-blue-500 text-xl mr-2">ℹ️</span>
+                <div class="font-bold text-blue-800">Analysis Information</div>
+              </div>
+              <div class="text-sm text-blue-700 space-y-1">
+                <div>
+                  <strong>Processed:</strong>
+                  <span x-text="popupAnalysis?.time || 'Unknown'"></span>
+                </div>
+                <div>
+                  <strong>Processing Time:</strong>
+                  <span
+                    x-text="(popupAnalysis?.processing_time || 0).toFixed(2) + 's'"
+                  ></span>
+                </div>
+                <div>
+                  <strong>Source:</strong>
+                  <span
+                    x-text="(popupAnalysis?.source_event || 'unknown').replace('_', ' ')"
+                  ></span>
+                </div>
+                <div x-show="popupAnalysis?.id">
+                  <strong>Analysis ID:</strong>
+                  <code
+                    class="text-xs bg-blue-100 px-1 rounded"
+                    x-text="popupAnalysis.id.substring(0, 16) + '...'"
+                  ></code>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Token Address -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6">
+            <div class="font-bold mb-2">📋 Contract Address</div>
+            <div class="flex items-center justify-between">
+              <code
+                class="text-sm bg-white px-2 py-1 rounded break-all"
+                x-text="popupAnalysis?.mint || 'N/A'"
+              ></code>
+              <button
+                x-show="popupAnalysis?.mint"
+                @click="copyToClipboard(popupAnalysis.mint)"
+                class="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+              >
+                Copy
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <!-- Scripts -->
     <script src="{{ url_for('static', path='js/main.js') }}"></script>
 
@@ -307,7 +551,7 @@
           currentPage: "{{ request.url.path }}",
           systemHealth: null,
           notification: null,
-          quickSearchQuery: "", // Added missing property
+          quickSearchQuery: "",
           realMetrics: {
             totalAnalyses: 0,
             successRate: 0,
@@ -320,11 +564,13 @@
           quickAnalysisToken: "",
           isAnalyzing: false,
 
+          // 🆕 POPUP PROPERTIES
+          showAnalysisPopup: false,
+          popupAnalysis: null,
+
           init() {
             // Check screen size
             this.checkScreenSize();
-
-            // Set initial sidebar state based on screen size
             this.sidebarOpen = this.isDesktop;
 
             // Initialize app
@@ -332,7 +578,6 @@
               this.loading = false;
             }, 1000);
 
-            // Load real data
             this.loadSystemHealth();
             this.loadRealMetrics();
 
@@ -341,17 +586,55 @@
               const wasDesktop = this.isDesktop;
               this.checkScreenSize();
 
-              // Adjust sidebar state on screen size change
               if (this.isDesktop && !wasDesktop) {
-                // Switched to desktop
                 this.sidebarOpen = true;
                 document.body.classList.remove("sidebar-open-mobile");
               } else if (!this.isDesktop && wasDesktop) {
-                // Switched to mobile
                 this.sidebarOpen = false;
                 document.body.classList.remove("sidebar-open-mobile");
               }
             });
+
+            // 🆕 CREATE GLOBAL POPUP FUNCTIONS
+            window.openAnalysisPopupGlobal = (data) => {
+              console.log("🚀 GLOBAL: Opening popup with:", data);
+              this.popupAnalysis = data;
+              this.showAnalysisPopup = true;
+              document.body.style.overflow = "hidden";
+            };
+
+            window.closeAnalysisPopupGlobal = () => {
+              console.log("🔒 GLOBAL: Closing popup");
+              this.showAnalysisPopup = false;
+              this.popupAnalysis = null;
+              document.body.style.overflow = "";
+            };
+
+            window.copyToClipboardGlobal = async (text) => {
+              try {
+                await navigator.clipboard.writeText(text);
+                this.showNotification(
+                  "success",
+                  "Copied",
+                  "Address copied to clipboard"
+                );
+              } catch (error) {
+                this.showNotification(
+                  "error",
+                  "Copy Failed",
+                  "Failed to copy to clipboard"
+                );
+              }
+            };
+
+            window.openFullAnalysisGlobal = (tokenAddress) => {
+              if (tokenAddress) {
+                this.closeAnalysisPopup();
+                window.location.href = `/analysis?token=${tokenAddress}`;
+              }
+            };
+
+            console.log("✅ Global popup functions created");
           },
 
           checkScreenSize() {
@@ -368,8 +651,6 @@
               }
 
               const healthData = await response.json();
-
-              // Ensure we have a valid structure with defaults - be extra careful with recommendations
               this.systemHealth = {
                 overall_status: Boolean(healthData?.overall_status),
                 services:
@@ -399,15 +680,11 @@
               );
             } catch (error) {
               console.error("Failed to load system health:", error);
-              // Set safe default values on error
               this.systemHealth = {
                 overall_status: false,
                 services: {},
-                summary: {
-                  healthy_services: 0,
-                  total_services: 0,
-                },
-                recommendations: [], // Always ensure this is an empty array, never null
+                summary: { healthy_services: 0, total_services: 0 },
+                recommendations: [],
                 timestamp: Math.floor(Date.now() / 1000),
               };
             }
@@ -429,8 +706,6 @@
 
           toggleSidebar() {
             this.sidebarOpen = !this.sidebarOpen;
-
-            // Handle body scroll on mobile
             if (!this.isDesktop) {
               if (this.sidebarOpen) {
                 document.body.classList.add("sidebar-open-mobile");
@@ -456,6 +731,44 @@
 
           hideNotification() {
             this.notification = null;
+          },
+
+          // 🆕 POPUP METHODS
+          openAnalysisPopup(analysisData) {
+            console.log("📊 Opening analysis popup:", analysisData);
+            this.popupAnalysis = analysisData;
+            this.showAnalysisPopup = true;
+            document.body.style.overflow = "hidden";
+          },
+
+          closeAnalysisPopup() {
+            this.showAnalysisPopup = false;
+            this.popupAnalysis = null;
+            document.body.style.overflow = "";
+          },
+
+          async copyToClipboard(text) {
+            try {
+              await navigator.clipboard.writeText(text);
+              this.showNotification(
+                "success",
+                "Copied",
+                "Address copied to clipboard"
+              );
+            } catch (error) {
+              this.showNotification(
+                "error",
+                "Copy Failed",
+                "Failed to copy to clipboard"
+              );
+            }
+          },
+
+          openFullAnalysis(tokenAddress) {
+            if (tokenAddress) {
+              this.closeAnalysisPopup();
+              window.location.href = `/analysis?token=${tokenAddress}`;
+            }
           },
 
           formatNumber(num) {
@@ -494,9 +807,7 @@
                 `/quick/${this.quickAnalysisToken}`,
                 {
                   method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
+                  headers: { "Content-Type": "application/json" },
                 }
               );
 
@@ -511,7 +822,6 @@
                     8
                   )}... completed`
                 );
-                // Navigate to analysis page
                 window.location.href = `/analysis?token=${this.quickAnalysisToken}`;
               } else {
                 throw new Error(result.message || "Analysis failed");
@@ -523,10 +833,8 @@
             }
           },
 
-          // Add method for header search functionality
           async performQuickAnalysis() {
             if (!this.quickSearchQuery) return;
-
             if (!this.isValidSolanaAddress(this.quickSearchQuery)) {
               this.showNotification(
                 "error",
@@ -535,8 +843,6 @@
               );
               return;
             }
-
-            // Navigate to analysis page with the token
             window.location.href = `/analysis?token=${this.quickSearchQuery}`;
           },
         };

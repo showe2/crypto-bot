@@ -1,5 +1,5 @@
 import asyncio
-from app.services.birdeye_client import BirdeyeClient
+from app.services.api.birdeye_client import BirdeyeClient
 
 async def main():
     async with BirdeyeClient() as client:

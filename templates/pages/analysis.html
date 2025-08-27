@@ -850,25 +850,39 @@
             // Token Info Functions
             getTokenName() {
               if (!this.results) return "Unknown Token";
+
+              const solSnifferName =
+                this.results?.service_responses?.solsniffer?.tokenName;
+              if (solSnifferName) return solSnifferName;
+
               const heliusName =
                 this.results?.service_responses?.helius?.metadata
                   ?.onChainMetadata?.metadata?.data?.name;
               if (heliusName) return heliusName;
+
               const solanafmName =
                 this.results?.service_responses?.solanafm?.token?.name;
               if (solanafmName) return solanafmName;
+
               return "Unknown Token";
             },
 
             getTokenSymbol() {
               if (!this.results) return "N/A";
+
+              const solSnifferSybmol =
+                this.results?.service_responses?.solsniffer?.tokenSymbol;
+              if (solSnifferSybmol) return solSnifferSybmol;
+
               const heliusSymbol =
                 this.results?.service_responses?.helius?.metadata
                   ?.onChainMetadata?.metadata?.data?.symbol;
               if (heliusSymbol) return heliusSymbol;
+
               const solanafmSymbol =
                 this.results?.service_responses?.solanafm?.token?.symbol;
               if (solanafmSymbol) return solanafmSymbol;
+
               return "N/A";
             },
 

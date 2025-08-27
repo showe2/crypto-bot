@@ -8,6 +8,7 @@ from datetime import datetime
 from app.services.service_manager import api_manager
 from app.utils.redis_client import get_redis_client
 from app.utils.cache import cache_manager
+from app.services.analysis_storage import analysis_storage
 
 
 class TokenAnalyzer:
@@ -55,6 +56,7 @@ class TokenAnalyzer:
         
         # Check cache first
         cache_key = f"token_analysis:{token_address}"
+        print(cache_manager._memory_cache)
         try:
             cached_result = await cache_manager.get(cache_key, namespace="analysis")
             if cached_result and source_event == "webhook":
@@ -92,6 +94,8 @@ class TokenAnalyzer:
             processing_time = time.time() - start_time
             analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             
+            asyncio.create_task(self._store_analysis_async(analysis_response))
+            
             logger.warning(f"❌ Analysis STOPPED for {token_address} due to security issues in {processing_time:.2f}s")
             return analysis_response
         
@@ -125,6 +129,8 @@ class TokenAnalyzer:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
         
+        asyncio.create_task(self._store_analysis_async(analysis_response))
+        
         # Log completion
         logger.info(
             f"✅ FULL Analysis COMPLETED for {token_address} in {processing_time:.2f}s "
@@ -132,6 +138,19 @@ class TokenAnalyzer:
         )
         
         return analysis_response
+    
+    # Async ChromaDB Storage
+    async def _store_analysis_async(self, analysis_response: Dict[str, Any]) -> None:
+        """Store analysis in ChromaDB asynchronously (non-blocking)"""
+        try:
+            success = await analysis_storage.store_analysis(analysis_response)
+            if success:
+                logger.debug(f"📊 Analysis stored in ChromaDB: {analysis_response.get('analysis_id')}")
+            else:
+                logger.debug(f"📊 ChromaDB storage skipped for: {analysis_response.get('analysis_id')}")
+        except Exception as e:
+            # Don't let ChromaDB errors affect the main analysis flow
+            logger.warning(f"ChromaDB storage error: {str(e)}")
     
     async def _run_security_checks(self, token_address: str, analysis_response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Run security checks first (GOplus + RugCheck)"""

@@ -1,5 +1,5 @@
 import asyncio
-from app.services.helius_client import HeliusClient
+from app.services.api.helius_client import HeliusClient
 
 async def main():
     async with HeliusClient() as client:

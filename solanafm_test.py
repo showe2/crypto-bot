@@ -1,5 +1,5 @@
 import asyncio
-from app.services.solanafm_client import SolanaFMClient
+from app.services.api.solanafm_client import SolanaFMClient
 
 async def main():
     async with SolanaFMClient() as client:

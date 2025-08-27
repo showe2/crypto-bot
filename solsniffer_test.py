@@ -1,5 +1,5 @@
 import asyncio
-from app.services.solsniffer_client import SolSnifferClient
+from app.services.api.solsniffer_client import SolSnifferClient
 
 async def main():
     async with SolSnifferClient() as client:

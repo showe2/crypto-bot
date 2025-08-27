@@ -19,7 +19,7 @@ async def test_goplus_authentication():
     print("=" * 50)
     
     try:
-        from app.services.goplus_client import GOplusClient, check_goplus_health
+        from app.services.api.goplus_client import GOplusClient, check_goplus_health
         from app.core.config import get_settings
         
         # Check configuration

@@ -3,13 +3,13 @@ import time
 from typing import Dict, Any, List, Optional, Union
 from loguru import logger
 
-from app.services.helius_client import HeliusClient, check_helius_health
-from app.services.birdeye_client import BirdeyeClient, check_birdeye_health
-from app.services.solanafm_client import SolanaFMClient, check_solanafm_health
-from app.services.goplus_client import GOplusClient, check_goplus_health
-from app.services.dexscreener_client import DexScreenerClient, check_dexscreener_health
-from app.services.rugcheck_client import RugCheckClient, check_rugcheck_health
-from app.services.solsniffer_client import SolSnifferClient, check_solsniffer_health
+from app.services.api.helius_client import HeliusClient, check_helius_health
+from app.services.api.birdeye_client import BirdeyeClient, check_birdeye_health
+from app.services.api.solanafm_client import SolanaFMClient, check_solanafm_health
+from app.services.api.goplus_client import GOplusClient, check_goplus_health
+from app.services.api.dexscreener_client import DexScreenerClient, check_dexscreener_health
+from app.services.api.rugcheck_client import RugCheckClient, check_rugcheck_health
+from app.services.api.solsniffer_client import SolSnifferClient, check_solsniffer_health
 
 
 class APIManager:

@@ -318,7 +318,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.solanafm_client import SolanaFMClient
+            from app.services.api.solanafm_client import SolanaFMClient
             
             async with SolanaFMClient() as client:
                 # Test 1: Account detail
@@ -449,7 +449,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.dexscreener_client import DexScreenerClient
+            from app.services.api.dexscreener_client import DexScreenerClient
             
             async with DexScreenerClient() as client:
                 # Test 1: Token pairs
@@ -775,7 +775,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.birdeye_client import BirdeyeClient
+            from app.services.api.birdeye_client import BirdeyeClient
             
             async with BirdeyeClient() as client:
                 # Test Birdeye endpoints
@@ -1033,7 +1033,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.goplus_client import GOplusClient
+            from app.services.api.goplus_client import GOplusClient
             
             async with GOplusClient() as client:
                 # Test token security analysis
@@ -1192,7 +1192,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.rugcheck_client import RugCheckClient
+            from app.services.api.rugcheck_client import RugCheckClient
             
             async with RugCheckClient() as client:
                 # Test 1: Token security check
@@ -1309,7 +1309,7 @@ class ComprehensiveServiceTester:
         results = []
         
         try:
-            from app.services.solsniffer_client import SolSnifferClient
+            from app.services.api.solsniffer_client import SolSnifferClient
             
             async with SolSnifferClient() as client:
                 # Test 1: Token analysis

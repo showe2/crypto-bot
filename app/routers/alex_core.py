@@ -13,6 +13,7 @@ from app.utils.health import health_check_all_services
 
 # Import your existing token analyzer
 from app.services.token_analyzer import token_analyzer
+from app.services.analysis_storage import analysis_storage
 
 # Settings and dependencies
 settings = get_settings()
@@ -197,7 +198,7 @@ async def quick_analysis_endpoint(
 
 @router.get("/api/dashboard", summary="Dashboard data API")
 async def dashboard_api():
-    """Get dashboard data for frontend - using real system metrics"""
+    """Get dashboard data for frontend - using real system metrics and ChromaDB data"""
     try:
         # Get real system health
         health_data = await health_check_all_services()
@@ -206,24 +207,51 @@ async def dashboard_api():
         healthy_services = health_data.get("summary", {}).get("healthy_services", 0)
         total_services = health_data.get("summary", {}).get("total_services", 1)
         
-        # Real metrics based on actual system state
+        # 🆕 GET REAL ANALYSIS DATA FROM CHROMADB
+        recent_analyses_data = await _get_recent_analyses_from_chromadb()
+        total_analyses = recent_analyses_data.get("total_count", 0)
+        recent_analyses = recent_analyses_data.get("analyses", [])
+        
+        # Calculate success rate from recent analyses
+        if recent_analyses:
+            successful_analyses = len([a for a in recent_analyses if a.get("status") == "completed"])
+            success_rate = (successful_analyses / len(recent_analyses)) * 100
+        else:
+            success_rate = (healthy_services / total_services * 100) if total_services > 0 else 0
+        
+        # Calculate average response time from recent analyses
+        if recent_analyses:
+            processing_times = [a.get("processing_time", 0) for a in recent_analyses if a.get("processing_time")]
+            avg_response_time = sum(processing_times) / len(processing_times) if processing_times else 0
+        else:
+            avg_response_time = 0
+        
+        # Count unique active tokens from recent analyses
+        if recent_analyses:
+            unique_tokens = set(a.get("token_address") for a in recent_analyses if a.get("token_address"))
+            active_tokens = len(unique_tokens)
+        else:
+            active_tokens = 0
+        
+        # Real metrics based on actual analysis data
         dashboard_data = {
             "metrics": {
-                "totalAnalyses": 0,  # Will be updated by actual usage
-                "successRate": (healthy_services / total_services * 100) if total_services > 0 else 0,
-                "avgResponseTime": 0,  # Will be tracked in real usage
-                "activeTokens": 0  # Will be updated by actual analysis count
+                "totalAnalyses": total_analyses,
+                "successRate": round(success_rate, 1),
+                "avgResponseTime": round(avg_response_time, 2),
+                "activeTokens": active_tokens
             },
             "systemHealth": {
                 "overall_status": health_data.get("overall_status", False),
                 "healthy_services": healthy_services,
                 "total_services": total_services
             },
-            "recentActivity": [],  # Will be populated with real analysis data
+            "recentActivity": recent_analyses,  # 🆕 Real data from ChromaDB
             "aiModels": {
                 "mistral": {"status": "ready", "type": "Quick Analysis"},
                 "llama": {"status": "coming_soon", "type": "Deep Analysis"}
-            }
+            },
+            "chromadb_status": recent_analyses_data.get("chromadb_available", False)
         }
         
         return dashboard_data
@@ -246,5 +274,134 @@ async def dashboard_api():
             "aiModels": {
                 "mistral": {"status": "unknown", "type": "Quick Analysis"},
                 "llama": {"status": "unknown", "type": "Deep Analysis"}
-            }
+            },
+            "chromadb_status": False
         }
+
+
+async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
+    """Get recent analyses from ChromaDB for dashboard display"""
+    try:
+        from app.utils.chroma_client import get_chroma_client
+        
+        chroma_client = await get_chroma_client()
+        if not chroma_client.is_connected():
+            logger.debug("ChromaDB not available for dashboard data")
+            return {
+                "chromadb_available": False,
+                "total_count": 0,
+                "analyses": []
+            }
+        
+        # Search for recent analyses (ordered by recency)
+        results = await analysis_storage.search_analyses(
+            query="recent token analysis",
+            limit=limit,
+            filters={}
+        )
+        
+        # Get collection stats for total count
+        stats = await chroma_client.get_collection_stats()
+        total_count = stats.get("total_documents", 0)
+        
+        # Transform results for dashboard display
+        dashboard_analyses = []
+        for result in results:
+            metadata = result.get("metadata", {})
+            
+            # Determine status based on analysis result
+            status = "completed"
+            if metadata.get("analysis_stopped_at_security"):
+                status = "security_failed"
+            elif metadata.get("critical_issues_count", 0) > 0:
+                status = "critical_issues"
+            elif metadata.get("warnings_count", 0) > 0:
+                status = "warnings"
+            
+            # Format for dashboard display
+            analysis_item = {
+                "id": metadata.get("analysis_id", "unknown"),
+                "token_symbol": metadata.get("token_symbol", "N/A"),
+                "token_name": _extract_token_name_from_content(result.get("content", "")),
+                "mint": metadata.get("token_address"),
+                "status": status,
+                "security_status": metadata.get("security_status", "unknown"),
+                "risk_level": metadata.get("risk_level", "unknown"),
+                "overall_score": metadata.get("overall_score", 0),
+                "recommendation": metadata.get("recommendation", "unknown"),
+                "processing_time": metadata.get("processing_time", 0),
+                "timestamp": metadata.get("timestamp_unix", 0),
+                "time": _format_relative_time(metadata.get("timestamp_unix", 0)),
+                "source_event": metadata.get("source_event", "unknown"),
+                # Additional useful info
+                "price_usd": metadata.get("price_usd", 0),
+                "volume_24h": metadata.get("volume_24h", 0),
+                "critical_issues": metadata.get("critical_issues_count", 0),
+                "warnings": metadata.get("warnings_count", 0)
+            }
+            
+            dashboard_analyses.append(analysis_item)
+        
+        # Sort by timestamp (most recent first)
+        dashboard_analyses.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        logger.debug(f"📊 Retrieved {len(dashboard_analyses)} recent analyses from ChromaDB")
+        
+        return {
+            "chromadb_available": True,
+            "total_count": total_count,
+            "analyses": dashboard_analyses
+        }
+        
+    except Exception as e:
+        logger.warning(f"Error getting recent analyses from ChromaDB: {str(e)}")
+        return {
+            "chromadb_available": False,
+            "total_count": 0,
+            "analyses": [],
+            "error": str(e)
+        }
+
+
+def _extract_token_name_from_content(content: str) -> str:
+    """Extract token name from analysis content string"""
+    try:
+        # Look for "Token: TokenName (SYMBOL)" pattern
+        import re
+        match = re.search(r'Token: ([^(]+)', content)
+        if match:
+            return match.group(1).strip()
+        return "Unknown Token"
+    except Exception:
+        return "Unknown Token"
+
+
+def _format_relative_time(timestamp_unix: int) -> str:
+    """Format unix timestamp as relative time"""
+    try:
+        from datetime import datetime
+        import time
+        
+        if not timestamp_unix:
+            return "Unknown"
+        
+        now = time.time()
+        diff = now - timestamp_unix
+        
+        if diff < 60:
+            return "Just now"
+        elif diff < 3600:
+            minutes = int(diff / 60)
+            return f"{minutes}m ago"
+        elif diff < 86400:
+            hours = int(diff / 3600)
+            return f"{hours}h ago"
+        elif diff < 2592000:  # 30 days
+            days = int(diff / 86400)
+            return f"{days}d ago"
+        else:
+            dt = datetime.fromtimestamp(timestamp_unix)
+            return dt.strftime("%b %d")
+            
+    except Exception:
+        return "Unknown"

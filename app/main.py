@@ -122,59 +122,60 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Webhook workers failed to start: {str(e)}")
     
+    # TEMPORARILY REMOVED IN ORDER TO NOT WASTE CREDITS
     # Check all services
-    health_status = await health_check_all_services()
+    # health_status = await health_check_all_services()
     
-    if not health_status.get("overall_status"):
-        logger.error("❌ Critical services unavailable!")
-        for service_name, service_status in health_status.get("services", {}).items():
-            if not service_status.get("healthy"):
-                error_msg = service_status.get("error", "Unknown error")
-                logger.error(f"   • {service_name}: {error_msg}")
+    # if not health_status.get("overall_status"):
+    #     logger.error("❌ Critical services unavailable!")
+    #     for service_name, service_status in health_status.get("services", {}).items():
+    #         if not service_status.get("healthy"):
+    #             error_msg = service_status.get("error", "Unknown error")
+    #             logger.error(f"   • {service_name}: {error_msg}")
         
-        # Show recommendations
-        for recommendation in health_status.get("recommendations", []):
-            logger.warning(f"   💡 {recommendation}")
-    else:
-        logger.info("✅ All critical services ready")
+    #     # Show recommendations
+    #     for recommendation in health_status.get("recommendations", []):
+    #         logger.warning(f"   💡 {recommendation}")
+    # else:
+    #     logger.info("✅ All critical services ready")
         
-        # Show optional service status with more detail
-        optional_services = health_status.get("service_categories", {}).get("optional", {})
-        working_optional = optional_services.get("healthy_count", 0)
-        total_optional = optional_services.get("total_count", 0)
+    #     # Show optional service status with more detail
+    #     optional_services = health_status.get("service_categories", {}).get("optional", {})
+    #     working_optional = optional_services.get("healthy_count", 0)
+    #     total_optional = optional_services.get("total_count", 0)
         
-        if working_optional < total_optional:
-            logger.info(f"ℹ️  Optional services: {working_optional}/{total_optional} available")
+    #     if working_optional < total_optional:
+    #         logger.info(f"ℹ️  Optional services: {working_optional}/{total_optional} available")
             
-            # List which optional services are missing
-            for service_name, service_status in health_status.get("services", {}).items():
-                if service_name in ["redis", "chromadb", "cache"] and not service_status.get("healthy"):
-                    if service_status.get("optional"):
-                        logger.debug(f"   • {service_name}: not available (optional)")
-                    else:
-                        logger.info(f"   • {service_name}: not available")
-        else:
-            logger.info("✅ All optional services available")
+    #         # List which optional services are missing
+    #         for service_name, service_status in health_status.get("services", {}).items():
+    #             if service_name in ["redis", "chromadb", "cache"] and not service_status.get("healthy"):
+    #                 if service_status.get("optional"):
+    #                     logger.debug(f"   • {service_name}: not available (optional)")
+    #                 else:
+    #                     logger.info(f"   • {service_name}: not available")
+    #     else:
+    #         logger.info("✅ All optional services available")
     
     # Check analysis services specifically
-    try:
-        from app.services.service_manager import get_api_health_status
-        api_health = await get_api_health_status()
+    # try:
+    #     from app.services.service_manager import get_api_health_status
+    #     api_health = await get_api_health_status()
         
-        healthy_apis = api_health.get("summary", {}).get("healthy_services", 0)
-        total_apis = api_health.get("summary", {}).get("total_services", 0)
+    #     healthy_apis = api_health.get("summary", {}).get("healthy_services", 0)
+    #     total_apis = api_health.get("summary", {}).get("total_services", 0)
         
-        logger.info(f"🔗 Analysis services: {healthy_apis}/{total_apis} available")
+    #     logger.info(f"🔗 Analysis services: {healthy_apis}/{total_apis} available")
         
-        if healthy_apis >= 3:
-            logger.info("✅ Sufficient analysis services for comprehensive token analysis")
-        elif healthy_apis >= 1:
-            logger.warning("⚠️  Limited analysis services - basic analysis available")
-        else:
-            logger.error("❌ No analysis services available - analysis features disabled")
+    #     if healthy_apis >= 3:
+    #         logger.info("✅ Sufficient analysis services for comprehensive token analysis")
+    #     elif healthy_apis >= 1:
+    #         logger.warning("⚠️  Limited analysis services - basic analysis available")
+    #     else:
+    #         logger.error("❌ No analysis services available - analysis features disabled")
             
-    except Exception as e:
-        logger.warning(f"⚠️  Could not check analysis services: {str(e)}")
+    # except Exception as e:
+    #     logger.warning(f"⚠️  Could not check analysis services: {str(e)}")
     
     # Check web interface status
     templates_available = templates_dir.exists() and any(templates_dir.iterdir())

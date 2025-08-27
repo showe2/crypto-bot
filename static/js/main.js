@@ -19,6 +19,88 @@ window.SolanaAI = {
   ws: null,
 };
 
+// 🆕 GLOBAL POPUP SYSTEM
+window.popupState = {
+  showAnalysisPopup: false,
+  popupAnalysis: null,
+  popupLoading: false,
+  popupError: null,
+};
+
+// Global popup functions
+window.openAnalysisPopup = function (analysisData) {
+  console.log("🚀 GLOBAL: Opening popup with data:", analysisData);
+
+  // Set global state
+  window.popupState.popupAnalysis = analysisData;
+  window.popupState.popupLoading = false;
+  window.popupState.popupError = null;
+  window.popupState.showAnalysisPopup = true;
+
+  // Prevent body scroll
+  document.body.style.overflow = "hidden";
+
+  // Trigger Alpine.js updates for any component listening
+  const event = new CustomEvent("popup-opened", { detail: analysisData });
+  window.dispatchEvent(event);
+
+  console.log("✅ GLOBAL: Popup state updated");
+};
+
+window.closeAnalysisPopup = function () {
+  console.log("🔒 GLOBAL: Closing popup");
+
+  window.popupState.showAnalysisPopup = false;
+  window.popupState.popupAnalysis = null;
+  window.popupState.popupError = null;
+
+  // Restore body scroll
+  document.body.style.overflow = "";
+
+  // Trigger Alpine.js updates
+  const event = new CustomEvent("popup-closed");
+  window.dispatchEvent(event);
+};
+
+window.copyToClipboard = async function (text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    // Use your existing notification system
+    if (window.SolanaAI && window.SolanaAI.notifications) {
+      window.SolanaAI.notifications.success(
+        "Copied",
+        "Address copied to clipboard"
+      );
+    } else {
+      alert("Address copied to clipboard!");
+    }
+  } catch (error) {
+    if (window.SolanaAI && window.SolanaAI.notifications) {
+      window.SolanaAI.notifications.error(
+        "Copy Failed",
+        "Failed to copy to clipboard"
+      );
+    } else {
+      alert("Failed to copy to clipboard");
+    }
+  }
+};
+
+window.openFullAnalysis = function (tokenAddress) {
+  if (tokenAddress) {
+    window.closeAnalysisPopup();
+    window.location.href = `/analysis?token=${tokenAddress}`;
+  }
+};
+
+window.formatNumber = function (num) {
+  if (!num && num !== 0) return "0";
+  if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
+  if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+  if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+  return Math.round(num).toString();
+};
+
 // Utility functions (enhanced with null safety)
 window.SolanaAI.utils = {
   // Format numbers with K/M/B suffixes
@@ -806,6 +888,7 @@ document.addEventListener("DOMContentLoaded", function () {
   });
 
   console.log("✅ Solana AI frontend initialized successfully");
+  console.log("✅ Global popup system initialized");
 });
 
 // Export for global access
@@ -860,6 +943,7 @@ window.debugSolanaAI = function () {
     Object.keys(window.SolanaAI.notifications)
   );
   console.log("- Current notifications:", window.SolanaAI.state.notifications);
+  console.log("- Popup state:", window.popupState);
 };
 
 // Test notification function
@@ -893,6 +977,30 @@ window.testNotifications = function () {
   }, 3000);
 };
 
-console.log("🎉 Enhanced Solana AI frontend with notification system loaded");
+// Test popup function
+window.testPopup = function () {
+  console.log("🧪 Testing popup system...");
+
+  const mockAnalysisData = {
+    id: "test_analysis_123",
+    token_symbol: "TEST",
+    token_name: "Test Token",
+    mint: "So11111111111111111111111111111111111112",
+    security_status: "passed",
+    overall_score: 85,
+    risk_level: "low",
+    recommendation: "consider",
+    critical_issues: 0,
+    warnings: 1,
+    processing_time: 2.3,
+    time: "Just now",
+    source_event: "test_call",
+  };
+
+  window.openAnalysisPopup(mockAnalysisData);
+};
+
+console.log("🎉 Enhanced Solana AI frontend with global popup system loaded");
 console.log("🔧 Use window.debugSolanaAI() to check system status");
 console.log("🧪 Use window.testNotifications() to test notification system");
+console.log("🧪 Use window.testPopup() to test popup system");
