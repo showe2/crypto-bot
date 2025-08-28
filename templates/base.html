@@ -53,6 +53,7 @@
       .glass-effect {
         background: rgba(255, 255, 255, 0.1);
         backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
         border: 1px solid rgba(255, 255, 255, 0.2);
       }
 
@@ -282,8 +283,14 @@
           <i class="fas fa-exclamation-triangle"></i>
         </div>
         <div>
-          <p class="font-medium text-gray-900" x-text="notification?.title"></p>
-          <p class="text-sm text-gray-600" x-text="notification?.message"></p>
+          <p
+            class="font-medium text-gray-900"
+            x-text="notification?.title || ''"
+          ></p>
+          <p
+            class="text-sm text-gray-600"
+            x-text="notification?.message || ''"
+          ></p>
         </div>
         <button
           @click="hideNotification()"
@@ -333,14 +340,13 @@
           <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <!-- Security -->
             <div
-              class="text-center p-4 rounded-lg"
+              class="text-center p-4 rounded-lg border-2"
               :class="{
                'bg-green-50 border-green-200': popupAnalysis?.security_status === 'passed',
                'bg-red-50 border-red-200': popupAnalysis?.security_status === 'failed',
                'bg-yellow-50 border-yellow-200': popupAnalysis?.security_status === 'warning',
                'bg-gray-50 border-gray-200': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
              }"
-              class="border-2"
             >
               <div
                 class="text-2xl mb-2"
@@ -376,7 +382,7 @@
 
             <!-- Risk -->
             <div
-              class="text-center p-4 rounded-lg"
+              class="text-center p-4 rounded-lg border-2"
               :class="{
                'bg-green-50 border-green-200': popupAnalysis?.risk_level === 'low',
                'bg-yellow-50 border-yellow-200': popupAnalysis?.risk_level === 'medium',
@@ -384,7 +390,6 @@
                'bg-red-50 border-red-200': popupAnalysis?.risk_level === 'critical',
                'bg-gray-50 border-gray-200': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
              }"
-              class="border-2"
             >
               <div
                 class="text-2xl mb-2"
@@ -400,7 +405,7 @@
               </div>
               <div
                 class="font-bold"
-                x-text="(popupAnalysis?.risk_level || 'unknown').toUpperCase()"
+                x-text="popupAnalysis?.risk_level?.toUpperCase() || 'UNKNOWN'"
               ></div>
               <div class="text-xs text-gray-500">Risk</div>
             </div>
@@ -412,7 +417,7 @@
               <div class="text-2xl mb-2 text-purple-600">👍</div>
               <div
                 class="font-bold text-purple-900"
-                x-text="(popupAnalysis?.recommendation || 'unknown').toUpperCase()"
+                x-text="popupAnalysis?.recommendation?.toUpperCase() || 'UNKNOWN'"
               ></div>
               <div class="text-xs text-gray-500">Action</div>
             </div>
@@ -511,7 +516,7 @@
                   <strong>Analysis ID:</strong>
                   <code
                     class="text-xs bg-blue-100 px-1 rounded"
-                    x-text="popupAnalysis.id.substring(0, 16) + '...'"
+                    x-text="popupAnalysis?.id ? popupAnalysis.id.substring(0, 16) + '...' : 'N/A'"
                   ></code>
                 </div>
               </div>
@@ -538,6 +543,7 @@
         </div>
       </div>
     </div>
+
     <!-- Scripts -->
     <script src="{{ url_for('static', path='js/main.js') }}"></script>
 
@@ -564,7 +570,7 @@
           quickAnalysisToken: "",
           isAnalyzing: false,
 
-          // 🆕 POPUP PROPERTIES
+          // Popup properties
           showAnalysisPopup: false,
           popupAnalysis: null,
 
@@ -595,7 +601,7 @@
               }
             });
 
-            // 🆕 CREATE GLOBAL POPUP FUNCTIONS
+            // Create global popup functions
             window.openAnalysisPopupGlobal = (data) => {
               console.log("🚀 GLOBAL: Opening popup with:", data);
               this.popupAnalysis = data;
@@ -733,7 +739,7 @@
             this.notification = null;
           },
 
-          // 🆕 POPUP METHODS
+          // Popup methods
           openAnalysisPopup(analysisData) {
             console.log("📊 Opening analysis popup:", analysisData);
             this.popupAnalysis = analysisData;

@@ -55,98 +55,98 @@ class APIManager:
                 except Exception as e:
                     logger.warning(f"⚠️  Error cleaning up {name} client: {str(e)}")
     
-    async def check_all_services_health(self) -> Dict[str, Any]:
-        """Check health of all API services"""
-        current_time = time.time()
+    # async def check_all_services_health(self) -> Dict[str, Any]:
+    #     """Check health of all API services"""
+    #     current_time = time.time()
         
-        # Check cache
-        if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
-            return self._health_cache['data']
+    #     # Check cache
+    #     if self._health_cache and (current_time - self._health_cache.get('timestamp', 0)) < self._cache_duration:
+    #         return self._health_cache['data']
         
-        logger.info("🔍 Checking health of all API services...")
+    #     logger.info("🔍 Checking health of all API services...")
         
-        # Health check functions
-        health_checks = {
-            "helius": check_helius_health(),
-            "birdeye": check_birdeye_health(),
-            "solanafm": check_solanafm_health(),
-            "goplus": check_goplus_health(),
-            "dexscreener": check_dexscreener_health(),
-            "rugcheck": check_rugcheck_health(),
-            "solsniffer": check_solsniffer_health()
-        }
+    #     # Health check functions
+    #     health_checks = {
+    #         "helius": check_helius_health(),
+    #         "birdeye": check_birdeye_health(),
+    #         "solanafm": check_solanafm_health(),
+    #         "goplus": check_goplus_health(),
+    #         "dexscreener": check_dexscreener_health(),
+    #         "rugcheck": check_rugcheck_health(),
+    #         "solsniffer": check_solsniffer_health()
+    #     }
         
-        # Run all health checks concurrently
-        results = await asyncio.gather(*health_checks.values(), return_exceptions=True)
+    #     # Run all health checks concurrently
+    #     results = await asyncio.gather(*health_checks.values(), return_exceptions=True)
         
-        # Compile results
-        health_status = {}
-        service_names = list(health_checks.keys())
+    #     # Compile results
+    #     health_status = {}
+    #     service_names = list(health_checks.keys())
         
-        for i, service_name in enumerate(service_names):
-            result = results[i]
-            if isinstance(result, Exception):
-                health_status[service_name] = {
-                    "healthy": False,
-                    "error": str(result),
-                    "api_key_configured": False
-                }
-            else:
-                health_status[service_name] = result
+    #     for i, service_name in enumerate(service_names):
+    #         result = results[i]
+    #         if isinstance(result, Exception):
+    #             health_status[service_name] = {
+    #                 "healthy": False,
+    #                 "error": str(result),
+    #                 "api_key_configured": False
+    #             }
+    #         else:
+    #             health_status[service_name] = result
         
-        # Calculate overall statistics
-        total_services = len(health_status)
-        healthy_services = sum(1 for status in health_status.values() if status.get("healthy", False))
-        configured_services = sum(1 for status in health_status.values() if status.get("api_key_configured", False))
+    #     # Calculate overall statistics
+    #     total_services = len(health_status)
+    #     healthy_services = sum(1 for status in health_status.values() if status.get("healthy", False))
+    #     configured_services = sum(1 for status in health_status.values() if status.get("api_key_configured", False))
         
-        overall_health = {
-            "services": health_status,
-            "summary": {
-                "total_services": total_services,
-                "healthy_services": healthy_services,
-                "configured_services": configured_services,
-                "health_percentage": round((healthy_services / total_services) * 100, 1),
-                "configuration_percentage": round((configured_services / total_services) * 100, 1)
-            },
-            "overall_healthy": healthy_services >= (total_services * 0.6),  # 60% threshold
-            "timestamp": current_time,
-            "recommendations": []
-        }
+    #     overall_health = {
+    #         "services": health_status,
+    #         "summary": {
+    #             "total_services": total_services,
+    #             "healthy_services": healthy_services,
+    #             "configured_services": configured_services,
+    #             "health_percentage": round((healthy_services / total_services) * 100, 1),
+    #             "configuration_percentage": round((configured_services / total_services) * 100, 1)
+    #         },
+    #         "overall_healthy": healthy_services >= (total_services * 0.6),  # 60% threshold
+    #         "timestamp": current_time,
+    #         "recommendations": []
+    #     }
         
-        # Add service-specific recommendations
-        if configured_services < total_services:
-            missing_keys = [name for name, status in health_status.items() 
-                           if not status.get("api_key_configured", False) and name not in ["solanafm", "dexscreener"]]
-            if missing_keys:
-                overall_health["recommendations"].append(
-                    f"Configure API keys for: {', '.join(missing_keys)}"
-                )
+    #     # Add service-specific recommendations
+    #     if configured_services < total_services:
+    #         missing_keys = [name for name, status in health_status.items() 
+    #                        if not status.get("api_key_configured", False) and name not in ["solanafm", "dexscreener"]]
+    #         if missing_keys:
+    #             overall_health["recommendations"].append(
+    #                 f"Configure API keys for: {', '.join(missing_keys)}"
+    #             )
         
-        if healthy_services < total_services:
-            unhealthy = [name for name, status in health_status.items() 
-                        if not status.get("healthy", False)]
-            overall_health["recommendations"].append(
-                f"Check service status for: {', '.join(unhealthy)}"
-            )
+    #     if healthy_services < total_services:
+    #         unhealthy = [name for name, status in health_status.items() 
+    #                     if not status.get("healthy", False)]
+    #         overall_health["recommendations"].append(
+    #             f"Check service status for: {', '.join(unhealthy)}"
+    #         )
         
-        # Free services recommendations
-        free_services = ["solanafm", "dexscreener"]
-        for service in free_services:
-            if service in health_status:
-                service_status = health_status[service]
-                if not service_status.get("healthy"):
-                    overall_health["recommendations"].append(
-                        f"{service.upper()}: Free service - check network connectivity"
-                    )
+    #     # Free services recommendations
+    #     free_services = ["solanafm", "dexscreener"]
+    #     for service in free_services:
+    #         if service in health_status:
+    #             service_status = health_status[service]
+    #             if not service_status.get("healthy"):
+    #                 overall_health["recommendations"].append(
+    #                     f"{service.upper()}: Free service - check network connectivity"
+    #                 )
         
-        # Cache results
-        self._health_cache = {
-            "data": overall_health,
-            "timestamp": current_time
-        }
+    #     # Cache results
+    #     self._health_cache = {
+    #         "data": overall_health,
+    #         "timestamp": current_time
+    #     }
         
-        logger.info(f"📊 Health check completed: {healthy_services}/{total_services} services healthy")
-        return overall_health
+    #     logger.info(f"📊 Health check completed: {healthy_services}/{total_services} services healthy")
+    #     return overall_health
 
 # Global API manager instance
 api_manager = APIManager()

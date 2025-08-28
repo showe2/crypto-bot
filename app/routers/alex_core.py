@@ -1,5 +1,5 @@
 from typing import Dict, List, Any, Optional
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, Path
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, Path, Query
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path as PathlibPath
@@ -26,7 +26,7 @@ if templates_dir.exists():
     logger.info("✅ Templates system initialized")
 else:
     templates = None
-    logger.warning("⚠️  Templates directory not found - web interface disabled")
+    logger.warning("⚠️ Templates directory not found - web interface disabled")
 
 
 # ==============================================
@@ -118,6 +118,26 @@ async def analysis_page(request: Request, token: Optional[str] = None):
     })
     
     return templates.TemplateResponse("pages/analysis.html", context)
+
+
+@router.get("/analyses", response_class=HTMLResponse, summary="All analyses page")
+async def analyses_page(request: Request):
+    """All analyses page with filtering and pagination"""
+    if not templates:
+        return JSONResponse({
+            "error": "Web interface not available",
+            "message": "Templates not found - use API endpoints instead",
+            "api_endpoints": ["/api/analyses"]
+        })
+    
+    context = await get_template_context(request)
+    context.update({
+        "page": "analyses",
+        "title": "All Analyses - Solana AI",
+        "active_nav": "analyses"
+    })
+    
+    return templates.TemplateResponse("pages/analyses.html", context)
 
 
 @router.get("/marketplace", response_class=HTMLResponse, summary="Token marketplace page")
@@ -283,6 +303,273 @@ async def dashboard_api():
         }
 
 
+@router.get("/api/analyses", summary="Get All Analyses with Pagination and Filters")
+async def get_all_analyses_api(
+    page: int = Query(1, ge=1, description="Page number (1-based)"),
+    per_page: int = Query(20, ge=1, le=100, description="Items per page"),
+    source_event: Optional[str] = Query(None, description="Filter by source event"),
+    date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
+    risk_level: Optional[str] = Query(None, description="Filter by risk level"),
+    security_status: Optional[str] = Query(None, description="Filter by security status"),
+    search: Optional[str] = Query(None, description="Search by token address, name, or symbol"),
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Get paginated list of all analyses with filtering options
+    """
+    try:
+        logger.info(f"📊 Retrieving analyses - Page {page}, Per page {per_page}")
+        
+        # Build filters
+        filters = {}
+        if source_event:
+            filters["source_event"] = source_event
+        if date_from:
+            filters["date_from"] = date_from
+        if date_to:
+            filters["date_to"] = date_to
+        if risk_level:
+            filters["risk_level"] = risk_level
+        if security_status:
+            filters["security_status"] = security_status
+        if search:
+            filters["search"] = search
+            
+        # Get analyses with pagination using existing ChromaDB integration
+        result = await _get_analyses_paginated(
+            page=page,
+            per_page=per_page,
+            filters=filters
+        )
+        
+        if not result:
+            # Return empty result if ChromaDB not available
+            return {
+                "analyses": [],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_items": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": False
+                },
+                "filters_applied": filters,
+                "chromadb_available": False,
+                "message": "Analysis history not available - ChromaDB not connected"
+            }
+            
+        logger.info(f"✅ Retrieved {len(result.get('analyses', []))} analyses")
+        
+        return {
+            **result,
+            "filters_applied": filters,
+            "chromadb_available": True
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error retrieving analyses: {str(e)}")
+        
+        # Return graceful fallback instead of error
+        return {
+            "analyses": [],
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total_items": 0,
+                "total_pages": 0,
+                "has_next": False,
+                "has_prev": False
+            },
+            "filters_applied": filters,
+            "chromadb_available": False,
+            "error": str(e),
+            "message": "Failed to retrieve analyses"
+        }
+
+
+async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: dict = None) -> dict:
+    """
+    Get paginated analyses with filtering - integrates with existing ChromaDB
+    """
+    try:
+        from app.utils.chroma_client import get_chroma_client
+        
+        chroma_client = await get_chroma_client()
+        if not chroma_client.is_connected():
+            logger.debug("ChromaDB not available for paginated analyses")
+            return None
+        
+        # Calculate offset
+        offset = (page - 1) * per_page
+        
+        # Build search parameters
+        search_params = {
+            "limit": per_page + offset,  # Get more to handle offset
+        }
+        
+        # For ChromaDB, we need to handle filtering differently
+        # If no filters, get all analyses without where clause
+        if not filters or not any(filters.get(k) for k in ['source_event', 'risk_level', 'security_status', 'date_from', 'date_to']):
+            # No filters - use simple search
+            logger.debug("No filters applied, using simple search")
+            if filters and filters.get("search"):
+                search_query = filters["search"]
+                results = await analysis_storage.search_analyses(
+                    query=search_query,
+                    limit=search_params["limit"]
+                )
+            else:
+                results = await analysis_storage.search_analyses(
+                    query="token analysis",
+                    limit=search_params["limit"]
+                )
+        else:
+            # We have filters - need to work around ChromaDB limitations
+            # Get all results first, then filter in Python
+            logger.debug(f"Filters applied: {filters}, getting all results for manual filtering")
+            
+            if filters and filters.get("search"):
+                search_query = filters["search"]
+                all_results = await analysis_storage.search_analyses(
+                    query=search_query,
+                    limit=1000  # Get more results for filtering
+                )
+            else:
+                all_results = await analysis_storage.search_analyses(
+                    query="token analysis",
+                    limit=1000  # Get more results for filtering
+                )
+            
+            # Filter results in Python
+            if all_results:
+                filtered_results = []
+                for result in all_results:
+                    metadata = result.get("metadata", {})
+                    include = True
+                    
+                    # Apply filters
+                    if filters.get("source_event") and metadata.get("source_event") != filters["source_event"]:
+                        include = False
+                    
+                    if filters.get("risk_level") and metadata.get("risk_level") != filters["risk_level"]:
+                        include = False
+                    
+                    if filters.get("security_status") and metadata.get("security_status") != filters["security_status"]:
+                        include = False
+                    
+                    # Date filters
+                    if filters.get("date_from"):
+                        try:
+                            from datetime import datetime
+                            date_from_ts = datetime.strptime(filters["date_from"], "%Y-%m-%d").timestamp()
+                            if metadata.get("timestamp_unix", 0) < date_from_ts:
+                                include = False
+                        except ValueError:
+                            pass
+                    
+                    if filters.get("date_to"):
+                        try:
+                            from datetime import datetime
+                            date_to_ts = datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400
+                            if metadata.get("timestamp_unix", 0) > date_to_ts:
+                                include = False
+                        except ValueError:
+                            pass
+                    
+                    if include:
+                        filtered_results.append(result)
+                
+                results = filtered_results
+                logger.debug(f"After Python filtering: {len(results)} results")
+            else:
+                results = []
+        
+        logger.debug(f"Search returned {len(results) if results else 0} results")
+        
+        if not results:
+            return {
+                "analyses": [],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_items": 0,
+                    "total_pages": 0,
+                    "has_next": False,
+                    "has_prev": page > 1
+                }
+            }
+        
+        # Sort results by date (most recent first)
+        results.sort(key=lambda x: x.get("metadata", {}).get("timestamp_unix", 0), reverse=True)
+        logger.debug(f"Results sorted by date (most recent first)")
+        
+        # Get total count for pagination
+        total_items = len(results)  # Total filtered results
+        
+        # Apply pagination to results (slice the results we got)
+        paginated_results = results[offset:offset + per_page] if len(results) > offset else []
+        logger.debug(f"After pagination: {len(paginated_results)} results for page {page}")
+        
+        # Process results for frontend display
+        analyses = []
+        for result in paginated_results:
+            metadata = result.get("metadata", {})
+            
+            # Determine status
+            status = "completed"
+            if metadata.get("analysis_stopped_at_security"):
+                status = "security_failed"
+            elif metadata.get("critical_issues_count", 0) > 0:
+                status = "critical_issues"
+            elif metadata.get("warnings_count", 0) > 0:
+                status = "warnings"
+            
+            analysis = {
+                "id": metadata.get("analysis_id", "unknown"),
+                "token_address": metadata.get("token_address", ""),
+                "token_name": metadata.get("token_name", "Unknown Token"),
+                "token_symbol": metadata.get("token_symbol", "N/A"),
+                "mint": metadata.get("token_address", ""),
+                "timestamp": metadata.get("timestamp_unix", 0),
+                "risk_level": metadata.get("risk_level", "unknown"),
+                "security_status": metadata.get("security_status", "unknown"),
+                "source_event": metadata.get("source_event", "unknown"),
+                "overall_score": metadata.get("overall_score", 0),
+                "critical_issues": metadata.get("critical_issues_count", 0),
+                "warnings": metadata.get("warnings_count", 0),
+                "processing_time": metadata.get("processing_time", 0),
+                "recommendation": metadata.get("recommendation", "HOLD"),
+                "time": _format_analysis_date(metadata.get("timestamp_unix", 0)),  # Use detailed date format
+                "status": status
+            }
+            analyses.append(analysis)
+        
+        # Calculate pagination
+        total_pages = (total_items + per_page - 1) // per_page
+        has_next = page < total_pages
+        has_prev = page > 1
+        
+        logger.debug(f"Returning {len(analyses)} analyses, total_items: {total_items}, total_pages: {total_pages}")
+        
+        return {
+            "analyses": analyses,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total_items": total_items,
+                "total_pages": total_pages,
+                "has_next": has_next,
+                "has_prev": has_prev
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in paginated analyses query: {str(e)}")
+        return None
+
+
 async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
     """Get recent analyses from ChromaDB for dashboard display"""
     try:
@@ -407,6 +694,36 @@ def _format_relative_time(timestamp_unix: int) -> str:
         else:
             dt = datetime.fromtimestamp(timestamp_unix)
             return dt.strftime("%b %d")
+            
+    except Exception:
+        return "Unknown"
+
+
+def _format_analysis_date(timestamp_unix: int) -> str:
+    """Format unix timestamp as date for analyses page"""
+    try:
+        from datetime import datetime
+        import time
+        
+        if not timestamp_unix:
+            return "Unknown"
+        
+        now = time.time()
+        diff = now - timestamp_unix
+        
+        # For analyses page, show more detailed date information
+        if diff < 86400:  # Less than 24 hours
+            dt = datetime.fromtimestamp(timestamp_unix)
+            return dt.strftime("Today %H:%M")
+        elif diff < 172800:  # Less than 48 hours (2 days)
+            dt = datetime.fromtimestamp(timestamp_unix)
+            return dt.strftime("Yesterday %H:%M")
+        elif diff < 604800:  # Less than 7 days
+            dt = datetime.fromtimestamp(timestamp_unix)
+            return dt.strftime("%A %H:%M")  # Day name + time
+        else:
+            dt = datetime.fromtimestamp(timestamp_unix)
+            return dt.strftime("%b %d, %Y")  # Full date
             
     except Exception:
         return "Unknown"

@@ -492,6 +492,199 @@ class AnalysisStorageService:
         except Exception as e:
             logger.error(f"Error getting token history: {str(e)}")
             return []
+        
+    async def get_analyses_paginated(self, page: int = 1, per_page: int = 20, filters: dict = None) -> dict:
+        """
+        Get paginated analyses with filtering
+        """
+        if not self.collection:
+            logger.warning("ChromaDB collection not available for paginated query")
+            return None
+            
+        try:
+            # Calculate offset
+            offset = (page - 1) * per_page
+            
+            # Build where clause for filtering
+            where_clause = {}
+            where_conditions = []
+            
+            if filters:
+                # Source event filter
+                if filters.get("source_event"):
+                    where_conditions.append({"source_event": {"$eq": filters["source_event"]}})
+                
+                # Risk level filter
+                if filters.get("risk_level"):
+                    where_conditions.append({"risk_level": {"$eq": filters["risk_level"]}})
+                
+                # Security status filter
+                if filters.get("security_status"):
+                    where_conditions.append({"security_status": {"$eq": filters["security_status"]}})
+                
+                # Date range filters (using timestamp)
+                if filters.get("date_from"):
+                    try:
+                        from datetime import datetime
+                        date_from = datetime.strptime(filters["date_from"], "%Y-%m-%d").timestamp()
+                        where_conditions.append({"timestamp": {"$gte": date_from}})
+                    except ValueError:
+                        logger.warning(f"Invalid date_from format: {filters['date_from']}")
+                
+                if filters.get("date_to"):
+                    try:
+                        from datetime import datetime
+                        # Add 24 hours to include the entire day
+                        date_to = datetime.strptime(filters["date_to"], "%Y-%m-%d").timestamp() + 86400
+                        where_conditions.append({"timestamp": {"$lt": date_to}})
+                    except ValueError:
+                        logger.warning(f"Invalid date_to format: {filters['date_to']}")
+            
+            # Combine where conditions
+            if where_conditions:
+                if len(where_conditions) == 1:
+                    where_clause = where_conditions[0]
+                else:
+                    where_clause = {"$and": where_conditions}
+            
+            # Query with pagination
+            query_params = {
+                "n_results": per_page,
+                "offset": offset,
+                "include": ["metadatas", "documents"]
+            }
+            
+            if where_clause:
+                query_params["where"] = where_clause
+            
+            # Handle search filter separately (text search)
+            if filters and filters.get("search"):
+                search_term = filters["search"]
+                # Use query_texts for semantic/text search
+                query_params["query_texts"] = [search_term]
+                # Remove n_results limit for search, we'll handle it after
+                search_results = self.collection.query(**query_params)
+            else:
+                search_results = self.collection.get(**query_params)
+            
+            if not search_results or not search_results.get("metadatas"):
+                return {
+                    "analyses": [],
+                    "pagination": {
+                        "page": page,
+                        "per_page": per_page,
+                        "total_items": 0,
+                        "total_pages": 0,
+                        "has_next": False,
+                        "has_prev": page > 1
+                    }
+                }
+            
+            # Get total count for pagination (separate query)
+            count_params = {}
+            if where_clause:
+                count_params["where"] = where_clause
+            
+            try:
+                # ChromaDB doesn't have a direct count method, so we get all IDs and count them
+                total_results = self.collection.get(
+                    include=["metadatas"],
+                    **count_params
+                )
+                total_items = len(total_results.get("metadatas", []))
+            except Exception as e:
+                logger.warning(f"Could not get total count: {str(e)}")
+                total_items = len(search_results.get("metadatas", []))
+            
+            # Process results
+            analyses = []
+            metadatas = search_results.get("metadatas", [])
+            
+            for i, metadata in enumerate(metadatas):
+                if not metadata:
+                    continue
+                    
+                # Apply search filter to metadata if provided
+                if filters and filters.get("search"):
+                    search_term = filters["search"].lower()
+                    searchable_text = " ".join([
+                        str(metadata.get("token_address", "")),
+                        str(metadata.get("token_name", "")),
+                        str(metadata.get("token_symbol", ""))
+                    ]).lower()
+                    
+                    if search_term not in searchable_text:
+                        continue
+                
+                analysis = {
+                    "id": metadata.get("analysis_id", f"analysis_{i}"),
+                    "token_address": metadata.get("token_address", ""),
+                    "token_name": metadata.get("token_name", "Unknown Token"),
+                    "token_symbol": metadata.get("token_symbol", "N/A"),
+                    "mint": metadata.get("token_address", ""),
+                    "timestamp": metadata.get("timestamp"),
+                    "risk_level": metadata.get("risk_level", "unknown"),
+                    "security_status": metadata.get("security_status", "unknown"),
+                    "source_event": metadata.get("source_event", "unknown"),
+                    "overall_score": metadata.get("overall_score"),
+                    "critical_issues": metadata.get("critical_issues", 0),
+                    "warnings": metadata.get("warnings", 0),
+                    "processing_time": metadata.get("processing_time", 0),
+                    "recommendation": metadata.get("recommendation", "HOLD"),
+                    "time": self._format_relative_time(metadata.get("timestamp"))
+                }
+                analyses.append(analysis)
+            
+            # Calculate pagination info
+            total_pages = (total_items + per_page - 1) // per_page
+            has_next = page < total_pages
+            has_prev = page > 1
+            
+            return {
+                "analyses": analyses,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total_items": total_items,
+                    "total_pages": total_pages,
+                    "has_next": has_next,
+                    "has_prev": has_prev
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in paginated query: {str(e)}")
+            return None
+
+    def _format_relative_time(self, timestamp):
+        """Format timestamp as relative time"""
+        if not timestamp:
+            return "Unknown"
+        
+        try:
+            if isinstance(timestamp, str):
+                from datetime import datetime
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                timestamp = dt.timestamp()
+            
+            from datetime import datetime
+            now = datetime.now().timestamp()
+            diff = now - float(timestamp)
+            
+            if diff < 60:
+                return "Just now"
+            elif diff < 3600:
+                return f"{int(diff // 60)}m ago"
+            elif diff < 86400:
+                return f"{int(diff // 3600)}h ago"
+            elif diff < 604800:
+                return f"{int(diff // 86400)}d ago"
+            else:
+                dt = datetime.fromtimestamp(float(timestamp))
+                return dt.strftime("%Y-%m-%d")
+        except Exception as e:
+            logger.warning(f"Error formatting timestamp {timestamp}: {str(e)}")
+            return "Unknown"
 
 
 # Global instance

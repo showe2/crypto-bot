@@ -19,7 +19,7 @@ window.SolanaAI = {
   ws: null,
 };
 
-// 🆕 GLOBAL POPUP SYSTEM
+// Global popup system
 window.popupState = {
   showAnalysisPopup: false,
   popupAnalysis: null,

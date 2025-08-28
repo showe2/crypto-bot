@@ -1,0 +1,974 @@
+{% extends "base.html" %} {% block title %}All Analyses - Solana AI{% endblock
+%} {% block content %}
+<div x-data="analysesData()" x-init="loadAnalyses()">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">All Analyses</h1>
+        <p class="text-gray-600 mt-1">
+          Complete history of token analyses with advanced filtering
+        </p>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button
+          @click="clearFilters()"
+          x-show="hasActiveFilters"
+          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+        >
+          <i class="fas fa-times mr-2"></i>
+          Clear Filters
+        </button>
+        <button
+          @click="loadAnalyses()"
+          :disabled="isLoading"
+          class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          <i
+            class="fas fa-sync-alt mr-2"
+            :class="{ 'animate-spin': isLoading }"
+          ></i>
+          Refresh
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ChromaDB Status Banner -->
+  <div
+    x-show="!chromaDbAvailable && !isLoading"
+    class="mb-6 bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"
+  >
+    <div class="flex">
+      <div class="flex-shrink-0">
+        <i class="fas fa-database text-yellow-400"></i>
+      </div>
+      <div class="ml-3">
+        <h3 class="text-sm font-medium text-yellow-800">
+          Analysis History Unavailable
+        </h3>
+        <div class="mt-2 text-sm text-yellow-700">
+          <p>
+            ChromaDB is not connected. Analysis history cannot be displayed.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters Section -->
+  <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-lg font-semibold text-gray-900">Filters</h2>
+      <button
+        @click="showAdvancedFilters = !showAdvancedFilters"
+        class="text-blue-600 hover:text-blue-800 text-sm font-medium"
+      >
+        <span x-show="!showAdvancedFilters">Show Advanced</span>
+        <span x-show="showAdvancedFilters">Hide Advanced</span>
+        <i
+          class="fas fa-chevron-down ml-1 transition-transform"
+          :class="{ 'rotate-180': showAdvancedFilters }"
+        ></i>
+      </button>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+      <!-- Search -->
+      <div>
+        <label class="form-label">Search</label>
+        <input
+          type="text"
+          x-model="filters.search"
+          @input="debouncedSearch()"
+          placeholder="Token address, name, symbol..."
+          class="form-input"
+        />
+      </div>
+
+      <!-- Source Event -->
+      <div>
+        <label class="form-label">Source</label>
+        <select
+          x-model="filters.source_event"
+          @change="applyFilters()"
+          class="form-input form-select"
+        >
+          <option value="">All Sources</option>
+          <option value="webhook">Webhook</option>
+          <option value="api_request">API Request</option>
+          <option value="api_batch">Batch Analysis</option>
+          <option value="frontend_quick">Frontend</option>
+        </select>
+      </div>
+
+      <!-- Risk Level -->
+      <div>
+        <label class="form-label">Risk Level</label>
+        <select
+          x-model="filters.risk_level"
+          @change="applyFilters()"
+          class="form-input form-select"
+        >
+          <option value="">All Levels</option>
+          <option value="low">Low Risk</option>
+          <option value="medium">Medium Risk</option>
+          <option value="high">High Risk</option>
+          <option value="critical">Critical Risk</option>
+        </select>
+      </div>
+
+      <!-- Security Status -->
+      <div>
+        <label class="form-label">Security Status</label>
+        <select
+          x-model="filters.security_status"
+          @change="applyFilters()"
+          class="form-input form-select"
+        >
+          <option value="">All Statuses</option>
+          <option value="passed">Secure</option>
+          <option value="warning">Caution</option>
+          <option value="failed">Unsafe</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Advanced Filters -->
+    <div
+      x-show="showAdvancedFilters"
+      x-collapse
+      class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200"
+    >
+      <!-- Date From -->
+      <div>
+        <label class="form-label">Date From</label>
+        <input
+          type="date"
+          x-model="filters.date_from"
+          @change="applyFilters()"
+          class="form-input"
+        />
+      </div>
+
+      <!-- Date To -->
+      <div>
+        <label class="form-label">Date To</label>
+        <input
+          type="date"
+          x-model="filters.date_to"
+          @change="applyFilters()"
+          class="form-input"
+        />
+      </div>
+    </div>
+
+    <!-- Active Filters Display -->
+    <div x-show="hasActiveFilters" class="mt-4 pt-4 border-t border-gray-200">
+      <div class="flex items-center space-x-2 flex-wrap">
+        <span class="text-sm text-gray-600">Active filters:</span>
+
+        <template x-for="(value, key) in getActiveFilters()" :key="key">
+          <span
+            class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+          >
+            <span x-text="`${key.replace('_', ' ')}: ${value}`"></span>
+            <button
+              @click="removeFilter(key)"
+              class="ml-1 text-blue-600 hover:text-blue-800"
+            >
+              <i class="fas fa-times text-xs"></i>
+            </button>
+          </span>
+        </template>
+      </div>
+    </div>
+  </div>
+
+  <!-- Results Section -->
+  <div class="bg-white rounded-xl shadow-lg">
+    <!-- Results Header -->
+    <div class="p-6 border-b border-gray-200">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900">
+            Analysis Results
+            <span
+              x-show="pagination && pagination.total_items"
+              class="text-gray-500 font-normal"
+            >
+              (<span x-text="pagination?.total_items || 0"></span> total)
+            </span>
+          </h3>
+          <p class="text-sm text-gray-600 mt-1" x-show="pagination">
+            Showing <span x-text="getShowingText()"></span>
+          </p>
+        </div>
+
+        <!-- Per Page Selector -->
+        <div class="flex items-center space-x-2">
+          <span class="text-sm text-gray-600">Per page:</span>
+          <select
+            x-model.number="perPage"
+            @change="changePerPage()"
+            class="form-input form-select w-20 text-sm"
+          >
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading State -->
+    <div x-show="isLoading" class="p-8 text-center">
+      <div class="loading-spinner mx-auto mb-4"></div>
+      <p class="text-gray-600">Loading analyses...</p>
+    </div>
+
+    <!-- Analyses List -->
+    <div
+      x-show="!isLoading && analyses.length > 0"
+      class="divide-y divide-gray-200"
+    >
+      <template x-for="analysis in analyses" :key="analysis.id">
+        <div
+          class="p-6 hover:bg-gray-50 transition-colors cursor-pointer"
+          @click="openAnalysisPopup(analysis)"
+        >
+          <div class="flex items-start justify-between">
+            <!-- Left Section - Token Info -->
+            <div class="flex items-start space-x-4 flex-1">
+              <!-- Token Icon with Status -->
+              <div class="relative flex-shrink-0">
+                <div
+                  class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center"
+                >
+                  <i class="fas fa-coins text-blue-600 text-xl"></i>
+                </div>
+                <!-- Status Indicator -->
+                <div
+                  class="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white"
+                  :class="{
+                    'bg-green-500': analysis.status === 'completed',
+                    'bg-red-500': analysis.status === 'security_failed' || analysis.status === 'critical_issues',
+                    'bg-yellow-500': analysis.status === 'warnings',
+                    'bg-gray-400': analysis.status === 'unknown'
+                  }"
+                ></div>
+              </div>
+
+              <!-- Token Details -->
+              <div class="flex-1 min-w-0">
+                <!-- Token Name and Symbol -->
+                <div class="flex items-center space-x-3 mb-2">
+                  <h4
+                    class="text-lg font-semibold text-gray-900"
+                    x-text="analysis.token_symbol || 'Unknown'"
+                  ></h4>
+                  <span
+                    x-show="analysis.token_name && analysis.token_name !== 'Unknown Token'"
+                    class="text-sm text-gray-500"
+                    x-text="'(' + analysis.token_name + ')'"
+                  ></span>
+                </div>
+
+                <!-- Token Address -->
+                <div class="flex items-center space-x-2 mb-3">
+                  <code
+                    class="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700"
+                    x-text="analysis.mint ? (analysis.mint.substring(0, 16) + '...') : 'N/A'"
+                  ></code>
+                  <button
+                    x-show="analysis.mint"
+                    @click.stop="copyToClipboard(analysis.mint)"
+                    class="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <i class="fas fa-copy"></i>
+                  </button>
+                </div>
+
+                <!-- Status Badges -->
+                <div class="flex items-center space-x-2 flex-wrap">
+                  <!-- Risk Level -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full font-medium"
+                    :class="{
+                      'bg-green-100 text-green-800': analysis.risk_level === 'low',
+                      'bg-yellow-100 text-yellow-800': analysis.risk_level === 'medium',
+                      'bg-orange-100 text-orange-800': analysis.risk_level === 'high',
+                      'bg-red-100 text-red-800': analysis.risk_level === 'critical',
+                      'bg-gray-100 text-gray-800': analysis.risk_level === 'unknown'
+                    }"
+                    x-text="(analysis.risk_level || 'unknown').toUpperCase() + ' RISK'"
+                  ></span>
+
+                  <!-- Security Status -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full font-medium"
+                    :class="{
+                      'bg-green-100 text-green-800': analysis.security_status === 'passed',
+                      'bg-red-100 text-red-800': analysis.security_status === 'failed',
+                      'bg-yellow-100 text-yellow-800': analysis.security_status === 'warning',
+                      'bg-gray-100 text-gray-800': analysis.security_status === 'unknown'
+                    }"
+                  >
+                    <i class="fas fa-shield-alt mr-1"></i>
+                    <span
+                      x-text="analysis.security_status === 'passed' ? 'SECURE' : 
+                                 analysis.security_status === 'failed' ? 'UNSAFE' :
+                                 analysis.security_status === 'warning' ? 'CAUTION' : 'UNKNOWN'"
+                    ></span>
+                  </span>
+
+                  <!-- Source -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 font-medium"
+                  >
+                    <i class="fas fa-code mr-1"></i>
+                    <span
+                      x-text="(analysis.source_event || 'unknown').replace('_', ' ').toUpperCase()"
+                    ></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Section - Metrics and Actions -->
+            <div class="flex-shrink-0 text-right">
+              <!-- Analysis Score -->
+              <div class="mb-3">
+                <div
+                  class="text-2xl font-bold"
+                  :class="{
+                       'text-green-600': analysis.overall_score >= 80,
+                       'text-yellow-600': analysis.overall_score >= 60 && analysis.overall_score < 80,
+                       'text-orange-600': analysis.overall_score >= 40 && analysis.overall_score < 60,
+                       'text-red-600': analysis.overall_score < 40,
+                       'text-gray-500': !analysis.overall_score
+                     }"
+                  x-text="analysis.overall_score ? Math.round(analysis.overall_score) + '%' : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Analysis Score</div>
+              </div>
+
+              <!-- Issues Count -->
+              <div
+                class="mb-3 space-y-1"
+                x-show="analysis.critical_issues > 0 || analysis.warnings > 0"
+              >
+                <div
+                  x-show="analysis.critical_issues > 0"
+                  class="text-sm font-medium text-red-600"
+                  x-text="analysis.critical_issues + ' critical'"
+                ></div>
+                <div
+                  x-show="analysis.warnings > 0"
+                  class="text-sm font-medium text-yellow-600"
+                  x-text="analysis.warnings + ' warnings'"
+                ></div>
+              </div>
+
+              <!-- Time and Processing Info -->
+              <div class="text-xs text-gray-500 space-y-1">
+                <div x-text="analysis.time"></div>
+                <div x-show="analysis.processing_time">
+                  <span
+                    x-text="analysis.processing_time.toFixed(2) + 's'"
+                  ></span>
+                  processing
+                </div>
+              </div>
+
+              <!-- Action Button -->
+              <button
+                @click.stop="openAnalysisPopup(analysis)"
+                class="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+              >
+                <i class="fas fa-eye mr-1"></i>
+                View Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Empty State -->
+    <div x-show="!isLoading && analyses.length === 0" class="p-12 text-center">
+      <div class="text-gray-400 mb-4">
+        <i class="fas fa-chart-line text-4xl"></i>
+      </div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">No Analyses Found</h3>
+      <p class="text-gray-600 mb-4" x-show="hasActiveFilters">
+        Try adjusting your filters or clearing them to see more results.
+      </p>
+      <p
+        class="text-gray-600 mb-4"
+        x-show="!hasActiveFilters && chromaDbAvailable"
+      >
+        No token analyses have been performed yet.
+      </p>
+      <p class="text-gray-600 mb-4" x-show="!chromaDbAvailable">
+        ChromaDB is not connected. Analysis history cannot be displayed.
+      </p>
+      <button
+        x-show="hasActiveFilters"
+        @click="clearFilters()"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        Clear All Filters
+      </button>
+      <a
+        x-show="!hasActiveFilters && chromaDbAvailable"
+        href="/analysis"
+        class="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        Start Analyzing Tokens
+      </a>
+    </div>
+
+    <!-- Pagination -->
+    <div
+      x-show="pagination && pagination.total_pages > 1"
+      class="p-6 border-t border-gray-200"
+    >
+      <div class="flex items-center justify-between">
+        <!-- Page Info -->
+        <div class="text-sm text-gray-600">
+          Page <span x-text="pagination?.page || 1"></span> of
+          <span x-text="pagination?.total_pages || 1"></span>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex items-center space-x-2">
+          <!-- Previous Button -->
+          <button
+            @click="goToPage((pagination?.page || 1) - 1)"
+            :disabled="!(pagination?.has_prev || false)"
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i class="fas fa-chevron-left mr-1"></i>
+            Previous
+          </button>
+
+          <!-- Page Numbers -->
+          <div class="flex items-center space-x-1">
+            <template x-for="page in getVisiblePages()" :key="page">
+              <button
+                @click="goToPage(page)"
+                :class="page === (pagination?.page || 1) ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                class="px-3 py-2 border border-gray-300 rounded text-sm font-medium"
+                x-text="page"
+              ></button>
+            </template>
+          </div>
+
+          <!-- Next Button -->
+          <button
+            @click="goToPage((pagination?.page || 1) + 1)"
+            :disabled="!(pagination?.has_next || false)"
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+            <i class="fas fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function analysesData() {
+    return {
+      isLoading: false,
+      analyses: [],
+      pagination: null,
+      chromaDbAvailable: false,
+      showAdvancedFilters: false,
+      perPage: 20,
+
+      filters: {
+        search: "",
+        source_event: "",
+        risk_level: "",
+        security_status: "",
+        date_from: "",
+        date_to: "",
+      },
+
+      searchTimeout: null,
+
+      async loadAnalyses(page = 1) {
+        this.isLoading = true;
+
+        try {
+          const params = new URLSearchParams({
+            page: page.toString(),
+            per_page: this.perPage.toString(),
+          });
+
+          // Add filters to params
+          Object.keys(this.filters).forEach((key) => {
+            if (this.filters[key]) {
+              params.append(key, this.filters[key]);
+            }
+          });
+
+          const response = await fetch(`/api/analyses?${params}`);
+          const data = await response.json();
+
+          this.analyses = data.analyses || [];
+          this.pagination = data.pagination || null;
+          this.chromaDbAvailable = data.chromadb_available || false;
+
+          if (!response.ok && !this.chromaDbAvailable) {
+            console.warn("ChromaDB not available:", data.message);
+          }
+        } catch (error) {
+          console.error("Failed to load analyses:", error);
+          this.showNotification(
+            "error",
+            "Load Failed",
+            "Failed to load analyses"
+          );
+        } finally {
+          this.isLoading = false;
+        }
+      },
+
+      applyFilters() {
+        this.loadAnalyses(1); // Reset to first page when filtering
+      },
+
+      debouncedSearch() {
+        clearTimeout(this.searchTimeout);
+        this.searchTimeout = setTimeout(() => {
+          this.applyFilters();
+        }, 500);
+      },
+
+      clearFilters() {
+        this.filters = {
+          search: "",
+          source_event: "",
+          risk_level: "",
+          security_status: "",
+          date_from: "",
+          date_to: "",
+        };
+        this.loadAnalyses(1);
+      },
+
+      removeFilter(key) {
+        this.filters[key] = "";
+        this.applyFilters();
+      },
+
+      changePerPage() {
+        this.loadAnalyses(1);
+      },
+
+      goToPage(page) {
+        if (page >= 1 && page <= this.pagination.total_pages) {
+          this.loadAnalyses(page);
+        }
+      },
+
+      get hasActiveFilters() {
+        return Object.values(this.filters).some((value) => value !== "");
+      },
+
+      getActiveFilters() {
+        const active = {};
+        Object.keys(this.filters).forEach((key) => {
+          if (this.filters[key]) {
+            active[key] = this.filters[key];
+          }
+        });
+        return active;
+      },
+
+      getShowingText() {
+        if (!this.pagination) return "";
+        const start = (this.pagination.page - 1) * this.pagination.per_page + 1;
+        const end = Math.min(
+          start + this.pagination.per_page - 1,
+          this.pagination.total_items
+        );
+        return `${start}-${end} of ${this.pagination.total_items}`;
+      },
+
+      getVisiblePages() {
+        if (!this.pagination) return [];
+
+        const current = this.pagination.page;
+        const total = this.pagination.total_pages;
+        const pages = [];
+
+        if (total <= 7) {
+          // Show all pages if 7 or less
+          for (let i = 1; i <= total; i++) {
+            pages.push(i);
+          }
+        } else {
+          // Show first page
+          pages.push(1);
+
+          // Show ellipsis if needed
+          if (current > 4) {
+            pages.push("...");
+          }
+
+          // Show pages around current
+          const start = Math.max(2, current - 1);
+          const end = Math.min(total - 1, current + 1);
+
+          for (let i = start; i <= end; i++) {
+            if (i !== 1 && i !== total) {
+              pages.push(i);
+            }
+          }
+
+          // Show ellipsis if needed
+          if (current < total - 3) {
+            pages.push("...");
+          }
+
+          // Show last page
+          if (total > 1) {
+            pages.push(total);
+          }
+        }
+
+        return pages.filter((p) => p !== "..." || true); // Keep ellipsis for display
+      },
+
+      openAnalysisPopup(analysisData) {
+        console.log("📊 Opening popup with data:", analysisData);
+
+        // Create popup HTML directly
+        this.createPopupHTML(analysisData);
+
+        // Prevent body scroll
+        document.body.style.overflow = "hidden";
+      },
+
+      createPopupHTML(analysis) {
+        // Remove existing popup if any
+        const existingPopup = document.getElementById("analysis-popup");
+        if (existingPopup) {
+          existingPopup.remove();
+        }
+
+        // Create popup HTML
+        const popupHTML = `
+          <div id="analysis-popup" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <!-- Header -->
+              <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
+                <div class="flex justify-between items-center">
+                  <div>
+                    <h2 class="text-2xl font-bold">${
+                      analysis.token_symbol || "Unknown"
+                    } Analysis</h2>
+                    <p class="opacity-90">${
+                      analysis.token_name || "Token Analysis Results"
+                    }</p>
+                  </div>
+                  <button onclick="closeAnalysisPopupManual()" class="text-white hover:text-gray-300 text-2xl">
+                    &times;
+                  </button>
+                </div>
+              </div>
+
+              <!-- Content -->
+              <div class="p-6">
+                <!-- Status Cards -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                  <!-- Security -->
+                  <div class="text-center p-4 rounded-lg border-2 ${this.getSecurityCardClass(
+                    analysis.security_status
+                  )}">
+                    <div class="text-2xl mb-2 ${this.getSecurityIconClass(
+                      analysis.security_status
+                    )}">🛡️</div>
+                    <div class="font-bold">${this.getSecurityText(
+                      analysis.security_status
+                    )}</div>
+                    <div class="text-xs text-gray-500">Security</div>
+                  </div>
+
+                  <!-- Score -->
+                  <div class="text-center p-4 rounded-lg bg-blue-50 border-2 border-blue-200">
+                    <div class="text-2xl mb-2 text-blue-600">⭐</div>
+                    <div class="font-bold text-blue-900">${
+                      analysis.overall_score
+                        ? Math.round(analysis.overall_score) + "%"
+                        : "N/A"
+                    }</div>
+                    <div class="text-xs text-gray-500">Score</div>
+                  </div>
+
+                  <!-- Risk -->
+                  <div class="text-center p-4 rounded-lg border-2 ${this.getRiskCardClass(
+                    analysis.risk_level
+                  )}">
+                    <div class="text-2xl mb-2 ${this.getRiskIconClass(
+                      analysis.risk_level
+                    )}">⚠️</div>
+                    <div class="font-bold">${(
+                      analysis.risk_level || "unknown"
+                    ).toUpperCase()}</div>
+                    <div class="text-xs text-gray-500">Risk</div>
+                  </div>
+
+                  <!-- Recommendation -->
+                  <div class="text-center p-4 rounded-lg bg-purple-50 border-2 border-purple-200">
+                    <div class="text-2xl mb-2 text-purple-600">👍</div>
+                    <div class="font-bold text-purple-900">${(
+                      analysis.recommendation || "unknown"
+                    ).toUpperCase()}</div>
+                    <div class="text-xs text-gray-500">Action</div>
+                  </div>
+                </div>
+
+                <!-- Security Details -->
+                <div class="mb-6">
+                  <h3 class="font-bold text-lg mb-3">🔍 Security Details</h3>
+
+                  ${
+                    analysis.critical_issues > 0
+                      ? `
+                  <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg">
+                    <div class="flex items-center mb-2">
+                      <span class="text-red-500 text-xl mr-2">🚨</span>
+                      <div class="font-bold text-red-800">Critical Security Issues</div>
+                    </div>
+                    <div class="text-red-700 mb-2">${analysis.critical_issues} critical issue(s) detected</div>
+                    <div class="text-sm text-red-600 bg-red-100 p-2 rounded">
+                      <strong>⚠️ High Risk:</strong> This token has failed critical security checks.
+                    </div>
+                  </div>
+                  `
+                      : ""
+                  }
+
+                  ${
+                    analysis.warnings > 0
+                      ? `
+                  <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg">
+                    <div class="flex items-center mb-2">
+                      <span class="text-yellow-500 text-xl mr-2">⚠️</span>
+                      <div class="font-bold text-yellow-800">Security Warnings</div>
+                    </div>
+                    <div class="text-yellow-700 mb-2">${analysis.warnings} warning(s) detected</div>
+                    <div class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
+                      <strong>⚠️ Moderate Risk:</strong> This token has some concerning features.
+                    </div>
+                  </div>
+                  `
+                      : ""
+                  }
+
+                  ${
+                    analysis.critical_issues === 0 &&
+                    analysis.warnings === 0 &&
+                    analysis.security_status === "passed"
+                      ? `
+                  <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg">
+                    <div class="flex items-center mb-2">
+                      <span class="text-green-500 text-xl mr-2">✅</span>
+                      <div class="font-bold text-green-800">Security Verified</div>
+                    </div>
+                    <div class="text-sm text-green-700 bg-green-100 p-2 rounded">
+                      <strong>✅ Low Risk:</strong> This token has passed all security checks.
+                    </div>
+                  </div>
+                  `
+                      : ""
+                  }
+
+                  <!-- Analysis Info -->
+                  <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                    <div class="flex items-center mb-2">
+                      <span class="text-blue-500 text-xl mr-2">ℹ️</span>
+                      <div class="font-bold text-blue-800">Analysis Information</div>
+                    </div>
+                    <div class="text-sm text-blue-700 space-y-1">
+                      <div><strong>Processed:</strong> ${
+                        analysis.time || "Unknown"
+                      }</div>
+                      <div><strong>Processing Time:</strong> ${(
+                        analysis.processing_time || 0
+                      ).toFixed(2)}s</div>
+                      <div><strong>Source:</strong> ${(
+                        analysis.source_event || "unknown"
+                      ).replace("_", " ")}</div>
+                      ${
+                        analysis.id
+                          ? `<div><strong>Analysis ID:</strong> <code class="text-xs bg-blue-100 px-1 rounded">${analysis.id.substring(
+                              0,
+                              16
+                            )}...</code></div>`
+                          : ""
+                      }
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Token Address -->
+                <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                  <div class="font-bold mb-2">📋 Contract Address</div>
+                  <div class="flex items-center justify-between">
+                    <code class="text-sm bg-white px-2 py-1 rounded break-all">${
+                      analysis.mint || "N/A"
+                    }</code>
+                    ${
+                      analysis.mint
+                        ? `<button onclick="copyToClipboardManual('${analysis.mint}')" class="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">Copy</button>`
+                        : ""
+                    }
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        // Insert popup into DOM
+        document.body.insertAdjacentHTML("beforeend", popupHTML);
+
+        // Add event listeners
+        document
+          .getElementById("analysis-popup")
+          .addEventListener("click", function (e) {
+            if (e.target.id === "analysis-popup") {
+              closeAnalysisPopupManual();
+            }
+          });
+
+        // Add escape key listener
+        document.addEventListener("keydown", function (e) {
+          if (e.key === "Escape") {
+            closeAnalysisPopupManual();
+          }
+        });
+      },
+
+      getSecurityCardClass(status) {
+        const classes = {
+          passed: "bg-green-50 border-green-200",
+          failed: "bg-red-50 border-red-200",
+          warning: "bg-yellow-50 border-yellow-200",
+        };
+        return classes[status] || "bg-gray-50 border-gray-200";
+      },
+
+      getSecurityIconClass(status) {
+        const classes = {
+          passed: "text-green-600",
+          failed: "text-red-600",
+          warning: "text-yellow-600",
+        };
+        return classes[status] || "text-gray-600";
+      },
+
+      getSecurityText(status) {
+        const texts = {
+          passed: "SECURE",
+          failed: "UNSAFE",
+          warning: "CAUTION",
+        };
+        return texts[status] || "UNKNOWN";
+      },
+
+      getRiskCardClass(level) {
+        const classes = {
+          low: "bg-green-50 border-green-200",
+          medium: "bg-yellow-50 border-yellow-200",
+          high: "bg-orange-50 border-orange-200",
+          critical: "bg-red-50 border-red-200",
+        };
+        return classes[level] || "bg-gray-50 border-gray-200";
+      },
+
+      getRiskIconClass(level) {
+        const classes = {
+          low: "text-green-600",
+          medium: "text-yellow-600",
+          high: "text-orange-600",
+          critical: "text-red-600",
+        };
+        return classes[level] || "text-gray-600";
+      },
+
+      async copyToClipboard(text) {
+        try {
+          await navigator.clipboard.writeText(text);
+          this.showNotification(
+            "success",
+            "Copied",
+            "Address copied to clipboard"
+          );
+        } catch (error) {
+          this.showNotification(
+            "error",
+            "Copy Failed",
+            "Failed to copy to clipboard"
+          );
+        }
+      },
+
+      showNotification(type, title, message) {
+        if (window.SolanaAI && window.SolanaAI.notifications) {
+          window.SolanaAI.notifications[type](title, message);
+        } else {
+          console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+        }
+      },
+
+      // Add manual close function for popup
+      closeAnalysisPopup() {
+        const popup = document.getElementById("analysis-popup");
+        if (popup) {
+          popup.remove();
+        }
+        document.body.style.overflow = "";
+      },
+    };
+  }
+
+  // Global functions for popup
+  window.closeAnalysisPopupManual = function () {
+    const popup = document.getElementById("analysis-popup");
+    if (popup) {
+      popup.remove();
+    }
+    document.body.style.overflow = "";
+  };
+
+  window.copyToClipboardManual = async function (text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      // Show a simple notification
+      const notification = document.createElement("div");
+      notification.innerHTML = `
+        <div class="fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50">
+          Address copied to clipboard!
+        </div>
+      `;
+      document.body.appendChild(notification);
+      setTimeout(() => {
+        notification.remove();
+      }, 2000);
+    } catch (error) {
+      console.error("Failed to copy:", error);
+      alert("Failed to copy to clipboard");
+    }
+  };
+</script>
+{% endblock %}
