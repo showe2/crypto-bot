@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     DEBUG: bool = Field(default=True, description="Debug mode")
     PORT: int = Field(default=8000, description="Application port")
     HOST: str = Field(default="0.0.0.0", description="Application host")
+    BASE_URL: str = Field(description="Base URL for all endpoints (REQUIRED)")
+
+    # ==============================================
+    # ALEX SYSTEM
+    # ==============================================
+    ALEX_INGEST_URL: str = f"{BASE_URL}/api/ingest"
+    INTERNAL_TOKEN: Optional[str] = None
 
     # ==============================================
     # BLOCKCHAIN API KEYS
@@ -59,7 +66,6 @@ class Settings(BaseSettings):
     # ==============================================
     QUICKNODE_WEBHOOK_SECRET: Optional[str] = None
     QUICKNODE_WEBHOOK_URL: Optional[str] = None
-    WEBHOOK_BASE_URL: str = Field(description="Base URL for webhook endpoints (REQUIRED)")
 
     # ==============================================
     # STORAGE
@@ -149,12 +155,12 @@ class Settings(BaseSettings):
             raise ValueError(f'LOG_LEVEL must be one of: {allowed}')
         return v.upper()
 
-    @validator('WEBHOOK_BASE_URL')
-    def validate_webhook_base_url(cls, v):
+    @validator('BASE_URL')
+    def validate_base_url(cls, v):
         if not v:
-            raise ValueError('WEBHOOK_BASE_URL is required and cannot be empty')
+            raise ValueError('BASE_URL is required and cannot be empty')
         if not (v.startswith('http://') or v.startswith('https://')):
-            raise ValueError('WEBHOOK_BASE_URL must start with http:// or https://')
+            raise ValueError('BASE_URL must start with http:// or https://')
         # Remove trailing slash for consistency
         return v.rstrip('/')
 
@@ -198,15 +204,13 @@ class Settings(BaseSettings):
     def get_webhook_urls(self) -> dict[str, str]:
         """Get all webhook endpoint URLs"""
         return {
-            "mint": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/mint",
-            "pool": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/pool",
-            "transaction": f"{self.WEBHOOK_BASE_URL}/webhooks/helius/tx"
+            "mint": f"{self.BASE_URL}/webhooks/helius/mint",
         }
 
     def validate_critical_keys(self) -> list[str]:
         missing = []
         critical_keys = [
-            ('WEBHOOK_BASE_URL', 'Webhook Base URL'),
+            ('BASE_URL', 'Base URL'),
             ('HELIUS_API_KEY', 'Helius API'),
         ]
         for key, name in critical_keys:
@@ -215,12 +219,13 @@ class Settings(BaseSettings):
         return missing
 
     def get_all_api_keys_status(self) -> dict:
+        """Get status of all configured API keys"""
         keys_status = {}
         api_keys = [
             'HELIUS_API_KEY', 'BIRDEYE_API_KEY',
             'PUMPFUN_API_KEY', 'SOLSNIFFER_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
-            'WALLET_SECRET_KEY'
+            'WALLET_SECRET_KEY', 'INTERNAL_TOKEN'
         ]
         
         for key in api_keys:
@@ -230,10 +235,10 @@ class Settings(BaseSettings):
                 'masked_value': f"{value[:8]}***" if value else None
             }
         
-        # Add webhook base URL status
-        keys_status['WEBHOOK_BASE_URL'] = {
-            'configured': bool(self.WEBHOOK_BASE_URL),
-            'value': self.WEBHOOK_BASE_URL  # Not sensitive, show full URL
+        # Add BASE_URL status
+        keys_status['BASE_URL'] = {
+            'configured': bool(self.BASE_URL),
+            'value': self.BASE_URL  # Not sensitive, show full URL
         }
         
         return keys_status

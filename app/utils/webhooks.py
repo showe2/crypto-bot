@@ -227,10 +227,10 @@ async def validate_webhook_config() -> Dict[str, Any]:
     warnings = []
     
     # Check if base URL is configured (now required)
-    if not hasattr(settings, 'WEBHOOK_BASE_URL') or not settings.WEBHOOK_BASE_URL:
-        issues.append("WEBHOOK_BASE_URL is required but not configured")
-    elif not (settings.WEBHOOK_BASE_URL.startswith('http://') or settings.WEBHOOK_BASE_URL.startswith('https://')):
-        issues.append("WEBHOOK_BASE_URL must start with http:// or https://")
+    if not hasattr(settings, 'BASE_URL') or not settings.BASE_URL:
+        issues.append("BASE_URL is required but not configured")
+    elif not (settings.BASE_URL.startswith('http://') or settings.BASE_URL.startswith('https://')):
+        issues.append("BASE_URL must start with http:// or https://")
     
     return {
         "valid": len(issues) == 0,
