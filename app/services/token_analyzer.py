@@ -21,7 +21,8 @@ class TokenAnalyzer:
         self.cache_ttl = {
             "webhook": 7200,  # 2 hours for webhook requests
             "api_request": 3600,  # 1 hour for API requests
-            "frontend_quick": 1800  # 30 minutes for frontend
+            "frontend_quick": 1800,  # 30 minutes for frontend
+            "frontend_deep": 7200   # 2 hours for frontend deep
         }
         self.services = {
             "helius": True,
@@ -44,6 +45,7 @@ class TokenAnalyzer:
             "token_address": token_address,
             "timestamp": datetime.utcnow().isoformat(),
             "source_event": source_event,
+            "analysis_type": "quick",
             "warnings": [],
             "errors": [],
             "data_sources": [],
@@ -67,14 +69,14 @@ class TokenAnalyzer:
                 namespace=self.cache_namespace
             )
             if cached_result:
-                logger.info(f"📋 Found cached analysis for {token_address}")
+                logger.info(f"Found cached analysis for {token_address}")
                 return cached_result
         except Exception as e:
             logger.warning(f"Cache retrieval failed: {str(e)}")
             analysis_response["warnings"].append(f"Cache retrieval failed: {str(e)}")
         
-        # STEP 1: SECURITY CHECKS FIRST (GOplus and RugCheck)
-        logger.info("🛡️ STEP 1: Running security checks (GOplus + RugCheck)")
+        # STEP 1: SECURITY CHECKS FIRST (GOplus, RugCheck, SolSniffer)
+        logger.info("STEP 1: Running security checks (GOplus + RugCheck + SolSniffer)")
         security_passed, security_data = await self._run_security_checks(token_address, analysis_response)
         
         # Store security data
@@ -83,7 +85,7 @@ class TokenAnalyzer:
         
         # STEP 2: Decide whether to continue based on security results
         if not security_passed:
-            logger.warning(f"⚠️ SECURITY CHECK FAILED for {token_address} - STOPPING ANALYSIS")
+            logger.warning(f"SECURITY CHECK FAILED for {token_address} - STOPPING ANALYSIS")
             analysis_response["metadata"]["analysis_stopped_at_security"] = True
             
             # Generate security-focused analysis and return early
@@ -103,13 +105,13 @@ class TokenAnalyzer:
             
             asyncio.create_task(self._store_analysis_async(analysis_response))
             
-            logger.warning(f"❌ Analysis STOPPED for {token_address} due to security issues in {processing_time:.2f}s")
+            logger.warning(f"Analysis STOPPED for {token_address} due to security issues in {processing_time:.2f}s")
             return analysis_response
         
-        logger.info(f"✅ SECURITY CHECKS PASSED for {token_address} - CONTINUING WITH FULL ANALYSIS")
+        logger.info(f"SECURITY CHECKS PASSED for {token_address} - CONTINUING WITH FULL ANALYSIS")
         
         # STEP 3: Run all other services (Birdeye, Helius, etc.)
-        logger.info("📊 STEP 2: Running market and technical analysis services")
+        logger.info("STEP 2: Running market and technical analysis services")
         await self._run_market_analysis_services(token_address, analysis_response)
         
         # STEP 4: Generate comprehensive analysis
@@ -136,7 +138,7 @@ class TokenAnalyzer:
                 ttl=ttl,
                 namespace=self.cache_namespace
             )
-            logger.info(f"💾 Cached analysis for {token_address} with TTL {ttl}s")
+            logger.info(f"Cached analysis for {token_address} with TTL {ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
@@ -145,7 +147,7 @@ class TokenAnalyzer:
         
         # Log completion
         logger.info(
-            f"✅ FULL Analysis COMPLETED for {token_address} in {processing_time:.2f}s "
+            f"FULL Analysis COMPLETED for {token_address} in {processing_time:.2f}s "
             f"(security passed, sources: {len(analysis_response['data_sources'])})"
         )
         
@@ -157,15 +159,15 @@ class TokenAnalyzer:
         try:
             success = await analysis_storage.store_analysis(analysis_response)
             if success:
-                logger.debug(f"📊 Analysis stored in ChromaDB: {analysis_response.get('analysis_id')}")
+                logger.debug(f"Analysis stored in ChromaDB: {analysis_response.get('analysis_id')}")
             else:
-                logger.debug(f"📊 ChromaDB storage skipped for: {analysis_response.get('analysis_id')}")
+                logger.debug(f"ChromaDB storage skipped for: {analysis_response.get('analysis_id')}")
         except Exception as e:
             # Don't let ChromaDB errors affect the main analysis flow
             logger.warning(f"ChromaDB storage error: {str(e)}")
     
     async def _run_security_checks(self, token_address: str, analysis_response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Run security checks first (GOplus + RugCheck)"""
+        """Run security checks first (GOplus + RugCheck + SolSniffer)"""
         security_data = {
             "goplus_result": None,
             "rugcheck_result": None,
@@ -184,7 +186,7 @@ class TokenAnalyzer:
                 token_address
             )
             analysis_response["metadata"]["services_attempted"] += 1
-            logger.info("🔍 GOplus security check prepared")
+            logger.info("GOplus security check prepared")
         else:
             logger.warning("GOplus client not available")
             analysis_response["warnings"].append("GOplus security check unavailable")
@@ -196,31 +198,31 @@ class TokenAnalyzer:
                 token_address
             )
             analysis_response["metadata"]["services_attempted"] += 1
-            logger.info("🔍 RugCheck analysis prepared")
+            logger.info("RugCheck analysis prepared")
         else:
             logger.warning("RugCheck client not available")
             analysis_response["warnings"].append("RugCheck analysis unavailable")
 
-                # Prepare SolSniffer analysis
+        # Prepare SolSniffer analysis
         if api_manager.clients.get("solsniffer"):
             security_tasks["solsniffer"] = self._safe_service_call(
                 api_manager.clients["solsniffer"].get_token_info, 
                 token_address
             )
             analysis_response["metadata"]["services_attempted"] += 1
-            logger.info("🔍 SolSniffer analysis prepared")
+            logger.info("SolSniffer analysis prepared")
         else:
             logger.warning("SolSniffer client not available")
             analysis_response["warnings"].append("SolSniffer analysis unavailable")
         
         if not security_tasks:
-            logger.error("❌ NO SECURITY SERVICES AVAILABLE - Cannot perform security check")
+            logger.error("NO SECURITY SERVICES AVAILABLE - Cannot perform security check")
             analysis_response["errors"].append("No security services available")
             return False, security_data
         
         # Execute security checks
         try:
-            logger.info(f"🚀 Executing {len(security_tasks)} security checks")
+            logger.info(f"Executing {len(security_tasks)} security checks")
             results = await asyncio.wait_for(
                 asyncio.gather(*security_tasks.values(), return_exceptions=True),
                 timeout=15.0  # Shorter timeout for security checks
@@ -243,12 +245,12 @@ class TokenAnalyzer:
                 result = results[i] if i < len(results) else None
                 
                 if isinstance(result, Exception):
-                    logger.error(f"❌ {task_name} failed: {str(result)}")
+                    logger.error(f"{task_name} failed: {str(result)}")
                     analysis_response["errors"].append(f"{task_name}: {str(result)}")
                     continue
                 
                 if result is None:
-                    logger.warning(f"⚠️ {task_name} returned no data")
+                    logger.warning(f"{task_name} returned no data")
                     analysis_response["warnings"].append(f"{task_name}: No data returned")
                     continue
                 
@@ -269,9 +271,9 @@ class TokenAnalyzer:
                     # Check if GOplus has insufficient data
                     if goplus_issues.get("insufficient_data"):
                         security_data["goplus_insufficient_data"] = True
-                        logger.warning("⚠️ GOplus returned insufficient data")
+                        logger.warning("GOplus returned insufficient data")
                     
-                    logger.info(f"✅ GOplus analysis completed: {len(goplus_issues['critical'])} critical, {len(goplus_issues['warnings'])} warnings")
+                    logger.info(f"GOplus analysis completed: {len(goplus_issues['critical'])} critical, {len(goplus_issues['warnings'])} warnings")
                 
                 # Analyze RugCheck results
                 elif task_name == "rugcheck":
@@ -285,9 +287,9 @@ class TokenAnalyzer:
                     # Check if RugCheck has insufficient data
                     if rugcheck_issues.get("insufficient_data"):
                         security_data["rugcheck_insufficient_data"] = True
-                        logger.warning("⚠️ RugCheck returned insufficient data - ignoring for security decision")
+                        logger.warning("RugCheck returned insufficient data - ignoring for security decision")
                     
-                    logger.info(f"✅ RugCheck analysis completed: {len(rugcheck_issues['critical'])} critical, {len(rugcheck_issues['warnings'])} warnings")
+                    logger.info(f"RugCheck analysis completed: {len(rugcheck_issues['critical'])} critical, {len(rugcheck_issues['warnings'])} warnings")
 
                 # Analyze SolSniffer results
                 elif task_name == "solsniffer":
@@ -301,9 +303,9 @@ class TokenAnalyzer:
                     # Check if SolSniffer has insufficient data
                     if solsniffer_issues.get("insufficient_data"):
                         security_data["solsniffer_insufficient_data"] = True
-                        logger.warning("⚠️ SolSniffer returned insufficient data - ignoring for security decision")
+                        logger.warning("SolSniffer returned insufficient data - ignoring for security decision")
                     
-                    logger.info(f"✅ SolSniffer analysis completed: {len(solsniffer_issues['critical'])} critical, {len(solsniffer_issues['warnings'])} warnings")
+                    logger.info(f"SolSniffer analysis completed: {len(solsniffer_issues['critical'])} critical, {len(solsniffer_issues['warnings'])} warnings")
                     
             except Exception as e:
                 logger.error(f"Error processing {task_name}: {str(e)}")
@@ -311,7 +313,7 @@ class TokenAnalyzer:
         
         # Determine if security checks passed
         if critical_issues_found:
-            logger.warning(f"❌ CRITICAL SECURITY ISSUES FOUND: {security_data['critical_issues']}")
+            logger.warning(f"CRITICAL SECURITY ISSUES FOUND: {security_data['critical_issues']}")
             security_data["overall_safe"] = False
             return False, security_data
         
@@ -321,13 +323,13 @@ class TokenAnalyzer:
         solsniffer_meaningful = "solsniffer" in analysis_response["data_sources"] and not security_data.get("solsniffer_insufficient_data", False)
 
         if not goplus_meaningful and not rugcheck_meaningful and not solsniffer_meaningful:
-            logger.warning("❌ NO MEANINGFUL SECURITY DATA - Cannot verify safety")
+            logger.warning("NO MEANINGFUL SECURITY DATA - Cannot verify safety")
             security_data["overall_safe"] = False
             return False, security_data
 
         # If we have at least one meaningful security check and no critical issues, pass
         meaningful_checks = sum([goplus_meaningful, rugcheck_meaningful, solsniffer_meaningful])
-        logger.info(f"✅ SECURITY CHECKS PASSED ({meaningful_checks} meaningful security services responded)")
+        logger.info(f"SECURITY CHECKS PASSED ({meaningful_checks} meaningful security services responded)")
         security_data["overall_safe"] = True
         return True, security_data
     
@@ -432,7 +434,7 @@ class TokenAnalyzer:
                 
                 # THIS IS THE KEY FIX: If score is 1 AND no other meaningful data exists, treat as no data
                 if score_value == 1 and not rugged and not has_risks and not has_verification:
-                    logger.warning("⚠️ RugCheck returned score 1 with no meaningful data - ignoring for security decision")
+                    logger.warning("RugCheck returned score 1 with no meaningful data - ignoring for security decision")
                     return {"critical": [], "warnings": [], "insufficient_data": True}
                 
                 # If score is 1 but we have other meaningful data, treat score 1 as legitimate low score
@@ -457,7 +459,7 @@ class TokenAnalyzer:
         
         if not has_meaningful_data:
             # RugCheck has no meaningful data - ignore this service for security decision
-            logger.warning("⚠️ RugCheck returned insufficient data - ignoring for security decision")
+            logger.warning("RugCheck returned insufficient data - ignoring for security decision")
             return {"critical": [], "warnings": [], "insufficient_data": True}
         
         return {"critical": critical_issues, "warnings": warnings}
@@ -521,7 +523,7 @@ class TokenAnalyzer:
         birdeye_data = {}
         if api_manager.clients.get("birdeye"):
             try:
-                logger.info("🔧 Processing Birdeye requests sequentially")
+                logger.info("Processing Birdeye requests sequentially")
                 birdeye_client = api_manager.clients["birdeye"]
                 
                 # Price endpoint
@@ -531,9 +533,9 @@ class TokenAnalyzer:
                     )
                     if price_data:
                         birdeye_data["price"] = price_data
-                        logger.info("✅ Birdeye price data collected")
+                        logger.info("Birdeye price data collected")
                 except Exception as e:
-                    logger.warning(f"❌ Birdeye price endpoint failed: {str(e)}")
+                    logger.warning(f"Birdeye price endpoint failed: {str(e)}")
                     analysis_response["warnings"].append(f"Birdeye price failed: {str(e)}")
                 
                 # Wait between Birdeye calls
@@ -546,9 +548,9 @@ class TokenAnalyzer:
                     )
                     if trades_data:
                         birdeye_data["trades"] = trades_data
-                        logger.info("✅ Birdeye trades data collected")
+                        logger.info("Birdeye trades data collected")
                 except Exception as e:
-                    logger.warning(f"❌ Birdeye trades endpoint failed: {str(e)}")
+                    logger.warning(f"Birdeye trades endpoint failed: {str(e)}")
                     analysis_response["warnings"].append(f"Birdeye trades failed: {str(e)}")
                 
                 if birdeye_data:
@@ -558,7 +560,7 @@ class TokenAnalyzer:
                     analysis_response["metadata"]["services_successful"] += 1
                     
             except Exception as e:
-                logger.error(f"❌ Birdeye sequential processing failed: {str(e)}")
+                logger.error(f"Birdeye sequential processing failed: {str(e)}")
                 analysis_response["errors"].append(f"Birdeye failed: {str(e)}")
         
         # OTHER SERVICES - Run in parallel
@@ -591,7 +593,7 @@ class TokenAnalyzer:
         # Execute other services if any
         if other_tasks:
             try:
-                logger.info(f"🚀 Executing {len(other_tasks)} market analysis services")
+                logger.info(f"Executing {len(other_tasks)} market analysis services")
                 results = await asyncio.wait_for(
                     asyncio.gather(*other_tasks.values(), return_exceptions=True),
                     timeout=20.0
@@ -622,10 +624,10 @@ class TokenAnalyzer:
                             analysis_response["data_sources"].append(service_name)
                             analysis_response["metadata"]["services_successful"] += 1
                         
-                        logger.debug(f"✅ {task_name} processed successfully")
+                        logger.debug(f"{task_name} processed successfully")
                         
                     except Exception as e:
-                        logger.warning(f"❌ Error processing {task_name}: {str(e)}")
+                        logger.warning(f"Error processing {task_name}: {str(e)}")
                         analysis_response["errors"].append(f"Error processing {task_name}: {str(e)}")
                         
             except asyncio.TimeoutError:
@@ -788,7 +790,7 @@ class TokenAnalyzer:
         has_name = False
         has_symbol = False
         
-        # Check Helius metadata (keep existing logic)
+        # Check Helius metadata
         helius_data = service_responses.get("helius", {})
         if helius_data:
             if helius_data.get("supply"):
@@ -803,7 +805,7 @@ class TokenAnalyzer:
                     has_name = bool(metadata.get("name"))
                     has_symbol = bool(metadata.get("symbol"))
         
-        # Check SolanaFM data (keep existing logic)
+        # Check SolanaFM data
         solanafm_data = service_responses.get("solanafm", {})
         if solanafm_data and solanafm_data.get("token"):
             token_info = solanafm_data["token"]
@@ -824,7 +826,7 @@ class TokenAnalyzer:
         # Ensure minimum score for tokens that pass security
         final_score = max(60, final_score)
         
-        # Determine risk level (keep existing thresholds)
+        # Determine risk level
         if final_score >= 85:
             risk_level = "low"
             recommendation = "consider"
@@ -838,7 +840,7 @@ class TokenAnalyzer:
             risk_level = "medium"  # Max medium risk if security passed
             recommendation = "caution"
         
-        confidence = min(100, 80 + len(service_responses) * 5)  # Keep existing confidence calculation
+        confidence = min(100, 80 + len(service_responses) * 5)
         
         return {
             "score": round(final_score, 1),
@@ -859,7 +861,7 @@ class TokenAnalyzer:
             result = await service_func(*args, **kwargs) if kwargs else await service_func(*args)
             return result if result is not None else None
         except Exception as e:
-            logger.error(f"❌ {service_func.__name__} failed: {str(e)}")
+            logger.error(f"{service_func.__name__} failed: {str(e)}")
             return None
 
 

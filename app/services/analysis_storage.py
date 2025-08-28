@@ -61,91 +61,6 @@ class AnalysisStorageService:
             logger.warning(f"Failed to store analysis in ChromaDB: {str(e)}")
             return False
     
-    def _extract_analysis_data(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key data from analysis result for storage"""
-        try:
-            # Parse timestamp
-            timestamp = analysis_result.get("timestamp")
-            if timestamp:
-                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                timestamp_unix = int(dt.timestamp())
-            else:
-                dt = datetime.utcnow()
-                timestamp_unix = int(dt.timestamp())
-            
-            # Extract token information
-            token_name = self._extract_token_name(analysis_result)
-            token_symbol = self._extract_token_symbol(analysis_result)
-            
-            # Extract price data
-            price_data = self._extract_price_data(analysis_result)
-            
-            # Extract security analysis
-            security_analysis = analysis_result.get("security_analysis", {})
-            security_status = "unknown"
-            if analysis_result.get("metadata", {}).get("analysis_stopped_at_security"):
-                security_status = "failed"
-            elif security_analysis.get("overall_safe"):
-                critical_issues = len(security_analysis.get("critical_issues", []))
-                warnings = len(security_analysis.get("warnings", []))
-                if critical_issues == 0:
-                    security_status = "passed" if warnings == 0 else "warning"
-                else:
-                    security_status = "failed"
-            
-            # Extract overall analysis
-            overall_analysis = analysis_result.get("overall_analysis", {})
-            
-            # Compile extracted data
-            doc_data = {
-                # Identity
-                "analysis_id": analysis_result.get("analysis_id"),
-                "token_address": analysis_result.get("token_address"),
-                "timestamp": timestamp or dt.isoformat(),
-                "timestamp_unix": timestamp_unix,
-                "source_event": analysis_result.get("source_event", "unknown"),
-                
-                # Core Results - safe extraction with defaults
-                "security_status": security_status,
-                "analysis_stopped_at_security": analysis_result.get("metadata", {}).get("analysis_stopped_at_security", False),
-                "overall_score": float(overall_analysis.get("score", 0)),
-                "risk_level": overall_analysis.get("risk_level", "unknown"),
-                "recommendation": overall_analysis.get("recommendation", "unknown"),
-                "confidence_score": float(overall_analysis.get("confidence_score", 0)),
-                
-                # Token Info
-                "token_name": token_name,
-                "token_symbol": token_symbol,
-                
-                # Price Data (at time of analysis) - already safe from _extract_price_data
-                "price_usd": price_data.get("current_price", 0.0),
-                "price_change_24h": price_data.get("price_change_24h", 0.0),
-                "volume_24h": price_data.get("volume_24h", 0.0),
-                "market_cap": price_data.get("market_cap", 0.0),
-                "liquidity": price_data.get("liquidity", 0.0),
-                
-                # Security Summary
-                "security_score": self._calculate_security_score(security_analysis),
-                "critical_issues_count": len(security_analysis.get("critical_issues", [])),
-                "warnings_count": len(security_analysis.get("warnings", [])),
-                "security_sources": self._get_security_sources(security_analysis),
-                
-                # Analysis Metadata - safe extraction
-                "data_sources": analysis_result.get("data_sources", []),
-                "services_attempted": int(analysis_result.get("metadata", {}).get("services_attempted", 0)),
-                "services_successful": int(analysis_result.get("metadata", {}).get("services_successful", 0)),
-                "processing_time": float(analysis_result.get("metadata", {}).get("processing_time_seconds", 0.0)),
-                
-                # Store full result for complex queries
-                "full_analysis_json": json.dumps(analysis_result, default=str)
-            }
-            
-            return doc_data
-            
-        except Exception as e:
-            logger.error(f"Error extracting analysis data: {str(e)}")
-            return None
-    
     def _extract_token_name(self, analysis_result: Dict[str, Any]) -> str:
         """Extract token name from analysis result"""
         # Try Solsniffer info first
@@ -264,9 +179,9 @@ class AnalysisStorageService:
         if security_analysis.get("solsniffer_result"):
             sources.append("solsniffer")
         return sources
-    
+
     def _generate_searchable_content(self, doc_data: Dict[str, Any]) -> str:
-        """Generate searchable content for vector search"""
+        """Generate searchable content for vector search with AI support"""
         
         # Build searchable content
         content_parts = []
@@ -275,11 +190,30 @@ class AnalysisStorageService:
         if doc_data.get("token_name") != "Unknown Token":
             content_parts.append(f"Token: {doc_data['token_name']} ({doc_data['token_symbol']})")
         
+        # Analysis type and AI enhancement
+        analysis_type = doc_data.get("analysis_type", "quick")
+        if doc_data.get("has_ai_analysis"):
+            content_parts.append(f"AI-Enhanced {analysis_type} analysis using Llama 3.0")
+        else:
+            content_parts.append(f"Traditional {analysis_type} analysis")
+        
         # Analysis results
         content_parts.append(f"Security status: {doc_data['security_status']}")
         content_parts.append(f"Risk level: {doc_data['risk_level']}")
         content_parts.append(f"Recommendation: {doc_data['recommendation']}")
         content_parts.append(f"Overall score: {doc_data['overall_score']}")
+        
+        # AI-specific information
+        if doc_data.get("has_ai_analysis"):
+            ai_score = doc_data.get("ai_score", 0)
+            ai_recommendation = doc_data.get("ai_recommendation", "unknown")
+            content_parts.append(f"AI analysis score: {ai_score}")
+            content_parts.append(f"AI recommendation: {ai_recommendation}")
+            
+            # AI stop flags
+            ai_stop_flags_count = doc_data.get("ai_stop_flags_count", 0)
+            if ai_stop_flags_count > 0:
+                content_parts.append(f"AI identified {ai_stop_flags_count} stop flags")
         
         # Security details
         if doc_data['critical_issues_count'] > 0:
@@ -289,7 +223,7 @@ class AnalysisStorageService:
         
         # Price information
         if doc_data.get('price_usd', 0) > 0:
-            content_parts.append(f"Price: ${doc_data['price_usd']:.6f}")
+            content_parts.append(f"Price: ${doc_data['price_usd']:.8f}")
             if doc_data.get('price_change_24h', 0) != 0:
                 change_direction = "increased" if doc_data['price_change_24h'] > 0 else "decreased"
                 content_parts.append(f"Price {change_direction} {abs(doc_data['price_change_24h']):.2f}% in 24h")
@@ -307,14 +241,122 @@ class AnalysisStorageService:
         if doc_data.get('data_sources'):
             content_parts.append(f"Data from: {', '.join(doc_data['data_sources'])}")
         
-        # Analysis source
+        # Analysis source and performance
         content_parts.append(f"Analysis source: {doc_data['source_event']}")
+        
+        processing_time = doc_data.get('processing_time', 0)
+        ai_processing_time = doc_data.get('ai_processing_time', 0)
+        if ai_processing_time > 0:
+            content_parts.append(f"Processing time: {processing_time:.2f}s total ({ai_processing_time:.2f}s AI)")
+        else:
+            content_parts.append(f"Processing time: {processing_time:.2f}s")
         
         # Timestamp
         dt = datetime.fromtimestamp(doc_data['timestamp_unix'])
         content_parts.append(f"Analyzed on: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
         
         return ". ".join(content_parts) + "."
+        
+    def _extract_analysis_data(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract key data from analysis result for storage with AI support"""
+        try:
+            # Parse timestamp
+            timestamp = analysis_result.get("timestamp")
+            if timestamp:
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                timestamp_unix = int(dt.timestamp())
+            else:
+                dt = datetime.utcnow()
+                timestamp_unix = int(dt.timestamp())
+            
+            # Extract token information
+            token_name = self._extract_token_name(analysis_result)
+            token_symbol = self._extract_token_symbol(analysis_result)
+            
+            # Extract price data
+            price_data = self._extract_price_data(analysis_result)
+            
+            # Extract security analysis
+            security_analysis = analysis_result.get("security_analysis", {})
+            security_status = "unknown"
+            if analysis_result.get("metadata", {}).get("analysis_stopped_at_security"):
+                security_status = "failed"
+            elif security_analysis.get("overall_safe"):
+                critical_issues = len(security_analysis.get("critical_issues", []))
+                warnings = len(security_analysis.get("warnings", []))
+                if critical_issues == 0:
+                    security_status = "passed" if warnings == 0 else "warning"
+                else:
+                    security_status = "failed"
+            
+            # Extract overall analysis
+            overall_analysis = analysis_result.get("overall_analysis", {})
+            
+            # NEW: Extract AI analysis data
+            ai_analysis = analysis_result.get("ai_analysis", {})
+            has_ai_analysis = bool(ai_analysis)
+            
+            # Compile extracted data
+            doc_data = {
+                # Identity
+                "analysis_id": analysis_result.get("analysis_id"),
+                "token_address": analysis_result.get("token_address"),
+                "timestamp": timestamp or dt.isoformat(),
+                "timestamp_unix": timestamp_unix,
+                "source_event": analysis_result.get("source_event", "unknown"),
+                "analysis_type": analysis_result.get("analysis_type", "quick"),
+                
+                # Core Results - safe extraction with defaults
+                "security_status": security_status,
+                "analysis_stopped_at_security": analysis_result.get("metadata", {}).get("analysis_stopped_at_security", False),
+                "overall_score": float(overall_analysis.get("score", 0)),
+                "risk_level": overall_analysis.get("risk_level", "unknown"),
+                "recommendation": overall_analysis.get("recommendation", "unknown"),
+                "confidence_score": float(overall_analysis.get("confidence_score", 0)),
+                
+                # NEW: AI Analysis Results
+                "has_ai_analysis": has_ai_analysis,
+                "ai_score": float(ai_analysis.get("ai_score", 0)) if has_ai_analysis else 0,
+                "ai_risk_assessment": ai_analysis.get("risk_assessment", "unknown") if has_ai_analysis else "unknown",
+                "ai_recommendation": ai_analysis.get("recommendation", "unknown") if has_ai_analysis else "unknown",
+                "ai_confidence": float(ai_analysis.get("confidence", 0)) if has_ai_analysis else 0,
+                "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if has_ai_analysis else 0,
+                "ai_enhanced": overall_analysis.get("ai_enhanced", False),
+                "traditional_score": float(overall_analysis.get("traditional_score", overall_analysis.get("score", 0))),
+                
+                # Token Info
+                "token_name": token_name,
+                "token_symbol": token_symbol,
+                
+                # Price Data (at time of analysis) - already safe from _extract_price_data
+                "price_usd": price_data.get("current_price", 0.0),
+                "price_change_24h": price_data.get("price_change_24h", 0.0),
+                "volume_24h": price_data.get("volume_24h", 0.0),
+                "market_cap": price_data.get("market_cap", 0.0),
+                "liquidity": price_data.get("liquidity", 0.0),
+                
+                # Security Summary
+                "security_score": self._calculate_security_score(security_analysis),
+                "critical_issues_count": len(security_analysis.get("critical_issues", [])),
+                "warnings_count": len(security_analysis.get("warnings", [])),
+                "security_sources": self._get_security_sources(security_analysis),
+                
+                # Analysis Metadata - safe extraction
+                "data_sources": analysis_result.get("data_sources", []),
+                "services_attempted": int(analysis_result.get("metadata", {}).get("services_attempted", 0)),
+                "services_successful": int(analysis_result.get("metadata", {}).get("services_successful", 0)),
+                "processing_time": float(analysis_result.get("metadata", {}).get("processing_time_seconds", 0.0)),
+                "ai_processing_time": float(ai_analysis.get("processing_time", 0.0)) if has_ai_analysis else 0.0,
+                
+                # Store full result for complex queries
+                "full_analysis_json": json.dumps(analysis_result, default=str)
+            }
+            
+            return doc_data
+            
+        except Exception as e:
+            logger.error(f"Error extracting analysis data: {str(e)}")
+            return None
     
     def _generate_metadata(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
         """Generate metadata for filtering and exact searches"""

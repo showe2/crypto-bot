@@ -386,11 +386,11 @@ AI{% endblock %} {% block content %}
                   </button>
                 </div>
 
-                <!-- Time and Source -->
+                <!-- Time and Source - FIXED: Using formatDate function -->
                 <div class="flex items-center justify-end space-x-2">
                   <span
                     class="text-xs text-gray-500"
-                    x-text="analysis.time"
+                    x-text="formatDate(analysis.timestamp)"
                   ></span>
                   <span class="text-xs text-gray-400">•</span>
                   <span
@@ -531,6 +531,36 @@ AI{% endblock %} {% block content %}
             recommendations: [],
             timestamp: Math.floor(Date.now() / 1000),
           };
+        }
+      },
+
+      // FIXED: Date formatting function
+      formatDate(timestamp) {
+        if (!timestamp) return "Unknown";
+
+        try {
+          let date;
+          if (typeof timestamp === "string") {
+            date = new Date(timestamp);
+          } else if (typeof timestamp === "number") {
+            // Handle both seconds and milliseconds timestamps
+            date = new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
+          } else {
+            return "Unknown";
+          }
+
+          if (isNaN(date.getTime())) {
+            return "Invalid date";
+          }
+
+          const day = String(date.getDate()).padStart(2, "0");
+          const month = String(date.getMonth() + 1).padStart(2, "0");
+          const year = date.getFullYear();
+
+          return `${day}.${month}.${year}`;
+        } catch (error) {
+          console.error("Error formatting date:", error);
+          return "Invalid date";
         }
       },
 

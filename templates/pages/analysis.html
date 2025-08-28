@@ -36,6 +36,66 @@
     <h2 class="text-xl font-semibold text-gray-900 mb-6">Analyze Token</h2>
 
     <div class="grid grid-cols-1 gap-6">
+      <!-- Analysis Type Selection -->
+      <div>
+        <label class="form-label">Analysis Type</label>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+          <!-- Quick Analysis -->
+          <div
+            class="border-2 rounded-lg p-4 cursor-pointer transition-colors"
+            :class="form.analysisType === 'quick' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 hover:border-gray-300'"
+            @click="form.analysisType = 'quick'"
+          >
+            <div class="flex items-center">
+              <input
+                type="radio"
+                x-model="form.analysisType"
+                value="quick"
+                class="text-blue-600 mr-3"
+                :disabled="isAnalyzing"
+              />
+              <div class="flex-1">
+                <h3 class="font-semibold text-gray-900">Quick Analysis</h3>
+                <p class="text-sm text-gray-600 mt-1">
+                  Security + Market data only
+                </p>
+                <div class="flex items-center mt-2 text-sm">
+                  <i class="fas fa-clock text-blue-500 mr-1"></i>
+                  <span class="text-gray-500">~5-10 seconds</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Deep Analysis -->
+          <div
+            class="border-2 rounded-lg p-4 cursor-pointer transition-colors"
+            :class="form.analysisType === 'deep' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'"
+            @click="form.analysisType = 'deep'"
+          >
+            <div class="flex items-center">
+              <input
+                type="radio"
+                x-model="form.analysisType"
+                value="deep"
+                class="text-purple-600 mr-3"
+                :disabled="isAnalyzing"
+              />
+              <div class="flex-1">
+                <h3 class="font-semibold text-gray-900">Deep Analysis</h3>
+                <p class="text-sm text-gray-600 mt-1">
+                  AI-Enhanced with Llama 3.0
+                </p>
+                <div class="flex items-center mt-2 text-sm">
+                  <i class="fas fa-brain text-purple-500 mr-1"></i>
+                  <span class="text-gray-500">~15-30 seconds</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Token Input -->
       <div>
         <label class="form-label">Token Mint Address</label>
@@ -100,7 +160,14 @@
         </span>
         <span x-show="isAnalyzing" class="flex items-center justify-center">
           <div class="loading-spinner mr-2"></div>
-          <span x-text="analysisProgress.message"></span>
+          <span
+            x-show="form.analysisType === 'quick'"
+            x-text="'Analyzing Token...'"
+          ></span>
+          <span
+            x-show="form.analysisType === 'deep'"
+            x-text="'AI Analysis in Progress...'"
+          ></span>
         </span>
       </button>
 
@@ -108,7 +175,7 @@
       <div x-show="hasResults" x-transition class="space-y-6">
         <!-- Security Failure Alert -->
         <div
-          x-show="getSecurityStatus() === 'unsafe' && results.metadata?.analysis_stopped_at_security"
+          x-show="getSecurityStatus() === 'unsafe' && results && results.metadata && results.metadata.analysis_stopped_at_security"
           class="bg-red-50 border-l-4 border-red-400 p-6 rounded-r-xl"
         >
           <div class="flex">
@@ -252,7 +319,7 @@
             </div>
 
             <!-- Market Cap -->
-            <div class="text-center" x-show="getPriceData().liquidity">
+            <div class="text-center" x-show="getPriceData().market_cap">
               <div
                 class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
               >
@@ -283,7 +350,7 @@
 
         <!-- Security Warning for Caution Status -->
         <div
-          x-show="getSecurityStatus() === 'warning' && !results.metadata?.analysis_stopped_at_security"
+          x-show="getSecurityStatus() === 'warning' && results && results.metadata && !results.metadata.analysis_stopped_at_security"
           class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg"
         >
           <div class="flex">
@@ -304,36 +371,75 @@
           </div>
         </div>
 
-        <!-- TWO COLUMN LAYOUT: Quick Analysis (LEFT) + Security Analysis (RIGHT) -->
+        <!-- TWO COLUMN LAYOUT: Analysis Results (LEFT) + Security Analysis (RIGHT) -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <!-- LEFT COLUMN: Quick Analysis -->
+          <!-- LEFT COLUMN: Analysis Results (Shows regardless of quick/deep) -->
           <div
-            x-show="getQuickAnalysis() && !shouldHideOverview()"
+            x-show="getAnalysisResults() && !shouldHideOverview()"
             class="bg-white rounded-xl shadow-lg p-6"
           >
             <div class="flex items-center justify-between mb-4">
               <h3 class="text-lg font-semibold text-gray-900">
-                Quick Analysis
+                Analysis Results
               </h3>
               <div class="flex items-center space-x-2">
-                <i class="fas fa-bolt text-yellow-500"></i>
-                <span class="text-sm text-gray-500">Frontend</span>
+                <i
+                  class="fas text-yellow-500"
+                  :class="(results && results.analysis_type === 'deep') ? 'fa-brain' : 'fa-bolt'"
+                ></i>
+                <span class="text-sm text-gray-500">
+                  <span x-show="results && results.analysis_type === 'quick'"
+                    >Quick</span
+                  >
+                  <span x-show="results && results.analysis_type === 'deep'"
+                    >AI-Enhanced</span
+                  >
+                </span>
               </div>
             </div>
 
-            <template x-if="getQuickAnalysis()">
+            <template x-if="getAnalysisResults()">
               <div class="space-y-4">
-                <!-- Score -->
+                <!-- Score Display -->
                 <div class="text-center p-4 bg-gray-50 rounded-lg">
-                  <div
-                    class="text-3xl font-bold text-blue-600"
-                    x-text="Math.round((getQuickAnalysis().score || 0) * 100)"
-                  ></div>
-                  <div class="text-sm text-gray-500">Overall Score</div>
+                  <div class="flex items-center justify-center space-x-4">
+                    <!-- Main Score -->
+                    <div class="text-center">
+                      <div
+                        class="text-3xl font-bold"
+                        :class="(results && results.analysis_type === 'deep') ? 'text-purple-600' : 'text-blue-600'"
+                        x-text="Math.round(getAnalysisResults().score || 0)"
+                      ></div>
+                      <div class="text-sm text-gray-500">
+                        <span
+                          x-show="results && results.analysis_type === 'quick'"
+                          >Overall Score</span
+                        >
+                        <span
+                          x-show="results && results.analysis_type === 'deep'"
+                          >Enhanced Score</span
+                        >
+                      </div>
+                    </div>
+
+                    <!-- AI Score (if deep analysis) -->
+                    <div
+                      x-show="results && results.analysis_type === 'deep' && getAIAnalysis()"
+                      class="text-center"
+                    >
+                      <div
+                        class="text-2xl font-bold text-gray-600"
+                        x-text="'AI: ' + Math.round(getAIAnalysis().ai_score || 0)"
+                      ></div>
+                      <div class="text-xs text-gray-400">Llama 3.0</div>
+                    </div>
+                  </div>
+
                   <div class="progress-bar mt-2">
                     <div
-                      class="progress-bar-fill bg-blue-600"
-                      :style="`width: ${(getQuickAnalysis().score || 0) * 100}%`"
+                      class="progress-bar-fill"
+                      :class="(results && results.analysis_type === 'deep') ? 'bg-purple-600' : 'bg-blue-600'"
+                      :style="`width: ${getAnalysisResults().score || 0}%`"
                     ></div>
                   </div>
                 </div>
@@ -344,8 +450,8 @@
                     <span class="text-gray-700">Risk Level:</span>
                     <span
                       class="px-3 py-1 rounded-full text-sm font-medium"
-                      :class="getRiskLevelClass(getQuickAnalysis().risk_level)"
-                      x-text="(getQuickAnalysis().risk_level || 'unknown').toUpperCase()"
+                      :class="getRiskLevelClass(getAnalysisResults().risk_level)"
+                      x-text="(getAnalysisResults().risk_level || 'unknown').toUpperCase()"
                     ></span>
                   </div>
 
@@ -353,23 +459,38 @@
                     <span class="text-gray-700">Recommendation:</span>
                     <span
                       class="px-3 py-1 rounded-full text-sm font-medium"
-                      :class="getRecommendationClass(getQuickAnalysis().recommendation)"
-                      x-text="getQuickAnalysis().recommendation || 'HOLD'"
+                      :class="getRecommendationClass(getAnalysisResults().recommendation)"
+                      x-text="getAnalysisResults().recommendation || 'HOLD'"
+                    ></span>
+                  </div>
+
+                  <!-- AI Recommendation (if different from traditional) -->
+                  <div
+                    x-show="results && results.analysis_type === 'deep' && getAIAnalysis() && getAIAnalysis().recommendation !== getAnalysisResults().recommendation"
+                    class="flex items-center justify-between border-t pt-2 mt-2"
+                  >
+                    <span class="text-gray-700">AI Recommendation:</span>
+                    <span
+                      class="px-3 py-1 rounded-full text-sm font-medium border-2 border-purple-200"
+                      :class="getRecommendationClass(getAIAnalysis().recommendation)"
+                      x-text="getAIAnalysis().recommendation || 'HOLD'"
                     ></span>
                   </div>
                 </div>
 
                 <!-- Key Insights -->
-                <div x-show="getQuickAnalysis().key_insights?.length">
+                <div
+                  x-show="getAnalysisResults().positive_signals && getAnalysisResults().positive_signals.length"
+                >
                   <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
                   <ul class="space-y-1">
                     <template
-                      x-for="insight in getQuickAnalysis().key_insights"
+                      x-for="insight in getAnalysisResults().positive_signals"
                       :key="insight"
                     >
                       <li class="text-sm text-gray-600 flex items-start">
                         <i
-                          class="fas fa-chevron-right text-blue-500 mr-2 mt-0.5 text-xs"
+                          class="fas fa-chevron-right text-green-500 mr-2 mt-0.5 text-xs"
                         ></i>
                         <span x-text="insight"></span>
                       </li>
@@ -377,13 +498,42 @@
                   </ul>
                 </div>
 
+                <!-- AI Stop Flags (if any) -->
+                <div
+                  x-show="results && results.analysis_type === 'deep' && getAIAnalysis() && getAIAnalysis().stop_flags && getAIAnalysis().stop_flags.length"
+                  class="border-t pt-3"
+                >
+                  <h4 class="font-medium text-red-700 mb-2 flex items-center">
+                    <i
+                      class="fas fa-exclamation-triangle text-red-500 mr-2"
+                    ></i>
+                    AI Stop Flags:
+                  </h4>
+                  <ul class="space-y-1">
+                    <template
+                      x-for="flag in getAIAnalysis().stop_flags"
+                      :key="flag"
+                    >
+                      <li class="text-sm text-red-600 flex items-start">
+                        <i
+                          class="fas fa-times-circle text-red-500 mr-2 mt-0.5 text-xs"
+                        ></i>
+                        <span x-text="flag"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+
                 <!-- Processing Time -->
-                <div class="text-xs text-gray-500 text-center">
+                <div class="text-xs text-gray-500 text-center border-t pt-3">
                   Processed in
                   <span
-                    x-text="(getQuickAnalysis().processing_time || 0).toFixed(2)"
+                    x-text="(getAnalysisResults().processing_time || (results && results.metadata && results.metadata.processing_time_seconds) || 0).toFixed(2)"
                   ></span
                   >s
+                  <span x-show="results && results.analysis_type === 'deep'">
+                    (AI-Enhanced)</span
+                  >
                 </div>
               </div>
             </template>
@@ -537,14 +687,14 @@
               <div class="text-sm text-gray-500">Analysis ID</div>
               <div
                 class="font-mono text-sm"
-                x-text="results?.analysis_id || 'N/A'"
+                x-text="(results && results.analysis_id) || 'N/A'"
               ></div>
             </div>
             <div>
               <div class="text-sm text-gray-500">Processing Time</div>
               <div
                 class="font-medium"
-                x-text="(results?.metadata.processing_time_seconds || 0).toFixed(2) + 's'"
+                x-text="((results && results.metadata && results.metadata.processing_time_seconds) || 0).toFixed(2) + 's'"
               ></div>
             </div>
             <div>
@@ -558,7 +708,7 @@
               <div class="text-sm text-gray-500">Analysis Date</div>
               <div
                 class="font-medium"
-                x-text="results?.timestamp ? new Date(results.timestamp).toLocaleDateString() : 'N/A'"
+                x-text="(results && results.timestamp) ? new Date(results.timestamp).toLocaleDateString() : 'N/A'"
               ></div>
             </div>
           </div>
@@ -570,16 +720,12 @@
           return {
             form: {
               tokenMint: '{{ selected_token or "" }}',
+              analysisType: "quick", // Default to quick analysis
             },
             isAnalyzing: false,
             hasResults: false,
             results: null,
             showSecurityDetails: false,
-            analysisProgress: {
-              step: "Initializing...",
-              message: "Starting analysis...",
-              percent: 0,
-            },
 
             get isValidAddress() {
               return this.isValidSolanaAddress(this.form.tokenMint);
@@ -611,16 +757,26 @@
               this.results = null;
 
               try {
-                const result = await this.callQuickAnalysis(
-                  this.form.tokenMint
-                );
+                let result;
+
+                if (this.form.analysisType === "deep") {
+                  result = await this.callDeepAnalysis(this.form.tokenMint);
+                  this.showNotification(
+                    "success",
+                    "Deep Analysis Complete",
+                    "AI-enhanced token analysis completed successfully"
+                  );
+                } else {
+                  result = await this.callQuickAnalysis(this.form.tokenMint);
+                  this.showNotification(
+                    "success",
+                    "Quick Analysis Complete",
+                    "Token analysis completed successfully"
+                  );
+                }
+
                 this.results = result;
                 this.hasResults = true;
-                this.showNotification(
-                  "success",
-                  "Analysis Complete",
-                  "Token analysis completed successfully"
-                );
               } catch (error) {
                 this.showNotification(
                   "error",
@@ -650,11 +806,87 @@
               return await response.json();
             },
 
+            async callDeepAnalysis(tokenMint) {
+              const response = await fetch(`/deep/${tokenMint}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+              });
+
+              if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(
+                  errorData.message ||
+                    errorData.detail ||
+                    `HTTP ${response.status}`
+                );
+              }
+
+              return await response.json();
+            },
+
             // Control visibility of overview based on security status
             shouldHideOverview() {
               return (
-                this.results?.metadata?.analysis_stopped_at_security === true
+                this.results &&
+                this.results.metadata &&
+                this.results.metadata.analysis_stopped_at_security === true
               );
+            },
+
+            // Get analysis results based on type
+            getAnalysisResults() {
+              if (!this.results) return null;
+
+              if (this.results.overall_analysis) {
+                return {
+                  score: this.results.overall_analysis.score,
+                  risk_level: this.results.overall_analysis.risk_level,
+                  recommendation: this.results.overall_analysis.recommendation,
+                  positive_signals:
+                    this.results.overall_analysis.positive_signals || [],
+                  processing_time:
+                    this.results.metadata?.processing_time_seconds || 0,
+                  confidence:
+                    this.results.overall_analysis.confidence_score || 0,
+                  ai_enhanced:
+                    this.results.overall_analysis.ai_enhanced || false,
+                };
+              }
+              return null;
+            },
+
+            // Get AI analysis data (deep analysis only)
+            getAIAnalysis() {
+              if (!this.results || this.results.analysis_type !== "deep")
+                return null;
+              return this.results.ai_analysis || null;
+            },
+
+            // Legacy function for backward compatibility
+            getQuickAnalysis() {
+              return this.getAnalysisResults();
+            },
+
+            // Get price data with safe fallbacks
+            getPriceData() {
+              if (!this.results) return {};
+              const birdeyePrice =
+                this.results?.service_responses?.birdeye?.price;
+              const solSnifferData =
+                this.results?.service_responses?.solsniffer;
+
+              if (birdeyePrice) {
+                return {
+                  value: birdeyePrice.value,
+                  price_change_24h: birdeyePrice.price_change_24h,
+                  volume_24h: birdeyePrice.volume_24h,
+                  market_cap:
+                    birdeyePrice.market_cap ||
+                    (solSnifferData && solSnifferData.marketCap),
+                  liquidity: birdeyePrice.liquidity,
+                };
+              }
+              return {};
             },
 
             // Security Analysis Functions
@@ -670,7 +902,11 @@
               let securityScore = 100;
 
               // CRITICAL FAILURE CASES
-              if (this.results.metadata?.analysis_stopped_at_security) {
+              if (
+                this.results &&
+                this.results.metadata &&
+                this.results.metadata.analysis_stopped_at_security
+              ) {
                 const criticalCount = this.getCriticalIssues().length;
 
                 // Severe penalty for analysis being stopped
@@ -718,58 +954,6 @@
                 securityScore += 3; // Bonus for comprehensive security check
               }
 
-              // CHECK FOR SPECIFIC POSITIVE SECURITY INDICATORS
-              // Check if GOplus shows good security practices
-              if (hasGoPlusData && typeof security.goplus_result === "object") {
-                const goplus = security.goplus_result;
-
-                // Bonus for tokens without dangerous authorities
-                let authorityBonus = 0;
-                if (
-                  goplus.mintable === "0" ||
-                  (goplus.mintable && goplus.mintable.status === "0")
-                ) {
-                  authorityBonus += 2; // No mint authority
-                }
-                if (
-                  goplus.freezable === "0" ||
-                  (goplus.freezable && goplus.freezable.status === "0")
-                ) {
-                  authorityBonus += 2; // No freeze authority
-                }
-
-                securityScore += authorityBonus;
-              }
-
-              // CHECK RUGCHECK POSITIVE INDICATORS
-              if (
-                hasRugCheckData &&
-                typeof security.rugcheck_result === "object"
-              ) {
-                const rugcheck = security.rugcheck_result;
-
-                // Bonus for verified tokens
-                if (
-                  rugcheck.verification &&
-                  rugcheck.verification.verified === true
-                ) {
-                  securityScore += 3;
-                }
-
-                // Bonus for good RugCheck score (if meaningful data exists)
-                const score = rugcheck.score;
-                if (score && score !== 1) {
-                  // Ignore score 1 as per existing logic
-                  try {
-                    const scoreValue = parseFloat(score);
-                    if (scoreValue >= 80) securityScore += 5;
-                    else if (scoreValue >= 60) securityScore += 2;
-                  } catch (e) {
-                    // Invalid score, ignore
-                  }
-                }
-              }
-
               // Ensure score stays within reasonable bounds
               securityScore = Math.max(5, Math.min(100, securityScore));
 
@@ -781,7 +965,11 @@
               if (!security) return "unknown";
 
               // Critical failure cases
-              if (this.results.metadata?.analysis_stopped_at_security)
+              if (
+                this.results &&
+                this.results.metadata &&
+                this.results.metadata.analysis_stopped_at_security
+              )
                 return "unsafe";
 
               const criticalIssues = security.critical_issues || [];
@@ -870,9 +1058,9 @@
             getTokenSymbol() {
               if (!this.results) return "N/A";
 
-              const solSnifferSybmol =
+              const solSnifferSymbol =
                 this.results?.service_responses?.solsniffer?.tokenSymbol;
-              if (solSnifferSybmol) return solSnifferSybmol;
+              if (solSnifferSymbol) return solSnifferSymbol;
 
               const heliusSymbol =
                 this.results?.service_responses?.helius?.metadata
@@ -884,44 +1072,6 @@
               if (solanafmSymbol) return solanafmSymbol;
 
               return "N/A";
-            },
-
-            getPriceData() {
-              if (!this.results) return {};
-              const birdeyePrice =
-                this.results?.service_responses?.birdeye?.price;
-              const solSnifferData =
-                this.results?.service_responses?.solsniffer;
-
-              if (birdeyePrice) {
-                return {
-                  value: birdeyePrice.value,
-                  price_change_24h: birdeyePrice.price_change_24h,
-                  volume_24h: birdeyePrice.volume_24h,
-                  market_cap:
-                    birdeyePrice.market_cap || solSnifferData.marketCap,
-                  liquidity: birdeyePrice.liquidity,
-                };
-              }
-              return {};
-            },
-
-            getQuickAnalysis() {
-              if (!this.results) return null;
-              if (this.results.overall_analysis) {
-                return {
-                  score: this.results.overall_analysis.score / 100,
-                  risk_level: this.results.overall_analysis.risk_level,
-                  recommendation: this.results.overall_analysis.recommendation,
-                  key_insights:
-                    this.results.overall_analysis.positive_signals || [],
-                  processing_time:
-                    this.results.metadata?.processing_time_seconds || 0,
-                  confidence:
-                    this.results.overall_analysis.confidence_score || 0,
-                };
-              }
-              return null;
             },
 
             getAnalysisScore() {
@@ -1074,6 +1224,9 @@
                 HOLD: "bg-yellow-100 text-yellow-800",
                 CAUTION: "bg-orange-100 text-orange-800",
                 AVOID: "bg-red-100 text-red-800",
+                consider: "bg-blue-100 text-blue-800",
+                caution: "bg-orange-100 text-orange-800",
+                avoid: "bg-red-100 text-red-800",
               };
               return classes[recommendation] || "bg-gray-100 text-gray-800";
             },
@@ -1140,6 +1293,37 @@
         .toast-message {
           font-size: 13px;
           opacity: 0.9;
+        }
+
+        .progress-bar {
+          width: 100%;
+          height: 8px;
+          background-color: #e5e7eb;
+          border-radius: 4px;
+          overflow: hidden;
+        }
+
+        .progress-bar-fill {
+          height: 100%;
+          transition: width 0.3s ease;
+        }
+
+        .loading-spinner {
+          width: 16px;
+          height: 16px;
+          border: 2px solid transparent;
+          border-top: 2px solid currentColor;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+          0% {
+            transform: rotate(0deg);
+          }
+          100% {
+            transform: rotate(360deg);
+          }
         }
       </style>
 

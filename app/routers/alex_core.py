@@ -14,6 +14,7 @@ from app.utils.health import health_check_all_services
 # Import your existing token analyzer
 from app.services.token_analyzer import token_analyzer
 from app.services.analysis_storage import analysis_storage
+from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
 
 # Settings and dependencies
 settings = get_settings()
@@ -165,14 +166,23 @@ async def marketplace_page(request: Request):
 # TOKEN ANALYSIS ENDPOINTS (Frontend Integration)
 # ==============================================
 
-@router.post("/quick/{token_mint}", summary="Quick Token Analysis - Frontend Integration")
-async def quick_analysis_endpoint(
+@router.post("/deep/{token_mint}", summary="Deep Token Analysis with AI Integration")
+async def deep_analysis_endpoint(
     token_mint: str = Path(..., description="Token mint address"),
+    force_refresh: bool = Query(False, description="Force refresh cached data"),
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Quick token analysis endpoint integrated with your existing token analyzer
-    This uses the comprehensive analysis from your token_analyzer service
+    Deep token analysis with AI integration using Llama 3.0
+    
+    This endpoint provides comprehensive analysis including:
+    - Security checks (GOplus, RugCheck, SolSniffer)  
+    - Market analysis (Birdeye, Helius, SolanaFM, DexScreener)
+    - AI analysis with Llama 3.0 (MCAP, liquidity, volume, holders, LP, dev %, snipers/bundlers)
+    - Enhanced scoring system combining traditional + AI insights
+    - Structured recommendations with stop flags
+    
+    Flow: Security → Market → AI → Enhanced Analysis → Database → Response
     """
     start_time = time.time()
     
@@ -184,32 +194,144 @@ async def quick_analysis_endpoint(
                 detail="Invalid Solana token mint address format"
             )
         
-        logger.info(f"🚀 Frontend quick analysis request for {token_mint}")
+        logger.info(f"🔍 Deep analysis request for {token_mint}")
         
-        # Use your existing token analyzer's comprehensive analysis
-        analysis_result = await token_analyzer.analyze_token_comprehensive(token_mint, "frontend_quick")
+        # Determine source event
+        source_event = "api_deep"
+        if force_refresh:
+            source_event = "api_deep_refresh"
         
-        if analysis_result and analysis_result.get("service_responses"):
-            response = {"success": True}
-            response.update(analysis_result)
-
-            return response
+        # Perform deep comprehensive analysis with AI
+        analysis_result = await analyze_token_deep_comprehensive(token_mint, source_event)
+        
+        # Add endpoint metadata
+        analysis_result["metadata"]["from_cache"] = not force_refresh
+        analysis_result["metadata"]["force_refresh"] = force_refresh
+        analysis_result["metadata"]["api_response_time"] = round((time.time() - start_time) * 1000, 1)
+        analysis_result["metadata"]["endpoint"] = "/deep"
+        
+        # Log successful analysis
+        ai_enhanced = analysis_result.get("ai_analysis", {})
+        ai_score = ai_enhanced.get("ai_score", 0) if ai_enhanced else 0
+        overall_score = analysis_result.get("overall_analysis", {}).get("score", 0)
+        
+        logger.info(
+            f"✅ Deep analysis completed for {token_mint} in {analysis_result['metadata']['processing_time_seconds']}s "
+            f"(AI score: {ai_score}, Overall: {overall_score}, "
+            f"Recommendation: {analysis_result.get('overall_analysis', {}).get('recommendation', 'N/A')})"
+        )
+        
+        return analysis_result
         
     except HTTPException:
         raise
     except Exception as e:
         processing_time = time.time() - start_time
-        logger.error(f"❌ Frontend quick analysis failed for {token_mint}: {str(e)}")
+        logger.error(f"❌ Deep analysis failed for {token_mint}: {str(e)}")
+        
+        # Return structured error response
+        return {
+            "status": "error",
+            "analysis_type": "deep",
+            "token_address": token_mint,
+            "timestamp": time.time(),
+            "processing_time": round(processing_time, 2),
+            "message": f"Deep analysis failed: {str(e)}",
+            "error": str(e),
+            "endpoint": "/deep",
+            "ai_analysis_attempted": True,
+            "ai_analysis_completed": False,
+            "metadata": {
+                "processing_time_seconds": processing_time,
+                "services_attempted": 0,
+                "services_successful": 0,
+                "security_check_passed": False,
+                "ai_analysis_completed": False,
+                "analysis_stopped_at_security": False
+            }
+        }
+
+
+@router.get("/deep/{token_mint}", summary="Get Deep Token Analysis (GET endpoint)")
+async def get_deep_analysis(
+    token_mint: str = Path(..., description="Token mint address"),
+    force_refresh: bool = Query(False, description="Force refresh cached data"),
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Alternative GET endpoint for deep token analysis
+    """
+    return await deep_analysis_endpoint(token_mint, force_refresh)
+
+
+# Update the existing quick analysis to clearly differentiate from deep
+@router.post("/quick/{token_mint}", summary="Quick Token Analysis - Security + Market Only")
+async def quick_analysis_endpoint(
+    token_mint: str = Path(..., description="Token mint address"),
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Quick token analysis without AI integration
+    
+    Includes:
+    - Security checks (GOplus, RugCheck, SolSniffer)
+    - Market analysis (Birdeye, Helius, SolanaFM, DexScreener)  
+    - Traditional scoring system
+    
+    For AI-enhanced analysis, use /deep endpoint instead.
+    """
+    start_time = time.time()
+    
+    try:
+        # Validate token mint format
+        if not token_mint or len(token_mint) < 32 or len(token_mint) > 44:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid Solana token mint address format"
+            )
+        
+        logger.info(f"⚡ Quick analysis request for {token_mint}")
+        
+        # Use existing comprehensive analysis from token_analyzer
+        from app.services.token_analyzer import token_analyzer
+        analysis_result = await token_analyzer.analyze_token_comprehensive(token_mint, "api_quick")
+        
+        # Add endpoint metadata
+        analysis_result["metadata"]["api_response_time"] = round((time.time() - start_time) * 1000, 1)
+        analysis_result["metadata"]["endpoint"] = "/quick"
+        analysis_result["analysis_type"] = "quick"
+        
+        # Log successful analysis
+        logger.info(
+            f"✅ Quick analysis completed for {token_mint} in {analysis_result['metadata']['processing_time_seconds']}s "
+            f"(Score: {analysis_result['overall_analysis']['score']}, "
+            f"Risk: {analysis_result['overall_analysis']['risk_level']})"
+        )
+        
+        return analysis_result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"❌ Quick analysis failed for {token_mint}: {str(e)}")
         
         return {
             "status": "error",
-            "token": token_mint,
-            "timestamp": datetime.utcnow().isoformat(),
+            "analysis_type": "quick", 
+            "token_address": token_mint,
+            "timestamp": time.time(),
             "processing_time": round(processing_time, 2),
-            "message": f"Analysis failed: {str(e)}",
+            "message": f"Quick analysis failed: {str(e)}",
             "error": str(e),
             "endpoint": "/quick",
-            "analysis_type": "quick"
+            "metadata": {
+                "processing_time_seconds": processing_time,
+                "services_attempted": 0,
+                "services_successful": 0,
+                "security_check_passed": False,
+                "analysis_stopped_at_security": False
+            }
         }
 
 # ==============================================
