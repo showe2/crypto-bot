@@ -199,9 +199,9 @@ class EnhancedTokenAnalyzer:
         service_responses: Dict[str, Any],
         security_data: Dict[str, Any],
         analysis_response: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    ) -> Optional[Dict[str, Any]]:
         """
-        Run AI analysis using Llama 3.0
+        Run AI analysis using Llama 3.0 with proper null safety
         """
         try:
             logger.info(f"🤖 Starting AI analysis for {token_address}")
@@ -214,19 +214,26 @@ class EnhancedTokenAnalyzer:
                 analysis_type="deep"
             )
             
+            # Check if AI analysis succeeded
+            if ai_result is None:
+                logger.warning(f"AI analysis returned None for {token_address}")
+                analysis_response["warnings"].append("AI analysis service unavailable")
+                return None
+            
             # Convert to dict for storage
             ai_analysis_dict = {
-                "ai_score": ai_result.ai_score,
-                "risk_assessment": ai_result.risk_assessment,
-                "recommendation": ai_result.recommendation,
-                "confidence": ai_result.confidence,
-                "key_insights": ai_result.key_insights,
-                "risk_factors": ai_result.risk_factors,
-                "stop_flags": ai_result.stop_flags,
-                "market_metrics": ai_result.market_metrics,
-                "llama_reasoning": ai_result.llama_reasoning,
-                "processing_time": ai_result.processing_time,
-                "model_used": "llama-3.0-70b-instruct"
+                "ai_score": float(ai_result.ai_score) if ai_result.ai_score is not None else 0.0,
+                "risk_assessment": ai_result.risk_assessment or "unknown",
+                "recommendation": ai_result.recommendation or "HOLD",
+                "confidence": float(ai_result.confidence) if ai_result.confidence is not None else 0.0,
+                "key_insights": ai_result.key_insights or [],
+                "risk_factors": ai_result.risk_factors or [],
+                "stop_flags": ai_result.stop_flags or [],
+                "market_metrics": ai_result.market_metrics or {},
+                "llama_reasoning": ai_result.llama_reasoning or "No reasoning provided",
+                "processing_time": float(ai_result.processing_time) if ai_result.processing_time is not None else 0.0,
+                "model_used": "llama-3.0-70b-instruct",
+                "analysis_successful": True
             }
             
             logger.info(f"✅ AI analysis completed: Score {ai_result.ai_score}, Recommendation {ai_result.recommendation}")
@@ -237,18 +244,19 @@ class EnhancedTokenAnalyzer:
             logger.error(f"❌ AI analysis failed for {token_address}: {str(e)}")
             analysis_response["errors"].append(f"AI analysis failed: {str(e)}")
             
-            # Return empty AI analysis on failure
-            return {}
+            # Return None instead of empty dict to clearly indicate failure
+            return None
     
     async def _generate_enhanced_comprehensive_analysis(
         self, 
         service_responses: Dict[str, Any], 
         security_data: Dict[str, Any], 
-        ai_analysis: Dict[str, Any],
+        ai_analysis: Optional[Dict[str, Any]],
         token_address: str
     ) -> Dict[str, Any]:
         """
         Generate enhanced comprehensive analysis that combines traditional analysis with AI insights
+        Enhanced with proper null safety for AI analysis
         """
         # Start with traditional analysis
         from app.services.token_analyzer import token_analyzer
@@ -256,24 +264,34 @@ class EnhancedTokenAnalyzer:
             service_responses, security_data, token_address
         )
         
-        # If no AI analysis available, return traditional analysis
-        if not ai_analysis:
+        # If no AI analysis available, return traditional analysis with AI enhancement flag
+        if not ai_analysis or not isinstance(ai_analysis, dict):
             logger.warning("No AI analysis available, using traditional analysis only")
             traditional_analysis["ai_enhanced"] = False
+            traditional_analysis["ai_available"] = False
+            traditional_analysis["ai_reason"] = "AI analysis service unavailable"
+            return traditional_analysis
+        
+        # Verify AI analysis has required fields
+        if not ai_analysis.get("analysis_successful"):
+            logger.warning("AI analysis marked as unsuccessful")
+            traditional_analysis["ai_enhanced"] = False
+            traditional_analysis["ai_available"] = False
+            traditional_analysis["ai_reason"] = "AI analysis failed"
             return traditional_analysis
         
         # Enhance with AI insights
         logger.info("🧠 Enhancing analysis with AI insights")
         
-        # AI-enhanced scoring system
-        traditional_score = traditional_analysis.get("score", 60)
-        ai_score = ai_analysis.get("ai_score", 50)
+        # AI-enhanced scoring system with safe extraction
+        traditional_score = float(traditional_analysis.get("score", 60))
+        ai_score = float(ai_analysis.get("ai_score", 50)) if ai_analysis.get("ai_score") is not None else 50.0
         
         # Weighted combination: 60% traditional, 40% AI
         enhanced_score = (traditional_score * 0.6) + (ai_score * 0.4)
         
         # AI recommendation takes precedence for critical issues
-        ai_recommendation = ai_analysis.get("recommendation", "HOLD")
+        ai_recommendation = ai_analysis.get("recommendation", "HOLD") or "HOLD"
         traditional_recommendation = traditional_analysis.get("recommendation", "consider")
         
         # Map AI recommendations to traditional format
@@ -287,8 +305,8 @@ class EnhancedTokenAnalyzer:
         
         enhanced_recommendation = ai_to_traditional.get(ai_recommendation, traditional_recommendation)
         
-        # Risk level enhancement
-        ai_risk = ai_analysis.get("risk_assessment", "medium")
+        # Risk level enhancement with safe extraction
+        ai_risk = ai_analysis.get("risk_assessment", "medium") or "medium"
         traditional_risk = traditional_analysis.get("risk_level", "medium")
         
         # AI takes precedence for high/critical risk
@@ -299,25 +317,23 @@ class EnhancedTokenAnalyzer:
         else:
             enhanced_risk = traditional_risk
         
-        # Combine insights
-        combined_positive_signals = list(set(
-            traditional_analysis.get("positive_signals", []) + 
-            ai_analysis.get("key_insights", [])
-        ))
+        # Combine insights with safe list operations
+        traditional_positives = traditional_analysis.get("positive_signals", []) or []
+        ai_insights = ai_analysis.get("key_insights", []) or []
+        combined_positive_signals = list(set(traditional_positives + ai_insights))
         
-        combined_risk_factors = list(set(
-            traditional_analysis.get("risk_factors", []) + 
-            ai_analysis.get("risk_factors", [])
-        ))
+        traditional_risks = traditional_analysis.get("risk_factors", []) or []
+        ai_risk_factors = ai_analysis.get("risk_factors", []) or []
+        combined_risk_factors = list(set(traditional_risks + ai_risk_factors))
         
-        # Add AI stop flags as critical risk factors
-        ai_stop_flags = ai_analysis.get("stop_flags", [])
+        # Add AI stop flags as critical risk factors with safe list operations
+        ai_stop_flags = ai_analysis.get("stop_flags", []) or []
         if ai_stop_flags:
             combined_risk_factors.extend([f"AI Alert: {flag}" for flag in ai_stop_flags])
         
-        # Enhanced confidence calculation
-        traditional_confidence = traditional_analysis.get("confidence", 70)
-        ai_confidence = ai_analysis.get("confidence", 70)
+        # Enhanced confidence calculation with safe float conversion
+        traditional_confidence = float(traditional_analysis.get("confidence", 70))
+        ai_confidence = float(ai_analysis.get("confidence", 70)) if ai_analysis.get("confidence") is not None else 70.0
         
         # Higher confidence if both systems agree
         if abs(traditional_score - ai_score) < 15:
@@ -325,7 +341,7 @@ class EnhancedTokenAnalyzer:
         else:
             enhanced_confidence = (traditional_confidence + ai_confidence) / 2
         
-        # Build enhanced analysis
+        # Build enhanced analysis with comprehensive null safety
         enhanced_analysis = {
             "score": round(enhanced_score, 1),
             "risk_level": enhanced_risk,
@@ -340,9 +356,10 @@ class EnhancedTokenAnalyzer:
             "security_passed": True,
             "services_analyzed": len(service_responses),
             "ai_enhanced": True,
+            "ai_available": True,
             "ai_recommendation": ai_recommendation,
-            "ai_score": ai_analysis.get("ai_score", 0),
-            "ai_reasoning": ai_analysis.get("llama_reasoning", ""),
+            "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis.get("ai_score") is not None else 0.0,
+            "ai_reasoning": ai_analysis.get("llama_reasoning", "No reasoning provided") or "No reasoning provided",
             "traditional_score": traditional_score,
             "score_breakdown": {
                 "traditional_weight": 0.6,
@@ -350,7 +367,9 @@ class EnhancedTokenAnalyzer:
                 "traditional_score": traditional_score,
                 "ai_score": ai_score,
                 "final_score": enhanced_score
-            }
+            },
+            "ai_processing_time": float(ai_analysis.get("processing_time", 0.0)) if ai_analysis.get("processing_time") is not None else 0.0,
+            "ai_model": ai_analysis.get("model_used", "llama-3.0-70b-instruct") or "llama-3.0-70b-instruct"
         }
         
         return enhanced_analysis
@@ -358,20 +377,30 @@ class EnhancedTokenAnalyzer:
     def _generate_enhanced_summary(
         self, 
         service_responses: Dict[str, Any], 
-        ai_analysis: Dict[str, Any],
+        ai_analysis: Optional[Dict[str, Any]],
         enhanced_score: float,
         enhanced_risk: str
     ) -> str:
-        """Generate enhanced summary with AI insights"""
+        """Generate enhanced summary with AI insights and null safety"""
         sources_count = len(service_responses)
-        ai_recommendation = ai_analysis.get("recommendation", "HOLD")
+        
+        # Safe extraction of AI recommendation
+        ai_recommendation = "UNAVAILABLE"
+        if ai_analysis and isinstance(ai_analysis, dict):
+            ai_recommendation = ai_analysis.get("recommendation", "HOLD") or "HOLD"
         
         summary_parts = [
             f"AI-Enhanced Analysis: {enhanced_score:.1f}/100 score",
-            f"AI Recommendation: {ai_recommendation}",
+        ]
+        
+        # Only add AI recommendation if available
+        if ai_recommendation != "UNAVAILABLE":
+            summary_parts.append(f"AI Recommendation: {ai_recommendation}")
+        
+        summary_parts.extend([
             f"Risk Level: {enhanced_risk.upper()}",
             f"Data from {sources_count} sources"
-        ]
+        ])
         
         return " | ".join(summary_parts)
     

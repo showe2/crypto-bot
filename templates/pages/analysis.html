@@ -422,14 +422,14 @@
                       </div>
                     </div>
 
-                    <!-- AI Score (if deep analysis) -->
+                    <!-- AI Score (if deep analysis) - FIXED NULL SAFETY -->
                     <div
-                      x-show="results && results.analysis_type === 'deep' && getAIAnalysis()"
+                      x-show="results && results.analysis_type === 'deep' && getAIAnalysis() !== null"
                       class="text-center"
                     >
                       <div
                         class="text-2xl font-bold text-gray-600"
-                        x-text="'AI: ' + Math.round(getAIAnalysis().ai_score || 0)"
+                        x-text="'AI: ' + Math.round((getAIAnalysis() && getAIAnalysis().ai_score) || 0)"
                       ></div>
                       <div class="text-xs text-gray-400">Llama 3.0</div>
                     </div>
@@ -458,22 +458,22 @@
                   <div class="flex items-center justify-between">
                     <span class="text-gray-700">Recommendation:</span>
                     <span
-                      class="px-3 py-1 rounded-full text-sm font-medium"
+                      class="px-3 py-1 rounded-full text-sm font-medium border-2 border-purple-200"
                       :class="getRecommendationClass(getAnalysisResults().recommendation)"
                       x-text="getAnalysisResults().recommendation || 'HOLD'"
                     ></span>
                   </div>
 
-                  <!-- AI Recommendation (if different from traditional) -->
+                  <!-- AI Recommendation (if different from traditional) - FIXED NULL SAFETY -->
                   <div
-                    x-show="results && results.analysis_type === 'deep' && getAIAnalysis() && getAIAnalysis().recommendation !== getAnalysisResults().recommendation"
+                    x-show="results && results.analysis_type === 'deep' && getAIAnalysis() !== null && getAIAnalysis().recommendation && getAIAnalysis().recommendation !== getAnalysisResults().recommendation"
                     class="flex items-center justify-between border-t pt-2 mt-2"
                   >
                     <span class="text-gray-700">AI Recommendation:</span>
                     <span
                       class="px-3 py-1 rounded-full text-sm font-medium border-2 border-purple-200"
-                      :class="getRecommendationClass(getAIAnalysis().recommendation)"
-                      x-text="getAIAnalysis().recommendation || 'HOLD'"
+                      :class="getRecommendationClass((getAIAnalysis() && getAIAnalysis().recommendation) || 'HOLD')"
+                      x-text="(getAIAnalysis() && getAIAnalysis().recommendation) || 'HOLD'"
                     ></span>
                   </div>
                 </div>
@@ -498,9 +498,9 @@
                   </ul>
                 </div>
 
-                <!-- AI Stop Flags (if any) -->
+                <!-- AI Stop Flags (if any) - FIXED NULL SAFETY -->
                 <div
-                  x-show="results && results.analysis_type === 'deep' && getAIAnalysis() && getAIAnalysis().stop_flags && getAIAnalysis().stop_flags.length"
+                  x-show="results && results.analysis_type === 'deep' && getAIAnalysis() !== null && getAIAnalysis().stop_flags && getAIAnalysis().stop_flags.length > 0"
                   class="border-t pt-3"
                 >
                   <h4 class="font-medium text-red-700 mb-2 flex items-center">
@@ -511,7 +511,7 @@
                   </h4>
                   <ul class="space-y-1">
                     <template
-                      x-for="flag in getAIAnalysis().stop_flags"
+                      x-for="flag in (getAIAnalysis() && getAIAnalysis().stop_flags) || []"
                       :key="flag"
                     >
                       <li class="text-sm text-red-600 flex items-start">
@@ -855,11 +855,18 @@
               return null;
             },
 
-            // Get AI analysis data (deep analysis only)
+            // FIXED: Get AI analysis data with proper null safety
             getAIAnalysis() {
-              if (!this.results || this.results.analysis_type !== "deep")
+              // Return null if not deep analysis or no AI data
+              if (!this.results || this.results.analysis_type !== "deep") {
                 return null;
-              return this.results.ai_analysis || null;
+              }
+
+              // Return AI analysis data or null if not available
+              const aiAnalysis = this.results.ai_analysis;
+              return aiAnalysis && typeof aiAnalysis === "object"
+                ? aiAnalysis
+                : null;
             },
 
             // Legacy function for backward compatibility

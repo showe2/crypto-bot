@@ -4,9 +4,10 @@ import time
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
+from app.services.ai.groq_ai_service import groq_llama_service
 
 settings = get_settings()
 
@@ -16,22 +17,22 @@ class AIAnalysisRequest(BaseModel):
     token_address: str
     service_responses: Dict[str, Any]
     security_analysis: Dict[str, Any]
-    market_data: Dict[str, Any]
     analysis_type: str = "deep"
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
 
 class AIAnalysisResponse(BaseModel):
     """Response model for AI analysis"""
-    ai_score: float  # 0-100
-    risk_assessment: str  # low, medium, high, critical
-    recommendation: str  # BUY, CONSIDER, HOLD, CAUTION, AVOID
-    confidence: float  # 0-100
-    key_insights: List[str]
-    risk_factors: List[str]
-    stop_flags: List[str]
-    market_metrics: Dict[str, Any]
-    processing_time: float
-    llama_reasoning: str
+    ai_score: float = 0.0
+    risk_assessment: str = "unknown"
+    recommendation: str = "HOLD"
+    confidence: float = 0.0
+    key_insights: List[str] = Field(default_factory=list)
+    risk_factors: List[str] = Field(default_factory=list)
+    stop_flags: List[str] = Field(default_factory=list)
+    market_metrics: Dict[str, Any] = Field(default_factory=dict)
+    llama_reasoning: str = ""
+    processing_time: float = 0.0
 
 
 class LlamaAIService:
@@ -270,7 +271,7 @@ Based on the thresholds in your system prompt, analyze this token and provide yo
             return response
             
         except Exception as e:
-            logger.error(f"Llama model call failed: {str(e)}")
+            logger.error(f"Lamma model call failed: {str(e)}")
             raise
     
     async def _call_claude_api(self, prompt: str) -> str:
@@ -363,40 +364,31 @@ Based on the thresholds in your system prompt, analyze this token and provide yo
             llama_reasoning="AI analysis system encountered an error and could not complete the analysis.",
             processing_time=processing_time
         )
-
-
-# Global AI service instance
-llama_ai_service = LlamaAIService()
-
+    
+llama_ai_service = groq_llama_service
 
 async def analyze_token_with_ai(
     token_address: str,
     service_responses: Dict[str, Any],
     security_analysis: Dict[str, Any],
     analysis_type: str = "deep"
-) -> AIAnalysisResponse:
-    """
-    Perform AI analysis of token using Llama 3.0
-    
-    Args:
-        token_address: Token mint address
-        service_responses: Raw responses from all API services
-        security_analysis: Security analysis results
-        analysis_type: Type of analysis (deep/quick)
-    
-    Returns:
-        AIAnalysisResponse with AI recommendations
-    """
-    request = AIAnalysisRequest(
-        token_address=token_address,
-        service_responses=service_responses,
-        security_analysis=security_analysis,
-        market_data={},  # Will be extracted from service_responses
-        analysis_type=analysis_type
-    )
-    
-    return await llama_ai_service.analyze_token(request)
-
+) -> Optional[AIAnalysisResponse]:
+    """Perform AI analysis of token using Llama 3.0"""
+    try:
+        # Create proper AIAnalysisRequest instance
+        request = AIAnalysisRequest(
+            token_address=token_address,
+            service_responses=service_responses,
+            security_analysis=security_analysis,
+            analysis_type=analysis_type,
+            timestamp=datetime.utcnow()
+        )
+        
+        return await llama_ai_service.analyze_token(request)
+        
+    except Exception as e:
+        logger.error(f"AI analysis service error: {str(e)}")
+        return None
 
 # Health check function
 async def check_ai_service_health() -> Dict[str, Any]:

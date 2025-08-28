@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     INTERNAL_TOKEN: Optional[str] = None
 
     # ==============================================
+    # AI CONFIGURATION
+    # ==============================================
+    GROQ_API_KEY: Optional[str] = None
+
+    # ==============================================
     # BLOCKCHAIN API KEYS
     # ==============================================
     QUICKNODE_RPC: Optional[str] = None
@@ -212,6 +217,7 @@ class Settings(BaseSettings):
         critical_keys = [
             ('BASE_URL', 'Base URL'),
             ('HELIUS_API_KEY', 'Helius API'),
+            ('GROQ_API_KEY', 'Groq AI API')
         ]
         for key, name in critical_keys:
             if not getattr(self, key):
@@ -225,7 +231,7 @@ class Settings(BaseSettings):
             'HELIUS_API_KEY', 'BIRDEYE_API_KEY',
             'PUMPFUN_API_KEY', 'SOLSNIFFER_API_KEY',
             'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
-            'WALLET_SECRET_KEY', 'INTERNAL_TOKEN'
+            'WALLET_SECRET_KEY', 'INTERNAL_TOKEN', 'GROQ_API_KEY'
         ]
         
         for key in api_keys:
