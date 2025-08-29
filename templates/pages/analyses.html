@@ -1,6 +1,6 @@
 {% extends "base.html" %} {% block title %}All Analyses - Solana AI{% endblock
 %} {% block content %}
-<div x-data="analysesData()" x-init="loadAnalyses()">
+<div x-data="analysesData()" x-init="init()">
   <!-- Page Header -->
   <div class="mb-8">
     <div class="flex items-center justify-between">
@@ -81,7 +81,7 @@
           type="text"
           x-model="filters.search"
           @input="debouncedSearch()"
-          placeholder="Token address, name, symbol..."
+          placeholder="Search by token symbol or name..."
           class="form-input"
         />
       </div>
@@ -484,13 +484,21 @@
 <script>
   function analysesData() {
     return {
-      isLoading: false,
+      // Initialize all required properties
       analyses: [],
-      pagination: null,
+      perPage: 20, // Add this line
       chromaDbAvailable: false,
       showAdvancedFilters: false,
-      perPage: 20,
-
+      isLoading: false,
+      hasActiveFilters: false,
+      pagination: {
+        page: 1,
+        total_pages: 1,
+        total_items: 0,
+        has_prev: false,
+        has_next: false,
+        per_page: 20, // Also set it here for consistency
+      },
       filters: {
         search: "",
         source_event: "",
@@ -500,7 +508,40 @@
         date_to: "",
       },
 
-      searchTimeout: null,
+      init() {
+        // Load initial data
+        this.loadAnalyses();
+
+        // Initialize search debounce
+        this.debouncedSearch = debounce(() => {
+          if (this.filters && typeof this.filters.search !== "undefined") {
+            this.handleSearch(this.filters.search);
+          }
+        }, 300);
+      },
+
+      async handleSearch(query = "") {
+        this.isLoading = true;
+        try {
+          const searchTerm = (query || "").toLowerCase().trim();
+
+          if (!searchTerm) {
+            await this.loadAnalyses();
+            return;
+          }
+
+          // Filter analyses by symbol or name
+          this.analyses = this.analyses.filter((analysis) => {
+            const symbol = (analysis.token_symbol || "").toLowerCase();
+            const name = (analysis.token_name || "").toLowerCase();
+            return symbol.includes(searchTerm) || name.includes(searchTerm);
+          });
+        } catch (error) {
+          console.error("Search failed:", error);
+        } finally {
+          this.isLoading = false;
+        }
+      },
 
       async loadAnalyses(page = 1) {
         this.isLoading = true;
@@ -544,12 +585,43 @@
         this.loadAnalyses(1); // Reset to first page when filtering
       },
 
-      debouncedSearch() {
-        clearTimeout(this.searchTimeout);
-        this.searchTimeout = setTimeout(() => {
-          this.applyFilters();
-        }, 500);
+      async searchAnalyses(query = "") {
+        this.isLoading = true;
+        try {
+          // If no query, reload all analyses
+          if (!query.trim()) {
+            await this.loadAnalyses();
+            return;
+          }
+
+          const params = new URLSearchParams({
+            search: query.trim(),
+            page: "1",
+            per_page: this.perPage.toString(),
+          });
+
+          const response = await fetch(`/api/analyses?${params}`);
+          const data = await response.json();
+
+          this.analyses = data.analyses || [];
+          this.pagination = data.pagination || null;
+        } catch (error) {
+          console.error("Search failed:", error);
+          this.showNotification(
+            "error",
+            "Search Failed",
+            "Failed to search analyses"
+          );
+        } finally {
+          this.isLoading = false;
+        }
       },
+
+      debouncedSearch: debounce(function () {
+        if (typeof this.filters.search === "string") {
+          this.searchAnalyses(this.filters.search);
+        }
+      }, 300),
 
       clearFilters() {
         this.filters = {
@@ -696,178 +768,184 @@
 
         // Create popup HTML
         const popupHTML = `
-          <div id="analysis-popup" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
-            <div class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-              <!-- Header -->
-              <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
-                <div class="flex justify-between items-center">
-                  <div>
-                    <h2 class="text-2xl font-bold">${
-                      analysis.token_symbol || "Unknown"
-                    } Analysis</h2>
-                    <p class="opacity-90">${
-                      analysis.token_name || "Token Analysis Results"
-                    }</p>
-                  </div>
-                  <button onclick="closeAnalysisPopupManual()" class="text-white hover:text-gray-300 text-2xl">
-                    &times;
-                  </button>
-                </div>
-              </div>
-
-              <!-- Content -->
-              <div class="p-6">
-                <!-- Status Cards -->
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                  <!-- Security -->
-                  <div class="text-center p-4 rounded-lg border-2 ${this.getSecurityCardClass(
-                    analysis.security_status
-                  )}">
-                    <div class="text-2xl mb-2 ${this.getSecurityIconClass(
-                      analysis.security_status
-                    )}">🛡️</div>
-                    <div class="font-bold">${this.getSecurityText(
-                      analysis.security_status
-                    )}</div>
-                    <div class="text-xs text-gray-500">Security</div>
-                  </div>
-
-                  <!-- Score -->
-                  <div class="text-center p-4 rounded-lg bg-blue-50 border-2 border-blue-200">
-                    <div class="text-2xl mb-2 text-blue-600">⭐</div>
-                    <div class="font-bold text-blue-900">${
-                      analysis.overall_score
-                        ? Math.round(analysis.overall_score) + "%"
-                        : "N/A"
-                    }</div>
-                    <div class="text-xs text-gray-500">Score</div>
-                  </div>
-
-                  <!-- Risk -->
-                  <div class="text-center p-4 rounded-lg border-2 ${this.getRiskCardClass(
-                    analysis.risk_level
-                  )}">
-                    <div class="text-2xl mb-2 ${this.getRiskIconClass(
-                      analysis.risk_level
-                    )}">⚠️</div>
-                    <div class="font-bold">${(
-                      analysis.risk_level || "unknown"
-                    ).toUpperCase()}</div>
-                    <div class="text-xs text-gray-500">Risk</div>
-                  </div>
-
-                  <!-- Recommendation -->
-                  <div class="text-center p-4 rounded-lg bg-purple-50 border-2 border-purple-200">
-                    <div class="text-2xl mb-2 text-purple-600">👍</div>
-                    <div class="font-bold text-purple-900">${(
-                      analysis.recommendation || "unknown"
-                    ).toUpperCase()}</div>
-                    <div class="text-xs text-gray-500">Action</div>
+            <div id="analysis-popup" class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+              <div class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-xl">
+                  <div class="flex justify-between items-center">
+                    <div>
+                      <h2 class="text-2xl font-bold">${
+                        analysis.token_symbol || "Unknown"
+                      } Analysis</h2>
+                      <p class="opacity-90">${
+                        analysis.token_name || "Token Analysis Results"
+                      }</p>
+                    </div>
+                    <button onclick="closeAnalysisPopupManual()" class="text-white hover:text-gray-300 text-2xl">
+                      &times;
+                    </button>
                   </div>
                 </div>
 
-                <!-- Security Details -->
-                <div class="mb-6">
-                  <h3 class="font-bold text-lg mb-3">🔍 Security Details</h3>
-
-                  ${
-                    analysis.critical_issues > 0
-                      ? `
-                  <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg">
-                    <div class="flex items-center mb-2">
-                      <span class="text-red-500 text-xl mr-2">🚨</span>
-                      <div class="font-bold text-red-800">Critical Security Issues</div>
-                    </div>
-                    <div class="text-red-700 mb-2">${analysis.critical_issues} critical issue(s) detected</div>
-                    <div class="text-sm text-red-600 bg-red-100 p-2 rounded">
-                      <strong>⚠️ High Risk:</strong> This token has failed critical security checks.
-                    </div>
-                  </div>
-                  `
-                      : ""
-                  }
-
-                  ${
-                    analysis.warnings > 0
-                      ? `
-                  <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg">
-                    <div class="flex items-center mb-2">
-                      <span class="text-yellow-500 text-xl mr-2">⚠️</span>
-                      <div class="font-bold text-yellow-800">Security Warnings</div>
-                    </div>
-                    <div class="text-yellow-700 mb-2">${analysis.warnings} warning(s) detected</div>
-                    <div class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
-                      <strong>⚠️ Moderate Risk:</strong> This token has some concerning features.
-                    </div>
-                  </div>
-                  `
-                      : ""
-                  }
-
-                  ${
-                    analysis.critical_issues === 0 &&
-                    analysis.warnings === 0 &&
-                    analysis.security_status === "passed"
-                      ? `
-                  <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg">
-                    <div class="flex items-center mb-2">
-                      <span class="text-green-500 text-xl mr-2">✅</span>
-                      <div class="font-bold text-green-800">Security Verified</div>
-                    </div>
-                    <div class="text-sm text-green-700 bg-green-100 p-2 rounded">
-                      <strong>✅ Low Risk:</strong> This token has passed all security checks.
-                    </div>
-                  </div>
-                  `
-                      : ""
-                  }
-
-                  <!-- Analysis Info -->
-                  <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-                    <div class="flex items-center mb-2">
-                      <span class="text-blue-500 text-xl mr-2">ℹ️</span>
-                      <div class="font-bold text-blue-800">Analysis Information</div>
-                    </div>
-                    <div class="text-sm text-blue-700 space-y-1">
-                      <div><strong>Processed:</strong> ${this.formatDate(
-                        analysis.timestamp
+                <!-- Content -->
+                <div class="p-6">
+                  <!-- Status Cards -->
+                  <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <!-- Security -->
+                    <div class="text-center p-4 rounded-lg border-2 ${this.getSecurityCardClass(
+                      analysis.security_status
+                    )}">
+                      <div class="text-2xl mb-2 ${this.getSecurityIconClass(
+                        analysis.security_status
+                      )}">🛡️</div>
+                      <div class="font-bold">${this.getSecurityText(
+                        analysis.security_status
                       )}</div>
-                      <div><strong>Processing Time:</strong> ${(
-                        analysis.processing_time || 0
-                      ).toFixed(2)}s</div>
-                      <div><strong>Source:</strong> ${(
-                        analysis.source_event || "unknown"
-                      ).replace("_", " ")}</div>
+                      <div class="text-xs text-gray-500">Security</div>
+                    </div>
+
+                    <!-- Score -->
+                    <div class="text-center p-4 rounded-lg bg-blue-50 border-2 border-blue-200">
+                      <div class="text-2xl mb-2 text-blue-600">⭐</div>
+                      <div class="font-bold text-blue-900">${
+                        analysis.overall_score
+                          ? Math.round(analysis.overall_score) + "%"
+                          : "N/A"
+                      }</div>
+                      <div class="text-xs text-gray-500">Score</div>
+                    </div>
+
+                    <!-- Risk -->
+                    <div class="text-center p-4 rounded-lg border-2 ${this.getRiskCardClass(
+                      analysis.risk_level
+                    )}">
+                      <div class="text-2xl mb-2 ${this.getRiskIconClass(
+                        analysis.risk_level
+                      )}">⚠️</div>
+                      <div class="font-bold">${(
+                        analysis.risk_level || "unknown"
+                      ).toUpperCase()}</div>
+                      <div class="text-xs text-gray-500">Risk</div>
+                    </div>
+
+                    <!-- Recommendation -->
+                    <div class="text-center p-4 rounded-lg bg-purple-50 border-2 border-purple-200">
+                      <div class="text-2xl mb-2 text-purple-600">👍</div>
+                      <div class="font-bold text-purple-900">${(
+                        analysis.recommendation || "unknown"
+                      ).toUpperCase()}</div>
+                      <div class="text-xs text-gray-500">Action</div>
+                    </div>
+                  </div>
+
+                  <!-- Security Details -->
+                  <div class="mb-6">
+                    <h3 class="font-bold text-lg mb-3">🔍 Security Details</h3>
+
+                    ${
+                      analysis.critical_issues > 0
+                        ? `
+                    <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg">
+                      <div class="flex items-center mb-2">
+                        <span class="text-red-500 text-xl mr-2">🚨</span>
+                        <div class="font-bold text-red-800">Critical Security Issues</div>
+                      </div>
+                      <div class="text-red-700 mb-2">${analysis.critical_issues} critical issue(s) detected</div>
+                      <div class="text-sm text-red-600 bg-red-100 p-2 rounded">
+                        <strong>⚠️ High Risk:</strong> This token has failed critical security checks.
+                      </div>
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    ${
+                      analysis.warnings > 0
+                        ? `
+                    <div class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg">
+                      <div class="flex items-center mb-2">
+                        <span class="text-yellow-500 text-xl mr-2">⚠️</span>
+                        <div class="font-bold text-yellow-800">Security Warnings</div>
+                      </div>
+                      <div class="text-yellow-700 mb-2">${analysis.warnings} warning(s) detected</div>
+                      <div class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
+                        <strong>⚠️ Moderate Risk:</strong> This token has some concerning features.
+                      </div>
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    ${
+                      analysis.critical_issues === 0 &&
+                      analysis.warnings === 0 &&
+                      analysis.security_status === "passed"
+                        ? `
+                    <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg">
+                      <div class="flex items-center mb-2">
+                        <span class="text-green-500 text-xl mr-2">✅</span>
+                        <div class="font-bold text-green-800">Security Verified</div>
+                      </div>
+                      <div class="text-sm text-green-700 bg-green-100 p-2 rounded">
+                        <strong>✅ Low Risk:</strong> This token has passed all security checks.
+                      </div>
+                    </div>
+                    `
+                        : ""
+                    }
+
+                    <!-- Analysis Info -->
+                    <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                      <div class="flex items-center mb-2">
+                        <span class="text-blue-500 text-xl mr-2">ℹ️</span>
+                        <div class="font-bold text-blue-800">Analysis Information</div>
+                      </div>
+                      <div class="text-sm text-blue-700 space-y-1">
+                        <div><strong>Processed:</strong> ${this.formatDate(
+                          analysis.timestamp
+                        )}</div>
+                        <div><strong>Processing Time:</strong> ${(
+                          analysis.processing_time || 0
+                        ).toFixed(2)}s</div>
+                        <div><strong>Source:</strong> ${(
+                          analysis.source_event || "unknown"
+                        ).replace("_", " ")}</div>
+                        ${
+                          analysis.id
+                            ? `<div><strong>Analysis ID:</strong> <code class="text-xs bg-blue-100 px-1 rounded">${analysis.id.substring(
+                                0,
+                                16
+                              )}...</code></div>`
+                            : ""
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Token Address -->
+                  <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                    <div class="font-bold mb-2">📋 Contract Address</div>
+                    <div class="flex items-center justify-between">
+                      <code class="text-sm bg-white px-2 py-1 rounded break-all">${
+                        analysis.mint || "N/A"
+                      }</code>
                       ${
-                        analysis.id
-                          ? `<div><strong>Analysis ID:</strong> <code class="text-xs bg-blue-100 px-1 rounded">${analysis.id.substring(
-                              0,
-                              16
-                            )}...</code></div>`
+                        analysis.mint
+                          ? `<button
+                          onclick="copyToClipboardManual('${analysis.mint}')"
+                          class="ml-2 px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
+                        >
+                          <i class="fas fa-copy mr-1"></i>
+                          Copy Address
+                        </button>`
                           : ""
                       }
                     </div>
                   </div>
                 </div>
-
-                <!-- Token Address -->
-                <div class="bg-gray-50 rounded-lg p-4 mb-6">
-                  <div class="font-bold mb-2">📋 Contract Address</div>
-                  <div class="flex items-center justify-between">
-                    <code class="text-sm bg-white px-2 py-1 rounded break-all">${
-                      analysis.mint || "N/A"
-                    }</code>
-                    ${
-                      analysis.mint
-                        ? `<button onclick="copyToClipboardManual('${analysis.mint}')" class="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600">Copy</button>`
-                        : ""
-                    }
-                  </div>
-                </div>
               </div>
             </div>
-          </div>
-        `;
+          `;
 
         // Insert popup into DOM
         document.body.insertAdjacentHTML("beforeend", popupHTML);
@@ -969,6 +1047,19 @@
         }
         document.body.style.overflow = "";
       },
+    };
+  }
+
+  // Debounce helper function
+  function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+      const later = () => {
+        clearTimeout(timeout);
+        func(...args);
+      };
+      clearTimeout(timeout);
+      timeout = setTimeout(later, wait);
     };
   }
 
