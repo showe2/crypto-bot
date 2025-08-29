@@ -869,11 +869,56 @@ class TokenAnalyzer:
 token_analyzer = TokenAnalyzer()
 
 
-async def analyze_token_from_webhook(token_address: str, event_type: str = "unknown") -> Dict[str, Any]:
-    """Analyze token triggered by webhook event"""
-    return await token_analyzer.analyze_token_comprehensive(token_address, f"webhook_{event_type}")
+async def analyze_token_from_webhook(
+    token_address: str, 
+    event_type: str = "unknown",
+    store_result: bool = True  # Add this parameter
+) -> Dict[str, Any]:
+    """Analyze token from webhook trigger with storage"""
+    try:
+        from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
+        logger.info(f"🤖 Webhook triggering DEEP AI-enhanced analysis for {token_address}")
+        
+        # Get analysis result
+        analysis_result = await analyze_token_deep_comprehensive(
+            token_address=token_address,
+            source_event=f"webhook_{event_type}"
+        )
+        
+        # Store result if requested
+        if store_result and analysis_result:
+            from app.services.analysis_storage import analysis_storage
+            
+            # Add webhook metadata
+            analysis_result["metadata"] = {
+                **analysis_result.get("metadata", {}),
+                "source_type": "webhook",
+                "event_type": event_type,
+                "webhook_timestamp": datetime.utcnow().isoformat()
+            }
+            
+            # Store in database
+            try:
+                await analysis_storage.store_analysis(analysis_result)
+                logger.info(f"✅ Webhook analysis stored for {token_address}")
+            except Exception as e:
+                logger.error(f"❌ Failed to store webhook analysis: {str(e)}")
+                # Continue execution even if storage fails
+        
+        return analysis_result
+        
+    except Exception as e:
+        logger.error(f"❌ Webhook analysis failed for {token_address}: {str(e)}")
+        raise
 
 
-async def analyze_token_on_demand(token_address: str) -> Dict[str, Any]:
-    """Analyze token on demand (API call)"""
-    return await token_analyzer.analyze_token_comprehensive(token_address, "api_request")
+async def analyze_token_on_demand(token_address: str, analysis_type: str = "quick") -> Dict[str, Any]:
+    """Analyze token on demand (API call) - supports both quick and deep analysis"""
+    
+    if analysis_type == "deep":
+        from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
+        logger.info(f"🤖 API triggering DEEP AI-enhanced analysis for {token_address}")
+        return await analyze_token_deep_comprehensive(token_address, "api_deep")
+    else:
+        # Keep quick analysis for API calls when explicitly requested
+        return await token_analyzer.analyze_token_comprehensive(token_address, "api_quick")

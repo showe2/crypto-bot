@@ -199,8 +199,6 @@ async def lifespan(app: FastAPI):
     # Log webhook endpoints
     logger.info("🔗 WebHook endpoints:")
     logger.info("   📦 Mints: http://localhost:8000/webhooks/helius/mint")
-    logger.info("   🏊 Pools: http://localhost:8000/webhooks/helius/pool")
-    logger.info("   💸 Transactions: http://localhost:8000/webhooks/helius/tx")
     
     # Log configuration summary
     logger.info(f"🔧 Environment: {settings.ENV}")
@@ -209,10 +207,11 @@ async def lifespan(app: FastAPI):
     
     # Show integration status
     logger.info("🔗 Service Integration Status:")
-    logger.info("   ✅ Webhooks → Token Analysis Engine")
+    logger.info("   ✅ Mint Webhooks → AI-Enhanced Deep Analysis")
     logger.info("   ✅ API Router → Comprehensive Analysis")
     logger.info("   ✅ Redis Caching → Performance Optimization")
-    logger.info("   ✅ LLM-Optimized Output Format")
+    logger.info("   ✅ ChromaDB Storage → Analysis History")
+    logger.info("   ✅ Llama 3.0 AI → Enhanced Insights")
     
     yield
     

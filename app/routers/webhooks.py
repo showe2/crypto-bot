@@ -1,15 +1,15 @@
 from typing import Dict, Any
-from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Request, BackgroundTasks, HTTPException, Header
 from fastapi.responses import JSONResponse
 from loguru import logger
 import json
 import time
 import re
 
-# Import the webhook utilities and token analyzer
+# Import the webhook utilities and enhanced token analyzer
 from app.utils.webhooks import webhook_manager
 from app.utils.webhook_tasks import queue_webhook_task
-from app.services.token_analyzer import analyze_token_from_webhook
+from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive  # Updated import
 
 router = APIRouter(prefix="/webhooks", tags=["WebHooks"])
 
@@ -17,7 +17,8 @@ router = APIRouter(prefix="/webhooks", tags=["WebHooks"])
 def extract_token_address(payload: Dict[str, Any]) -> str:
     """Extract token addresses from webhook payload"""
     
-    if not payload or not payload.get("data"): raise Exception("Payload is empty or has unexpected structure!")
+    if not payload or not payload.get("data"): 
+        raise Exception("Payload is empty or has unexpected structure!")
 
     payload_data = payload["data"][0]
 
@@ -34,41 +35,58 @@ def extract_token_address(payload: Dict[str, Any]) -> str:
 
 
 async def process_webhook_analysis(token_address: str, event_type: str, payload: Dict[str, Any]):
-    """Process token analysis for webhook events in background"""
+    """Process AI-enhanced token analysis for webhook events in background"""
     try:
-        logger.info(f"🔍 Starting webhook analysis for token: {token_address}")
+        logger.info(f"🤖 Starting DEEP analysis for webhook token: {token_address}")
         
-        # Perform comprehensive analysis
-        analysis_result = await analyze_token_from_webhook(token_address, event_type)
-        
-        logger.info(
-            f"✅ Webhook analysis completed for {token_address}: "
-            f"Score: {analysis_result['overall_analysis']['score']}, "
-            f"Risk: {analysis_result['overall_analysis']['risk_level']}"
+        # Use deep analysis with AI enhancement for webhook events
+        analysis_result = await analyze_token_deep_comprehensive(
+            token_address, 
+            f"webhook_{event_type}"
         )
+        
+        # Log enhanced results
+        overall_analysis = analysis_result.get("overall_analysis", {})
+        ai_analysis = analysis_result.get("ai_analysis", {})
+        
+        if ai_analysis:
+            logger.info(
+                f"✅ Webhook DEEP analysis completed for {token_address}: "
+                f"Score: {overall_analysis.get('score', 'N/A')}, "
+                f"Risk: {overall_analysis.get('risk_level', 'N/A')}, "
+                f"AI Score: {ai_analysis.get('ai_score', 'N/A')}, "
+                f"AI Recommendation: {ai_analysis.get('recommendation', 'N/A')}"
+            )
+        else:
+            logger.info(
+                f"✅ Webhook analysis completed for {token_address}: "
+                f"Score: {overall_analysis.get('score', 'N/A')}, "
+                f"Risk: {overall_analysis.get('risk_level', 'N/A')} "
+                f"(AI analysis not available)"
+            )
         
         # Store result in Redis for later retrieval
         from app.utils.redis_client import get_redis_client
         redis_client = await get_redis_client()
         
-        cache_key = f"webhook_analysis:{token_address}:{int(time.time())}"
+        cache_key = f"webhook_deep_analysis:{token_address}:{int(time.time())}"
         await redis_client.set(
             cache_key, 
             json.dumps(analysis_result, default=str), 
-            ex=3600  # Store for 1 hour
+            ex=7200  # Store for 2 hours (longer for deep analysis)
         )
         
     except Exception as e:
-        logger.error(f"❌ Webhook analysis failed for {token_address}: {str(e)}")
+        logger.error(f"❌ Webhook deep analysis failed for {token_address}: {str(e)}")
 
 
-@router.post("/helius/mint", summary="Helius New Token Mint WebHook")
-async def helius_mint_webhook(request: Request, background_tasks: BackgroundTasks):
-    """
-    Ultra-fast webhook for new token mints with automatic analysis
-    """
-    start_time = time.time()
-    
+@router.post("/helius/mint", summary="Handle Helius mint webhook")
+async def handle_mint_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    webhook_secret: str = Header(None, alias="X-Webhook-Secret")
+):
+    """Handle mint webhook from Helius"""
     try:
         # Read raw body first
         raw_body = await request.body()
@@ -120,14 +138,22 @@ async def helius_mint_webhook(request: Request, background_tasks: BackgroundTask
             }, status_code=400)
         
         # Extract token addresses from payload
-        token_address = extract_token_address(payload)
+        try:
+            token_address = extract_token_address(payload)
+            tokens_detected = 1
+        except Exception as e:
+            logger.warning(f"⚠️ Could not extract token address: {str(e)}")
+            token_address = None
+            tokens_detected = 0
         
         # Queue for background processing
-        await queue_webhook_task("mint", payload, priority="normal")
+        await queue_webhook_task("mint", payload, priority="high")  # High priority for mint events
         
-        # Start analysis for detected tokens in background
+        # Start DEEP analysis for detected tokens in background
         if token_address:
-            logger.info(f"🎯 Detected a token addresses in mint webhook")
+            logger.info(f"🎯 Detected token in mint webhook: {token_address}")
+            logger.info(f"🤖 Triggering DEEP AI-enhanced analysis")
+            
             background_tasks.add_task(
                 process_webhook_analysis, 
                 token_address, 
@@ -135,24 +161,16 @@ async def helius_mint_webhook(request: Request, background_tasks: BackgroundTask
                 payload
             )
         
-        response_time = (time.time() - start_time) * 1000
-        
         return JSONResponse({
             "status": "received",
-            "message": "Processing in background",
-            "response_time_ms": round(response_time, 1),
-            "tokens_detected": len(token_address),
-            "tokens": token_address[:3] if token_address else [],  # Return first 3 for confirmation
-            "analysis_triggered": len(token_address) > 0
+            "message": "Processing with AI-enhanced deep analysis",
+            "tokens_detected": tokens_detected,
+            "token": token_address[:16] + "..." if token_address else None,
+            "analysis_type": "deep_ai_enhanced",
+            "analysis_triggered": tokens_detected > 0,
+            "ai_analysis": True
         })
         
     except Exception as e:
-        response_time = (time.time() - start_time) * 1000
         logger.error(f"❌ Mint webhook critical error: {str(e)}")
-        
-        return JSONResponse({
-            "status": "error",
-            "message": "Internal server error",
-            "error_type": type(e).__name__,
-            "response_time_ms": round(response_time, 1)
-        }, status_code=200)  # Return 200 to prevent Helius retries
+        raise HTTPException(status_code=500, detail=str(e))

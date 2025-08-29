@@ -13,7 +13,7 @@ from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisResponse
 
 
 class EnhancedTokenAnalyzer:
-    """Enhanced token analyzer with improved AI integration and realistic data expectations"""
+    """Enhanced token analyzer with proper security stopping and AI integration"""
     
     def __init__(self):
         """Initialize enhanced analyzer"""
@@ -37,7 +37,7 @@ class EnhancedTokenAnalyzer:
     
     async def analyze_token_deep(self, token_address: str, source_event: str = "api_request") -> Dict[str, Any]:
         """
-        Perform deep token analysis with improved AI integration
+        Perform deep token analysis with AI integration - STOPS on security failure
         
         Flow: Security checks -> Market analysis -> AI analysis -> Storage -> Response
         """
@@ -82,7 +82,7 @@ class EnhancedTokenAnalyzer:
             logger.warning(f"Cache retrieval failed: {str(e)}")
             analysis_response["warnings"].append(f"Cache retrieval failed: {str(e)}")
         
-        # STEP 1: SECURITY CHECKS (with improved logic)
+        # STEP 1: SECURITY CHECKS (using existing token_analyzer logic)
         logger.info("🛡️ STEP 1: Running security checks (GOplus + RugCheck + SolSniffer)")
         security_passed, security_data = await self._run_security_checks(token_address, analysis_response)
         
@@ -90,48 +90,30 @@ class EnhancedTokenAnalyzer:
         analysis_response["security_analysis"] = security_data
         analysis_response["metadata"]["security_check_passed"] = security_passed
         
-        # STEP 2: Handle security failure (only stop for truly critical issues)
+        # STEP 2: STOP ANALYSIS IF SECURITY FAILS (no changes needed - use existing logic)
         if not security_passed:
-            critical_issues = security_data.get("critical_issues", [])
+            logger.warning(f"⚠️ SECURITY CHECK FAILED for {token_address} - STOPPING ANALYSIS")
+            analysis_response["metadata"]["analysis_stopped_at_security"] = True
             
-            # Check if these are TRULY critical (not just data limitations)
-            truly_critical = []
-            for issue in critical_issues:
-                issue_str = str(issue).lower()
-                if any(keyword in issue_str for keyword in [
-                    'mint authority active', 'freeze authority active', 'rugged', 'scam', 'honeypot'
-                ]):
-                    truly_critical.append(issue)
+            # Generate security-focused analysis and return early
+            analysis_response["overall_analysis"] = await self._generate_security_focused_analysis(
+                security_data, token_address, False
+            )
+            analysis_response["analysis_summary"] = analysis_response["overall_analysis"]
+            analysis_response["risk_assessment"] = {
+                "risk_category": "critical",
+                "risk_score": 15,
+                "confidence": 95,
+                "reason": "Critical security issues detected"
+            }
             
-            # Only stop analysis for truly critical security issues
-            if truly_critical:
-                logger.warning(f"⚠️ CRITICAL SECURITY ISSUES for {token_address} - STOPPING ANALYSIS")
-                analysis_response["metadata"]["analysis_stopped_at_security"] = True
-                
-                # Generate security-focused analysis and return early
-                analysis_response["overall_analysis"] = await self._generate_security_focused_analysis(
-                    security_data, token_address, False
-                )
-                analysis_response["analysis_summary"] = analysis_response["overall_analysis"]
-                analysis_response["risk_assessment"] = {
-                    "risk_category": "critical",
-                    "risk_score": 15,
-                    "confidence": 95,
-                    "reason": "Critical security issues detected"
-                }
-                
-                processing_time = time.time() - start_time
-                analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
-                
-                asyncio.create_task(self._store_analysis_async(analysis_response))
-                
-                logger.warning(f"❌ Analysis STOPPED for {token_address} due to critical security issues in {processing_time:.2f}s")
-                return analysis_response
-            else:
-                # Security warnings but not critical - continue with analysis
-                logger.info(f"⚠️ Security warnings for {token_address} but continuing analysis (no critical issues)")
-                security_passed = True  # Override to continue
-                analysis_response["metadata"]["security_check_passed"] = True
+            processing_time = time.time() - start_time
+            analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
+            
+            asyncio.create_task(self._store_analysis_async(analysis_response))
+            
+            logger.warning(f"❌ Analysis STOPPED for {token_address} due to security issues in {processing_time:.2f}s")
+            return analysis_response
         
         logger.info(f"✅ SECURITY CHECKS PASSED for {token_address} - CONTINUING WITH DEEP ANALYSIS")
         
@@ -139,9 +121,9 @@ class EnhancedTokenAnalyzer:
         logger.info("📊 STEP 2: Running market and technical analysis services")
         await self._run_market_analysis_services(token_address, analysis_response)
         
-        # STEP 4: AI ANALYSIS WITH IMPROVED PROMPT
-        logger.info("🤖 STEP 3: Running improved AI analysis")
-        ai_analysis_result = await self._run_improved_ai_analysis(
+        # STEP 4: AI ANALYSIS (only if security passed)
+        logger.info("🤖 STEP 3: Running AI analysis with Llama 3.0")
+        ai_analysis_result = await self._run_ai_analysis(
             token_address, 
             analysis_response["service_responses"],
             security_data,
@@ -191,58 +173,27 @@ class EnhancedTokenAnalyzer:
         
         # Log completion
         logger.info(
-            f"DEEP ANALYSIS COMPLETED for {token_address} in {processing_time:.2f}s "
+            f"✅ DEEP ANALYSIS COMPLETED for {token_address} in {processing_time:.2f}s "
             f"(security passed, AI analysis: {bool(ai_analysis_result)}, sources: {len(analysis_response['data_sources'])})"
         )
         
         return analysis_response
     
     async def _run_security_checks(self, token_address: str, analysis_response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
-        """Run security checks with improved logic - only fail for truly critical issues"""
+        """Run security checks - delegate to existing token_analyzer logic without changes"""
         from app.services.token_analyzer import token_analyzer
         
-        # Use existing security check logic but with improved evaluation
-        security_passed, security_data = await token_analyzer._run_security_checks(token_address, analysis_response)
-        
-        # Override security decision with less strict criteria
-        if not security_passed:
-            critical_issues = security_data.get("critical_issues", [])
-            
-            # Filter to only truly critical issues
-            truly_critical = []
-            for issue in critical_issues:
-                issue_str = str(issue).lower()
-                # Only fail for these critical issues
-                if any(keyword in issue_str for keyword in [
-                    'mint authority active', 'freeze authority active', 'unlimited supply', 
-                    'accounts can be frozen', 'rugged', 'scam', 'honeypot', 'malicious'
-                ]):
-                    truly_critical.append(issue)
-            
-            # Update security data with filtered issues
-            if truly_critical:
-                security_data["critical_issues"] = truly_critical
-                logger.warning(f"Confirmed {len(truly_critical)} truly critical security issues")
-                return False, security_data
-            else:
-                # Convert critical issues to warnings if they're not truly critical
-                warnings = security_data.get("warnings", [])
-                warnings.extend(critical_issues)
-                security_data["warnings"] = warnings
-                security_data["critical_issues"] = []
-                security_data["overall_safe"] = True
-                logger.info(f"Reclassified {len(critical_issues)} issues as warnings - continuing analysis")
-                return True, security_data
-        
-        return security_passed, security_data
+        # Use the existing security check logic from token_analyzer
+        # This already has the proper logic for determining when to stop
+        return await token_analyzer._run_security_checks(token_address, analysis_response)
     
     async def _run_market_analysis_services(self, token_address: str, analysis_response: Dict[str, Any]) -> None:
-        """Run market analysis services"""
+        """Run market analysis services - delegate to existing logic"""
         from app.services.token_analyzer import token_analyzer
         
         await token_analyzer._run_market_analysis_services(token_address, analysis_response)
     
-    async def _run_improved_ai_analysis(
+    async def _run_ai_analysis(
         self, 
         token_address: str, 
         service_responses: Dict[str, Any],
@@ -250,10 +201,10 @@ class EnhancedTokenAnalyzer:
         analysis_response: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """
-        Run AI analysis with improved handling and realistic expectations
+        Run AI analysis - only called if security checks passed
         """
         try:
-            logger.info(f"Starting improved AI analysis for {token_address}")
+            logger.info(f"Starting AI analysis for {token_address}")
             
             # Log data availability for transparency
             self._log_data_availability(service_responses)
@@ -272,7 +223,7 @@ class EnhancedTokenAnalyzer:
                 analysis_response["warnings"].append("AI analysis service temporarily unavailable")
                 return None
             
-            # Convert to dict for storage with improved defaults
+            # Convert to dict for storage
             ai_analysis_dict = {
                 "ai_score": float(ai_result.ai_score) if ai_result.ai_score is not None else 65.0,
                 "risk_assessment": ai_result.risk_assessment or "medium",
@@ -286,11 +237,10 @@ class EnhancedTokenAnalyzer:
                 "processing_time": float(ai_result.processing_time) if ai_result.processing_time is not None else 0.0,
                 "model_used": "llama-3.3-70b-versatile",
                 "analysis_successful": True,
-                "data_driven": True,
-                "realistic_assessment": True
+                "data_driven": True
             }
             
-            logger.info(f"AI analysis completed: Score {ai_result.ai_score}, Recommendation {ai_result.recommendation}")
+            logger.info(f"✅ AI analysis completed: Score {ai_result.ai_score}, Recommendation {ai_result.recommendation}")
             
             return ai_analysis_dict
             
@@ -337,7 +287,7 @@ class EnhancedTokenAnalyzer:
         token_address: str
     ) -> Dict[str, Any]:
         """
-        Generate enhanced comprehensive analysis with improved AI integration
+        Generate enhanced comprehensive analysis with AI integration
         """
         # Start with traditional analysis
         from app.services.token_analyzer import token_analyzer
@@ -345,38 +295,43 @@ class EnhancedTokenAnalyzer:
             service_responses, security_data, token_address
         )
         
-        # If no AI analysis available, enhance traditional analysis with better messaging
+        # If no AI analysis available, return traditional analysis
         if not ai_analysis or not isinstance(ai_analysis, dict):
-            logger.info("No AI analysis available, using enhanced traditional analysis")
+            logger.info("No AI analysis available, using traditional analysis")
             traditional_analysis["ai_enhanced"] = False
             traditional_analysis["ai_available"] = False
             traditional_analysis["ai_reason"] = "AI analysis temporarily unavailable"
-            
-            # Improve traditional analysis to be less pessimistic
-            self._improve_traditional_analysis(traditional_analysis, service_responses)
-            
             return traditional_analysis
         
         # Enhance with AI insights
         logger.info("Enhancing analysis with AI insights")
         
-        # Improved scoring system
+        # Combine scores: 60% traditional (proven), 40% AI (enhancement)
         traditional_score = float(traditional_analysis.get("score", 65))
         ai_score = float(ai_analysis.get("ai_score", 65)) if ai_analysis.get("ai_score") is not None else 65.0
         
-        # More balanced combination: 50% traditional, 50% AI
-        enhanced_score = (traditional_score * 0.5) + (ai_score * 0.5)
+        enhanced_score = (traditional_score * 0.6) + (ai_score * 0.4)
         
-        # AI recommendation intelligence
+        # AI recommendation takes priority for critical issues
         ai_recommendation = ai_analysis.get("recommendation", "CONSIDER") or "CONSIDER"
         traditional_recommendation = traditional_analysis.get("recommendation", "consider")
         
-        # Improved recommendation logic
-        enhanced_recommendation = self._determine_enhanced_recommendation(
-            ai_recommendation, traditional_recommendation, enhanced_score, ai_analysis
+        # Check for AI stop flags - these should influence final recommendation
+        ai_stop_flags = ai_analysis.get("stop_flags", []) or []
+        has_critical_ai_flags = any(
+            critical in str(flag).lower() for flag in ai_stop_flags
+            for critical in ['mint authority', 'freeze authority', 'rug', 'scam', 'honeypot']
         )
         
-        # Risk level enhancement with AI input
+        if has_critical_ai_flags:
+            enhanced_recommendation = "avoid"
+            enhanced_score = min(enhanced_score, 25)  # Cap score if AI found critical issues
+        else:
+            enhanced_recommendation = self._determine_enhanced_recommendation(
+                ai_recommendation, traditional_recommendation, enhanced_score, ai_analysis
+            )
+        
+        # Risk level enhancement
         ai_risk = ai_analysis.get("risk_assessment", "medium") or "medium"
         traditional_risk = traditional_analysis.get("risk_level", "medium")
         
@@ -385,35 +340,16 @@ class EnhancedTokenAnalyzer:
         # Combine insights intelligently
         traditional_positives = traditional_analysis.get("positive_signals", []) or []
         ai_insights = ai_analysis.get("key_insights", []) or []
-        
-        # Merge and deduplicate insights
         combined_positive_signals = self._merge_insights(traditional_positives, ai_insights)
         
         traditional_risks = traditional_analysis.get("risk_factors", []) or []
         ai_risk_factors = ai_analysis.get("risk_factors", []) or []
         
-        # Only add AI risk factors if they're not about data availability
-        filtered_ai_risks = [
-            risk for risk in ai_risk_factors 
-            if not any(phrase in str(risk).lower() for phrase in [
-                'data not available', 'missing data', 'no data', 'unavailable', 
-                'unknown lp status', 'holder data not found'
-            ])
-        ]
+        # Add AI stop flags as risk factors if present
+        if ai_stop_flags:
+            ai_risk_factors.extend([f"AI Alert: {flag}" for flag in ai_stop_flags])
         
-        combined_risk_factors = self._merge_insights(traditional_risks, filtered_ai_risks)
-        
-        # Handle AI stop flags more intelligently
-        ai_stop_flags = ai_analysis.get("stop_flags", []) or []
-        critical_stop_flags = [
-            flag for flag in ai_stop_flags
-            if any(keyword in str(flag).lower() for keyword in [
-                'mint authority', 'freeze authority', 'rug', 'scam', 'honeypot'
-            ])
-        ]
-        
-        if critical_stop_flags:
-            combined_risk_factors.extend([f"AI Critical Alert: {flag}" for flag in critical_stop_flags])
+        combined_risk_factors = self._merge_insights(traditional_risks, ai_risk_factors)
         
         # Enhanced confidence calculation
         traditional_confidence = float(traditional_analysis.get("confidence", 70))
@@ -442,7 +378,7 @@ class EnhancedTokenAnalyzer:
             ),
             "positive_signals": combined_positive_signals,
             "risk_factors": combined_risk_factors,
-            "security_passed": True,
+            "security_passed": True,  # Only reached if security passed
             "services_analyzed": len(service_responses),
             "ai_enhanced": True,
             "ai_available": True,
@@ -451,45 +387,20 @@ class EnhancedTokenAnalyzer:
             "ai_reasoning": ai_analysis.get("llama_reasoning", "No reasoning provided") or "No reasoning provided",
             "traditional_score": traditional_score,
             "score_breakdown": {
-                "traditional_weight": 0.5,
-                "ai_weight": 0.5,
+                "traditional_weight": 0.6,  # Traditional gets more weight (proven logic)
+                "ai_weight": 0.4,           # AI enhancement
                 "traditional_score": traditional_score,
                 "ai_score": ai_score,
                 "final_score": enhanced_score,
-                "agreement_bonus": score_agreement
+                "agreement_bonus": score_agreement,
+                "ai_stop_flags": len(ai_stop_flags)
             },
             "ai_processing_time": float(ai_analysis.get("processing_time", 0.0)) if ai_analysis.get("processing_time") is not None else 0.0,
             "ai_model": ai_analysis.get("model_used", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile",
-            "realistic_assessment": True,
-            "data_driven": True
+            "ai_stop_flags": ai_stop_flags
         }
         
         return enhanced_analysis
-    
-    def _improve_traditional_analysis(self, analysis: Dict[str, Any], service_responses: Dict[str, Any]) -> None:
-        """Improve traditional analysis to be less pessimistic about missing data"""
-        
-        # Boost score if it's too low due to missing data
-        current_score = analysis.get("score", 60)
-        if current_score < 50 and len(service_responses) >= 3:
-            # If we have good service coverage, boost the base score
-            analysis["score"] = max(50, current_score + 10)
-            if "Limited data sources" in analysis.get("risk_factors", []):
-                analysis["risk_factors"].remove("Limited data sources")
-                analysis["positive_signals"].append("Multiple data sources available")
-        
-        # Improve risk level if it's overly pessimistic
-        if analysis.get("risk_level") == "high" and not any(
-            critical in str(analysis.get("risk_factors", [])).lower() 
-            for critical in ['mint authority', 'freeze authority', 'rug', 'scam']
-        ):
-            analysis["risk_level"] = "medium"
-        
-        # Add positive signal for data availability
-        if len(service_responses) >= 4:
-            positives = analysis.get("positive_signals", [])
-            if not any("data coverage" in signal.lower() for signal in positives):
-                analysis["positive_signals"].append("Good data coverage from multiple sources")
     
     def _determine_enhanced_recommendation(
         self, 
@@ -500,15 +411,7 @@ class EnhancedTokenAnalyzer:
     ) -> str:
         """Determine enhanced recommendation with intelligent logic"""
         
-        # AI takes precedence for critical issues
-        ai_stop_flags = ai_analysis.get("stop_flags", [])
-        if ai_stop_flags and any(
-            critical in str(flag).lower() for flag in ai_stop_flags
-            for critical in ['mint authority', 'freeze authority', 'rug', 'scam']
-        ):
-            return "avoid"
-        
-        # Map recommendations to common format
+        # Map AI recommendations to traditional format
         ai_to_traditional = {
             "BUY": "consider",
             "CONSIDER": "consider", 
@@ -523,15 +426,20 @@ class EnhancedTokenAnalyzer:
         if mapped_ai_rec == traditional_recommendation:
             return mapped_ai_rec
         
-        # If one is more optimistic, consider the score
-        if enhanced_score >= 75:
-            return "consider"  # High score = consider
-        elif enhanced_score >= 60:
-            return max(mapped_ai_rec, traditional_recommendation, key=lambda x: {
-                "consider": 3, "caution": 2, "avoid": 1
-            }.get(x, 1))
-        else:
-            return "caution"  # Lower scores = caution
+        # If one is more conservative, go with the more conservative option
+        recommendation_hierarchy = {"consider": 3, "caution": 2, "avoid": 1}
+        
+        traditional_level = recommendation_hierarchy.get(traditional_recommendation, 2)
+        ai_level = recommendation_hierarchy.get(mapped_ai_rec, 2)
+        
+        # Use the more conservative recommendation
+        final_level = min(traditional_level, ai_level)
+        
+        for rec, level in recommendation_hierarchy.items():
+            if level == final_level:
+                return rec
+        
+        return "caution"  # Safe fallback
     
     def _determine_enhanced_risk_level(
         self, 
@@ -541,12 +449,12 @@ class EnhancedTokenAnalyzer:
     ) -> str:
         """Determine enhanced risk level"""
         
-        # Critical AI issues override everything
+        # AI stop flags override everything
         ai_stop_flags = ai_analysis.get("stop_flags", [])
         if ai_stop_flags:
             return "critical"
         
-        # Take the more conservative risk assessment
+        # Take the higher (more conservative) risk assessment
         risk_hierarchy = {"low": 1, "medium": 2, "high": 3, "critical": 4}
         
         ai_risk_level = risk_hierarchy.get(ai_risk, 2)
@@ -562,53 +470,14 @@ class EnhancedTokenAnalyzer:
         return "medium"
     
     def _merge_insights(self, list1: List[str], list2: List[str]) -> List[str]:
-        """Merge two lists of insights, removing duplicates and similar items"""
-        combined = list(list1)  # Start with first list
+        """Merge two lists of insights, removing duplicates"""
+        combined = list(list1)
         
         for item in list2:
-            item_lower = str(item).lower()
-            
-            # Check if this insight is already covered
-            already_covered = any(
-                self._insights_similar(item_lower, str(existing).lower()) 
-                for existing in combined
-            )
-            
-            if not already_covered:
+            if item not in combined:
                 combined.append(item)
         
         return combined
-    
-    def _insights_similar(self, insight1: str, insight2: str) -> bool:
-        """Check if two insights are similar enough to be considered duplicates"""
-        
-        # Extract key terms from each insight
-        key_terms1 = set(insight1.split())
-        key_terms2 = set(insight2.split())
-        
-        # Check for significant overlap
-        overlap = len(key_terms1.intersection(key_terms2))
-        min_length = min(len(key_terms1), len(key_terms2))
-        
-        # Consider similar if >50% overlap or both mention the same concept
-        if min_length > 0 and overlap / min_length > 0.5:
-            return True
-        
-        # Check for concept similarity
-        concepts = {
-            'security': ['security', 'safe', 'secure', 'checks'],
-            'liquidity': ['liquidity', 'liquid', 'pool'],
-            'price': ['price', 'trading', 'market'],
-            'data': ['data', 'sources', 'coverage', 'information']
-        }
-        
-        for concept, terms in concepts.items():
-            insight1_has_concept = any(term in insight1 for term in terms)
-            insight2_has_concept = any(term in insight2 for term in terms)
-            if insight1_has_concept and insight2_has_concept:
-                return True
-        
-        return False
     
     def _recommendations_align(self, ai_rec: str, traditional_rec: str) -> bool:
         """Check if AI and traditional recommendations are aligned"""
@@ -651,18 +520,15 @@ class EnhancedTokenAnalyzer:
             f"{sources_count} data sources"
         ])
         
-        # Add data quality indicator
-        if sources_count >= 5:
-            summary_parts.append("Comprehensive data")
-        elif sources_count >= 3:
-            summary_parts.append("Good data coverage")
-        else:
-            summary_parts.append("Limited data")
+        # Add AI stop flags warning if present
+        ai_stop_flags = ai_analysis.get("stop_flags", []) if ai_analysis else []
+        if ai_stop_flags:
+            summary_parts.append(f"AI ALERTS: {len(ai_stop_flags)}")
         
         return " | ".join(summary_parts)
     
     async def _generate_security_focused_analysis(self, security_data: Dict[str, Any], token_address: str, passed: bool) -> Dict[str, Any]:
-        """Generate security-focused analysis"""
+        """Generate security-focused analysis - delegate to existing logic"""
         from app.services.token_analyzer import token_analyzer
         return await token_analyzer._generate_security_focused_analysis(security_data, token_address, passed)
     
@@ -684,13 +550,13 @@ enhanced_token_analyzer = EnhancedTokenAnalyzer()
 
 async def analyze_token_deep_comprehensive(token_address: str, source_event: str = "api_request") -> Dict[str, Any]:
     """
-    Perform deep comprehensive token analysis with improved AI integration
+    Perform deep comprehensive token analysis with AI integration
     
     Args:
         token_address: Token mint address
         source_event: Source of analysis request
     
     Returns:
-        Enhanced analysis result with realistic AI insights
+        Enhanced analysis result with AI insights (only if security passes)
     """
     return await enhanced_token_analyzer.analyze_token_deep(token_address, source_event)
