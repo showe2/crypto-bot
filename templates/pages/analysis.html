@@ -22,10 +22,20 @@
         <button
           @click="exportResults()"
           x-show="hasResults"
-          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 flex items-center"
+          :class="{ 'bg-green-50 border-green-300 text-green-700': results && results.docx_cache_key }"
         >
-          <i class="fas fa-download mr-2"></i>
-          Export
+          <i
+            class="fas mr-2"
+            :class="results && results.docx_cache_key ? 'fa-file-word' : 'fa-download'"
+          ></i>
+          <span x-show="results && results.docx_cache_key">Export DOCX</span>
+          <span x-show="!results || !results.docx_cache_key">Export JSON</span>
+          <span
+            x-show="results && results.docx_cache_key"
+            class="ml-1 text-xs opacity-75"
+            >(2h limit)</span
+          >
         </button>
       </div>
     </div>
@@ -1146,14 +1156,27 @@
 
             exportResults() {
               if (!this.results) return;
+
+              // Check if DOCX generation is available
+              if (this.results.docx_cache_key) {
+                this.downloadDocxReport();
+              } else {
+                // Fallback to JSON export if no cache key
+                this.exportJsonResults();
+              }
+            },
+
+            exportJsonResults() {
               const data = {
                 ...this.results,
                 exported_at: new Date().toISOString(),
                 export_format: "json",
               };
+
               const blob = new Blob([JSON.stringify(data, null, 2)], {
                 type: "application/json",
               });
+
               const url = URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
@@ -1165,11 +1188,79 @@
               a.click();
               document.body.removeChild(a);
               URL.revokeObjectURL(url);
+
               this.showNotification(
                 "success",
                 "Export Complete",
-                "Analysis results exported successfully"
+                "Analysis results exported as JSON"
               );
+            },
+
+            async downloadDocxReport() {
+              if (!this.results || !this.results.docx_cache_key) {
+                this.showNotification(
+                  "error",
+                  "Report Unavailable",
+                  "Report data has expired or is not available (available for 2 hours after analysis)"
+                );
+                return;
+              }
+
+              try {
+                this.showNotification(
+                  "info",
+                  "Generating Report",
+                  "Creating DOCX document..."
+                );
+
+                const response = await fetch(
+                  `/document/${this.results.docx_cache_key}`
+                );
+
+                if (!response.ok) {
+                  if (response.status === 404) {
+                    throw new Error(
+                      "Report data has expired (available for 2 hours only)"
+                    );
+                  } else {
+                    throw new Error("Report generation failed");
+                  }
+                }
+
+                // Download file
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+
+                // Generate filename with token info
+                const tokenSymbol = this.getTokenSymbol() || "Unknown";
+                const tokenShort = this.form.tokenMint.substring(0, 8);
+                const date = new Date().toISOString().split("T")[0];
+
+                a.download = `${tokenSymbol}_Analysis_${tokenShort}_${date}.docx`;
+
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                this.showNotification(
+                  "success",
+                  "Download Complete",
+                  "Professional analysis report downloaded successfully"
+                );
+              } catch (error) {
+                console.error("DOCX download failed:", error);
+
+                // Fallback to JSON export
+                this.showNotification(
+                  "warning",
+                  "DOCX Unavailable",
+                  "Falling back to JSON export: " + error.message
+                );
+                this.exportJsonResults();
+              }
             },
 
             truncateAddress(address) {

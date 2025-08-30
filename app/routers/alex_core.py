@@ -1,11 +1,12 @@
 from typing import Dict, List, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, Path, Query
 from fastapi.templating import Jinja2Templates
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pathlib import Path as PathlibPath
 from loguru import logger
 from datetime import datetime
 import time
+import io
 
 from app.core.config import get_settings
 from app.core.dependencies import rate_limit_per_ip
@@ -15,6 +16,7 @@ from app.utils.health import health_check_all_services
 from app.services.token_analyzer import token_analyzer
 from app.services.analysis_storage import analysis_storage
 from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
+from app.services.ai.ai_service import generate_analysis_docx_from_cache
 
 # Settings and dependencies
 settings = get_settings()
@@ -333,6 +335,44 @@ async def quick_analysis_endpoint(
                 "analysis_stopped_at_security": False
             }
         }
+    
+@router.get("/document/{redis_key}")
+async def download_analysis_document(
+    redis_key: str,
+    background_tasks: BackgroundTasks
+):
+    """Download DOCX report for cached analysis"""
+    
+    try:
+        # Validate redis key format
+        if not redis_key.startswith("analysis_docx:"):
+            raise HTTPException(status_code=400, detail="Invalid redis key format")
+        
+        # Generate DOCX
+        docx_content = await generate_analysis_docx_from_cache(redis_key)
+        
+        if not docx_content:
+            raise HTTPException(
+                status_code=404, 
+                detail="Analysis data not found or expired (available for 2 hours only)"
+            )
+        
+        # Extract token info from redis key for filename
+        token_part = redis_key.split(":")[1] if ":" in redis_key else "unknown"
+        filename = f"token_analysis_{token_part}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
+        
+        # Return as downloadable file
+        return StreamingResponse(
+            io.BytesIO(docx_content),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Document download failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate document")
 
 # ==============================================
 # API ENDPOINTS FOR FRONTEND

@@ -3,9 +3,8 @@ import time
 import json
 from typing import Dict, Any, Optional, List, Tuple
 from loguru import logger
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from app.services.service_manager import api_manager
 from app.utils.redis_client import get_redis_client
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
@@ -34,7 +33,38 @@ class EnhancedTokenAnalyzer:
             "rugcheck": True,
             "solsniffer": True
         }
-    
+
+    async def _cache_analysis_for_docx(self, analysis_response: Dict[str, Any]) -> str:
+        """Cache analysis data for DOCX generation with 2-hour TTL"""
+        try:
+            from app.utils.redis_client import get_redis_client
+            
+            redis_client = await get_redis_client()
+            
+            # Generate cache key
+            token_address = analysis_response.get("token_address", "unknown")
+            timestamp = int(time.time())
+            cache_key = f"analysis_docx:{token_address}:{timestamp}"
+            
+            # Store for 2 hours
+            import json
+            success = await redis_client.set(
+                cache_key, 
+                json.dumps(analysis_response), 
+                ex=7200  # 2 hours
+            )
+            
+            if success:
+                logger.info(f"Cached analysis for DOCX generation: {cache_key}")
+                return cache_key
+            else:
+                logger.warning("Failed to cache analysis for DOCX")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Failed to cache analysis for DOCX: {str(e)}")
+            return None
+        
     async def analyze_token_deep(self, token_address: str, source_event: str = "api_request") -> Dict[str, Any]:
         """
         Perform deep token analysis with AI integration - STOPS on security failure
@@ -163,6 +193,10 @@ class EnhancedTokenAnalyzer:
                 ttl=ttl,
                 namespace=self.cache_namespace
             )
+
+            analysis_response["docx_cache_key"] = f"{self.cache_namespace}:{cache_key}"
+            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+
             logger.info(f"💾 Cached deep analysis for {token_address} with TTL {ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache deep analysis: {str(e)}")

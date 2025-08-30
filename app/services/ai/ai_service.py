@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.services.ai.groq_ai_service import groq_llama_service
+from app.services.ai.docx_service import docx_service
 
 settings = get_settings()
 
@@ -755,6 +756,14 @@ async def analyze_token_with_ai(
         
     except Exception as e:
         logger.error(f"AI analysis service error: {str(e)}")
+        return None
+    
+async def generate_analysis_docx_from_cache(redis_key: str) -> Optional[bytes]:
+    """Generate DOCX report from cached analysis data"""
+    try:
+        return await docx_service.generate_analysis_docx(redis_key)
+    except Exception as e:
+        logger.error(f"DOCX generation failed: {str(e)}")
         return None
 
 # Health check function

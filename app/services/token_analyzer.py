@@ -3,7 +3,7 @@ import time
 import json
 from typing import Dict, Any, Optional, List, Tuple
 from loguru import logger
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.services.service_manager import api_manager
 from app.utils.redis_client import get_redis_client
@@ -140,6 +140,10 @@ class TokenAnalyzer:
                 ttl=ttl,
                 namespace=self.cache_namespace
             )
+
+            analysis_response["docx_cache_key"] = f"{self.cache_namespace}:{cache_key}"
+            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+
             logger.info(f"Cached analysis for {token_address} with TTL {ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache analysis: {str(e)}")
