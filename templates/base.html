@@ -550,6 +550,44 @@
               </button>
             </div>
           </div>
+          <!-- Export Section -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6">
+            <div class="font-bold mb-3">📄 Export Analysis</div>
+            <div class="space-y-3">
+              <!-- DOCX Export Button -->
+              <button
+                @click="exportPopupAnalysis()"
+                :disabled="!isRecentAnalysis()"
+                class="w-full px-4 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center"
+                :class="isRecentAnalysis() ? 
+                  'bg-green-600 text-white hover:bg-green-700' : 
+                  'bg-gray-300 text-gray-500 cursor-not-allowed'"
+              >
+                <i 
+                  class="fas mr-2"
+                  :class="isRecentAnalysis() ? 'fa-file-word' : 'fa-file-excel'"
+                ></i>
+                <span x-show="isRecentAnalysis()">Export Professional DOCX</span>
+                <span x-show="!isRecentAnalysis()">Export Unavailable (DOCS Expired)</span>
+              </button>
+              
+              <!-- Status Text -->
+              <div class="text-xs text-center">
+                <span 
+                  x-show="isRecentAnalysis()" 
+                  class="text-green-600"
+                >
+                  ✅ Professional report available
+                </span>
+                <span 
+                  x-show="!isRecentAnalysis()" 
+                  class="text-gray-500"
+                >
+                  ⏰ Analysis is older than 2 hours
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -752,6 +790,39 @@
             this.notification = null;
           },
 
+          isRecentAnalysis() {
+            if (!this.popupAnalysis) return false;
+            
+            // Check if we have a direct docx_cache_key (from fresh analysis)
+            if (this.popupAnalysis.docx_cache_key) {
+              return true;
+            }
+            
+            // For stored analyses, check if timestamp is within 2 hours
+            const timestamp = this.popupAnalysis.timestamp;
+            if (!timestamp) return false;
+            
+            try {
+              let analysisTime;
+              if (typeof timestamp === 'number') {
+                // Handle both seconds and milliseconds timestamps
+                analysisTime = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+              } else if (typeof timestamp === 'string') {
+                analysisTime = new Date(timestamp).getTime();
+              } else {
+                return false;
+              }
+              
+              const now = Date.now();
+              const twoHours = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+              
+              return (now - analysisTime) < twoHours;
+            } catch (error) {
+              console.error('Error checking analysis age:', error);
+              return false;
+            }
+          },
+
           // Popup methods
           openAnalysisPopup(analysisData) {
             console.log("📊 Opening analysis popup:", analysisData);
@@ -788,6 +859,68 @@
               this.closeAnalysisPopup();
               window.location.href = `/analysis?token=${tokenAddress}`;
             }
+          },
+
+          async exportPopupAnalysis() {
+            if (!this.popupAnalysis) return;
+
+            // Check if analysis is recent enough for DOCX
+            if (this.isRecentAnalysis()) {
+              await this.tryDownloadPopupDocx();
+            } else {
+              // Fallback to JSON export if analysis is old
+              this.exportPopupJsonResults();
+            }
+          },
+
+          async downloadPopupDocx() {
+            try {
+              // Try to get DOCX - construct cache key if needed
+              let cacheKey = this.popupAnalysis.docx_cache_key;
+              
+              if (!cacheKey) {
+                // Construct possible cache key
+                const tokenAddress = this.popupAnalysis.mint || this.popupAnalysis.token_address;
+                cacheKey = `enhanced_token_analysis:deep_analysis:${tokenAddress}`;
+              }
+
+              const response = await fetch(`/document/${encodeURIComponent(cacheKey)}`);
+
+              if (!response.ok) {
+                throw new Error("DOCX not available");
+              }
+
+              // Download file
+              const blob = await response.blob();
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `${this.popupAnalysis.token_symbol || 'Unknown'}_Analysis.docx`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              window.URL.revokeObjectURL(url);
+
+              this.showNotification("success", "Downloaded", "DOCX report downloaded");
+            } catch (error) {
+              this.exportPopupJson();
+            }
+          },
+
+          exportPopupJson() {
+            const blob = new Blob([JSON.stringify(this.popupAnalysis, null, 2)], {
+              type: "application/json",
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = `token-analysis-${(this.popupAnalysis.mint || "unknown").substring(0, 8)}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            this.showNotification("success", "Exported", "JSON file downloaded");
           },
 
           formatNumber(num) {

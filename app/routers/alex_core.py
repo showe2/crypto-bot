@@ -336,30 +336,45 @@ async def quick_analysis_endpoint(
             }
         }
     
-@router.get("/document/{redis_key}")
+@router.get("/document/{cache_key:path}")
 async def download_analysis_document(
-    redis_key: str,
+    cache_key: str,
     background_tasks: BackgroundTasks
 ):
-    """Download DOCX report for cached analysis"""
+    """Download DOCX report for cached analysis - FIXED"""
     
     try:
-        # Validate redis key format
-        if not redis_key.startswith("analysis_docx:"):
-            raise HTTPException(status_code=400, detail="Invalid redis key format")
+        logger.info(f"📄 DOCX download request for cache key: {cache_key}")
         
         # Generate DOCX
-        docx_content = await generate_analysis_docx_from_cache(redis_key)
+        docx_content = await generate_analysis_docx_from_cache(cache_key)
         
         if not docx_content:
+            logger.warning(f"❌ No DOCX content found for cache key: {cache_key}")
             raise HTTPException(
                 status_code=404, 
                 detail="Analysis data not found or expired (available for 2 hours only)"
             )
         
-        # Extract token info from redis key for filename
-        token_part = redis_key.split(":")[1] if ":" in redis_key else "unknown"
+        # Extract token info from cache key for filename
+        try:
+            # Extract token address from key: "namespace:type:TOKEN_ADDRESS"
+            if ":" in cache_key:
+                parts = cache_key.split(":")
+                if len(parts) >= 3:
+                    token_part = parts[-1][:8]  # Last part (token), first 8 chars
+                elif len(parts) >= 2:
+                    token_part = parts[-1][:8]  # Last part, first 8 chars
+                else:
+                    token_part = "unknown"
+            else:
+                token_part = cache_key[:8]  # First 8 chars of key
+        except Exception:
+            token_part = "unknown"
+        
         filename = f"token_analysis_{token_part}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
+        
+        logger.info(f"✅ DOCX ready for download, filename: {filename}")
         
         # Return as downloadable file
         return StreamingResponse(
@@ -371,8 +386,8 @@ async def download_analysis_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Document download failed: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate document")
+        logger.error(f"❌ Document download failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate document: {str(e)}")
 
 # ==============================================
 # API ENDPOINTS FOR FRONTEND

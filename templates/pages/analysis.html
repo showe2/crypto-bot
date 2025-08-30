@@ -1201,7 +1201,7 @@
                 this.showNotification(
                   "error",
                   "Report Unavailable",
-                  "Report data has expired or is not available (available for 2 hours after analysis)"
+                  "Report data has expired or is not available"
                 );
                 return;
               }
@@ -1213,8 +1213,11 @@
                   "Creating DOCX document..."
                 );
 
+                // Use the cache key directly without modification
+                const cacheKey = this.results.docx_cache_key;
+
                 const response = await fetch(
-                  `/document/${this.results.docx_cache_key}`
+                  `/document/${encodeURIComponent(cacheKey)}`
                 );
 
                 if (!response.ok) {
@@ -1223,7 +1226,8 @@
                       "Report data has expired (available for 2 hours only)"
                     );
                   } else {
-                    throw new Error("Report generation failed");
+                    const errorText = await response.text();
+                    throw new Error(`Report generation failed: ${errorText}`);
                   }
                 }
 

@@ -758,12 +758,44 @@ async def analyze_token_with_ai(
         logger.error(f"AI analysis service error: {str(e)}")
         return None
     
-async def generate_analysis_docx_from_cache(redis_key: str) -> Optional[bytes]:
-    """Generate DOCX report from cached analysis data"""
+async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
+    """Generate DOCX report from cached analysis data - FIXED"""
     try:
-        return await docx_service.generate_analysis_docx(redis_key)
+        logger.info(f"📄 Generating DOCX from cache key: {cache_key}")
+        
+        from app.utils.cache import cache_manager
+        
+        # Parse the cache key to extract namespace and key
+        if ":" in cache_key:
+            parts = cache_key.split(":", 1)  # Split on first colon only
+            namespace = parts[0] if len(parts) == 2 else "enhanced_token_analysis"
+            redis_key = parts[1] if len(parts) == 2 else cache_key
+        else:
+            namespace = "enhanced_token_analysis"
+            redis_key = cache_key
+        
+        logger.info(f"📄 Looking up: namespace='{namespace}', key='{redis_key}'")
+        
+        # Try to get cached data
+        try:
+            cached_data = await cache_manager.get(
+                key=redis_key,
+                namespace=namespace
+            )
+            if cached_data:
+                logger.info(f"✅ Found data in cache manager")
+            else:
+                logger.warning(f"❌ No data found in cache manager")
+                return None
+        except Exception as e:
+            logger.error(f"Cache manager failed: {str(e)}")
+            return None
+        
+        # Generate DOCX using the service
+        return await docx_service.generate_analysis_docx_from_data(cached_data)
+        
     except Exception as e:
-        logger.error(f"DOCX generation failed: {str(e)}")
+        logger.error(f"❌ DOCX generation failed: {str(e)}")
         return None
 
 # Health check function

@@ -141,7 +141,8 @@ class TokenAnalyzer:
                 namespace=self.cache_namespace
             )
 
-            analysis_response["docx_cache_key"] = f"{self.cache_namespace}:{cache_key}"
+            full_cache_key = f"{self.cache_namespace}:{cache_key}"
+            analysis_response["docx_cache_key"] = full_cache_key
             analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
 
             logger.info(f"Cached analysis for {token_address} with TTL {ttl}s")
