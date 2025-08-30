@@ -1,11 +1,12 @@
 import asyncio
 import time
-from typing import Dict, Any, Optional
+import hashlib
+from typing import Dict, Any, Optional, Set
 from loguru import logger
 from datetime import datetime
 
 class WebhookTaskQueue:
-    """Async task queue for webhook event processing with AI-enhanced deep analysis"""
+    """Async task queue for webhook event processing with deduplication"""
     
     def __init__(self):
         self.queue = asyncio.Queue()
@@ -16,11 +17,51 @@ class WebhookTaskQueue:
             "total_failed": 0,
             "queue_size": 0,
             "deep_analyses_triggered": 0,
-            "ai_analyses_completed": 0
+            "ai_analyses_completed": 0,
+            "duplicates_prevented": 0
         }
+        # Deduplication cache: token_address -> last_processed_timestamp
+        self._processed_tokens: Dict[str, float] = {}
+        self._dedup_window = 300  # 5 minutes deduplication window
     
-    async def start_workers(self, num_workers: int = 3):  # Increased workers for deep analysis
-        """Start background workers for deep analysis processing"""
+    def _generate_task_hash(self, token_address: str, event_type: str) -> str:
+        """Generate unique hash for task deduplication"""
+        # Round timestamp to nearest 5 minutes for deduplication window
+        current_time = time.time()
+        time_bucket = int(current_time // self._dedup_window) * self._dedup_window
+        
+        hash_input = f"{token_address}_{event_type}_{time_bucket}"
+        return hashlib.md5(hash_input.encode()).hexdigest()[:12]
+    
+    def _is_duplicate_task(self, token_address: str, event_type: str) -> bool:
+        """Check if this is a duplicate task within the deduplication window"""
+        if not token_address:
+            return False
+        
+        task_hash = self._generate_task_hash(token_address, event_type)
+        current_time = time.time()
+        
+        # Clean old entries
+        expired_keys = [
+            token for token, timestamp in self._processed_tokens.items()
+            if current_time - timestamp > self._dedup_window
+        ]
+        for key in expired_keys:
+            del self._processed_tokens[key]
+        
+        # Check if task was recently processed
+        if task_hash in self._processed_tokens:
+            time_since_last = current_time - self._processed_tokens[task_hash]
+            logger.info(f"Duplicate task detected for {token_address} ({time_since_last:.1f}s ago) - skipping")
+            self.stats["duplicates_prevented"] += 1
+            return True
+        
+        # Mark as processed
+        self._processed_tokens[task_hash] = current_time
+        return False
+    
+    async def start_workers(self, num_workers: int = 3):
+        """Start background workers"""
         if self.running:
             return
         
@@ -48,24 +89,55 @@ class WebhookTaskQueue:
         self.workers.clear()
     
     async def add_task(self, event_type: str, payload: Dict[str, Any], priority: str = "normal"):
-        """Add a webhook event to the processing queue"""
+        """Add a webhook event to the processing queue with deduplication"""
+        # Extract token address for deduplication check
+        token_address = None
+        try:
+            token_address = self._extract_primary_token(payload, event_type)
+        except Exception as e:
+            logger.debug(f"Could not extract token for deduplication: {e}")
+        
+        # Check for duplicates
+        if token_address and self._is_duplicate_task(token_address, event_type):
+            logger.info(f"Prevented duplicate {event_type} task for {token_address}")
+            return
+        
         task = {
             "event_type": event_type,
             "payload": payload,
             "priority": priority,
             "timestamp": time.time(),
             "retries": 0,
-            "analysis_type": "deep_ai_enhanced"  # Mark all tasks as using deep analysis
+            "analysis_type": "deep_ai_enhanced",
+            "primary_token": token_address  # Store for processing
         }
         
         await self.queue.put(task)
         self.stats["queue_size"] = self.queue.qsize()
         
-        logger.debug(f"Added {event_type} task to queue for AI-enhanced deep analysis (queue size: {self.queue.qsize()})")
+        logger.debug(f"Added {event_type} task to queue (token: {token_address}, queue size: {self.queue.qsize()})")
+    
+    def _extract_primary_token(self, payload: Dict[str, Any], event_type: str) -> Optional[str]:
+        """Extract the primary token from payload for deduplication"""
+        try:
+            if event_type == "mint" and payload.get("data"):
+                for data_item in payload["data"]:
+                    if data_item.get("accountData"):
+                        for account_data in data_item["accountData"]:
+                            if account_data.get("mint"):
+                                return account_data["mint"]
+                    
+                    if data_item.get("tokenTransfers"):
+                        for transfer in data_item["tokenTransfers"]:
+                            if transfer.get("mint") and transfer.get("fromTokenAccount") == "":
+                                return transfer["mint"]
+        except Exception:
+            pass
+        return None
     
     async def _worker(self, worker_name: str):
-        """Background worker to process webhook events with deep analysis"""
-        logger.info(f"Webhook worker {worker_name} started (AI-enhanced deep analysis)")
+        """Background worker to process webhook events"""
+        logger.info(f"Webhook worker {worker_name} started")
         
         while self.running:
             try:
@@ -92,106 +164,83 @@ class WebhookTaskQueue:
         logger.info(f"Webhook worker {worker_name} stopped")
     
     async def _process_task(self, task: Dict[str, Any], worker_name: str):
-        """Process a single webhook task with deep analysis"""
+        """Process a single webhook task - analysis handles its own storage"""
         start_time = time.time()
         event_type = task["event_type"]
         
         try:
-            logger.debug(f"Worker {worker_name} processing {event_type} event with AI-enhanced deep analysis")
+            logger.debug(f"Worker {worker_name} processing {event_type} event")
             
-            # Extract token information for analysis triggering
+            # Extract token information for analysis
             payload = task["payload"]
             tokens_for_analysis = self._extract_tokens_for_analysis(payload, event_type)
             
             if tokens_for_analysis:
                 self.stats["deep_analyses_triggered"] += len(tokens_for_analysis)
-                logger.info(f"🤖 Worker {worker_name} triggered deep analysis for {len(tokens_for_analysis)} tokens from {event_type} event")
+                logger.info(f"Worker {worker_name} triggered analysis for {len(tokens_for_analysis)} tokens from {event_type} event")
                 
-                # Trigger deep analysis for each token
+                # Import analysis function only
                 from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
-                from app.services.analysis_storage import analysis_storage  # Add this import
                 
                 for token_address in tokens_for_analysis:
                     try:
-                        logger.info(f"🤖 Starting deep AI analysis for webhook token: {token_address}")
+                        logger.info(f"Starting deep AI analysis for webhook token: {token_address}")
                         
                         analysis_result = await analyze_token_deep_comprehensive(
                             token_address, 
                             f"webhook_{event_type}"
                         )
                         
-                        # Store analysis in database
+                        # Add webhook metadata to the analysis result
+                        if analysis_result and "metadata" not in analysis_result:
+                            analysis_result["metadata"] = {}
+                        
                         if analysis_result:
-                            # Add webhook metadata
-                            analysis_result["metadata"]["webhook_event_type"] = event_type
-                            analysis_result["metadata"]["webhook_timestamp"] = datetime.utcnow().isoformat()
-                            analysis_result["metadata"]["source"] = f"webhook_{event_type}"
-                            
-                            # Store in database
-                            try:
-                                await analysis_storage.store_analysis(analysis_result)
-                                logger.info(f"✅ Analysis stored in DB for webhook token: {token_address}")
-                            except Exception as store_error:
-                                logger.error(f"❌ Failed to store analysis in DB: {str(store_error)}")
-                                raise store_error
+                            analysis_result["metadata"].update({
+                                "webhook_event_type": event_type,
+                                "webhook_timestamp": datetime.utcnow().isoformat(),
+                                "source": f"webhook_{event_type}",
+                                "worker_name": worker_name
+                            })
                         
                         # Check if AI analysis was completed
-                        if analysis_result.get("ai_analysis") and analysis_result.get("metadata", {}).get("ai_analysis_completed"):
-                            self.stats["ai_analyses_completed"] += 1
-                            logger.info(f"✅ AI-enhanced analysis completed for {token_address}")
-                        else:
-                            logger.info(f"✅ Traditional analysis completed for {token_address} (AI not available)")
+                        if analysis_result:
+                            if analysis_result.get("ai_analysis") and analysis_result.get("metadata", {}).get("ai_analysis_completed"):
+                                self.stats["ai_analyses_completed"] += 1
+                                logger.info(f"AI-enhanced analysis completed for {token_address}")
+                            else:
+                                logger.info(f"Traditional analysis completed for {token_address} (AI not available)")
                         
                     except Exception as analysis_error:
-                        logger.error(f"❌ Deep analysis failed for {token_address}: {str(analysis_error)}")
+                        logger.error(f"Deep analysis failed for {token_address}: {str(analysis_error)}")
                         continue
             
             processing_time = time.time() - start_time
             self.stats["total_processed"] += 1
             
             logger.info(
-                f"✅ Background task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed",
-                extra={
-                    "webhook_background": True,
-                    "event_type": event_type,
-                    "processing_time": processing_time,
-                    "worker": worker_name,
-                    "analysis_type": "deep_ai_enhanced",
-                    "tokens_analyzed": len(tokens_for_analysis),
-                    "ai_enhanced": True
-                }
+                f"Background task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed"
             )
             
         except Exception as e:
             processing_time = time.time() - start_time
             self.stats["total_failed"] += 1
             
-            logger.error(
-                f"❌ Background task failed: {event_type} - {str(e)}",
-                extra={
-                    "webhook_background": True,
-                    "event_type": event_type,
-                    "error": str(e),
-                    "processing_time": processing_time,
-                    "worker": worker_name,
-                    "analysis_type": "deep_ai_enhanced"
-                }
-            )
+            logger.error(f"Background task failed: {event_type} - {str(e)}")
             
             # Retry logic for failed tasks
-            if task["retries"] < 3:
+            if task["retries"] < 2:
                 task["retries"] += 1
                 await self.queue.put(task)
                 logger.info(f"Retrying {event_type} task (attempt {task['retries']})")
     
     def _extract_tokens_for_analysis(self, payload: Dict[str, Any], event_type: str) -> list:
-        """Extract token addresses that should trigger deep analysis - MINT EVENTS ONLY"""
+        """Extract token addresses for analysis - MINT EVENTS ONLY"""
         tokens = []
         
         try:
             # Handle mint events only
             if event_type == "mint":
-                # For mint events, extract the minted token
                 if payload.get("data"):
                     for data_item in payload["data"]:
                         if data_item.get("accountData"):
@@ -204,7 +253,7 @@ class WebhookTaskQueue:
                                 if transfer.get("mint") and transfer.get("fromTokenAccount") == "":
                                     tokens.append(transfer["mint"])
             
-            # Remove duplicates and return the first token for mint events
+            # Remove duplicates and return first token only
             tokens = list(set(tokens))
             
             if event_type == "mint":
@@ -216,7 +265,7 @@ class WebhookTaskQueue:
         return []
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get queue statistics with AI analysis metrics"""
+        """Get queue statistics with deduplication metrics"""
         total_events = self.stats["total_processed"] + self.stats["total_failed"]
         success_rate = (
             self.stats["total_processed"] / total_events * 100
@@ -238,7 +287,9 @@ class WebhookTaskQueue:
             "deep_analyses_triggered": self.stats["deep_analyses_triggered"],
             "ai_analyses_completed": self.stats["ai_analyses_completed"],
             "ai_completion_rate": round(ai_completion_rate, 2),
-            "ai_enhanced": True
+            "duplicates_prevented": self.stats["duplicates_prevented"],
+            "deduplication_enabled": True,
+            "dedup_window_seconds": self._dedup_window
         }
 
 
@@ -246,14 +297,14 @@ class WebhookTaskQueue:
 webhook_task_queue = WebhookTaskQueue()
 
 
-# Convenience functions for easy integration
+# Convenience functions
 async def queue_webhook_task(event_type: str, payload: Dict[str, Any], priority: str = "normal"):
-    """Queue a webhook event for background processing with deep analysis"""
+    """Queue a webhook event for background processing with deduplication"""
     await webhook_task_queue.add_task(event_type, payload, priority)
 
 
-async def start_webhook_workers(num_workers: int = 3):  # Increased default workers
-    """Start webhook background workers with AI-enhanced deep analysis"""
+async def start_webhook_workers(num_workers: int = 3):
+    """Start webhook background workers"""
     await webhook_task_queue.start_workers(num_workers)
 
 
@@ -263,7 +314,7 @@ async def stop_webhook_workers():
 
 
 async def get_webhook_queue_stats() -> Dict[str, Any]:
-    """Get webhook queue statistics with AI metrics"""
+    """Get webhook queue statistics"""
     return webhook_task_queue.get_stats()
 
 
@@ -273,8 +324,8 @@ def is_webhook_system_running() -> bool:
 
 
 async def ensure_webhook_workers_running():
-    """Ensure webhook workers are running (auto-start if needed)"""
+    """Ensure webhook workers are running"""
     if not webhook_task_queue.running:
-        logger.info("Webhook workers not running, starting them now with AI-enhanced deep analysis...")
+        logger.info("Webhook workers not running, starting them...")
         await start_webhook_workers()
     return webhook_task_queue.running

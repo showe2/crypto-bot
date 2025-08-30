@@ -137,12 +137,7 @@
     <!-- Advanced Filters -->
     <div
       x-show="showAdvancedFilters"
-      x-transition:enter="transition ease-out duration-200"
-      x-transition:enter-start="opacity-0 transform -translate-y-2"
-      x-transition:enter-end="opacity-100 transform translate-y-0"
-      x-transition:leave="transition ease-in duration-150"
-      x-transition:leave-start="opacity-100 transform translate-y-0"
-      x-transition:leave-end="opacity-0 transform -translate-y-2"
+      x-collapse
       class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-gray-200"
     >
       <!-- Date From -->
@@ -173,10 +168,7 @@
       <div class="flex items-center space-x-2 flex-wrap">
         <span class="text-sm text-gray-600">Active filters:</span>
 
-        <template
-          x-for="([key, value], index) in Object.entries(getActiveFilters())"
-          :key="`filter-${key}-${index}`"
-        >
+        <template x-for="(value, key) in getActiveFilters()" :key="key">
           <span
             class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
           >
@@ -195,111 +187,161 @@
 
   <!-- Results Section -->
   <div class="bg-white rounded-xl shadow-lg">
-    <div class="overflow-x-auto">
-      <table class="min-w-full">
-        <!-- Table Header -->
-        <thead>
-          <tr class="bg-gray-100 text-gray-700 text-sm font-semibold">
-            <th class="px-6 py-3 text-left">Token</th>
-            <th class="px-6 py-3 text-left">Source</th>
-            <th class="px-6 py-3 text-left">Risk Level</th>
-            <th class="px-6 py-3 text-left">Security Status</th>
-            <th class="px-6 py-3 text-left">Analysis Score</th>
-            <th class="px-6 py-3 text-left">Actions</th>
-          </tr>
-        </thead>
+    <!-- Results Header -->
+    <div class="p-6 border-b border-gray-200">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900">
+            Analysis Results
+            <span
+              x-show="pagination && pagination.total_items"
+              class="text-gray-500 font-normal"
+            >
+              (<span x-text="pagination?.total_items || 0"></span> total)
+            </span>
+          </h3>
+          <p class="text-sm text-gray-600 mt-1" x-show="pagination">
+            Showing <span x-text="getShowingText()"></span>
+          </p>
+        </div>
 
-        <!-- Table Body -->
-        <tbody>
-          <!-- IMPORTANT: Add validation and sorting to ensure consistent data -->
-          <template
-            x-for="analysis in sortedAnalyses"
-            :key="analysis?.id || analysis?.mint"
+        <!-- Per Page Selector -->
+        <div class="flex items-center space-x-2">
+          <span class="text-sm text-gray-600">Per page:</span>
+          <select
+            x-model.number="perPage"
+            @change="changePerPage()"
+            class="form-input form-select w-20 text-sm"
           >
-            <tr class="hover:bg-gray-50 border-b border-gray-200">
-              <!-- Token Info -->
-              <td class="px-6 py-4 whitespace-nowrap">
-                <div class="flex items-center space-x-3">
-                  <!-- Token Icon -->
-                  <div class="w-10 h-10 rounded-full overflow-hidden">
-                    <img
-                      x-bind:src="`https://cryptoicon-api.vercel.app/api/icon/${analysis.token_symbol.toLowerCase()}`"
-                      alt="Token Icon"
-                      class="w-full h-full object-cover"
-                    />
-                  </div>
-                  <!-- Token Details -->
-                  <div class="min-w-0 flex-1">
-                    <p
-                      class="text-sm font-medium text-gray-900 truncate"
-                      x-text="analysis.token_symbol || 'Unknown'"
-                    ></p>
-                    <p
-                      class="text-xs text-gray-500 truncate"
-                      x-text="analysis.token_name || 'Unknown Token'"
-                    ></p>
-                  </div>
-                </div>
-              </td>
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
+    </div>
 
-              <!-- Source -->
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span
-                  class="text-xs rounded-full font-medium px-3 py-1"
-                  :class="{
-                    'bg-blue-100 text-blue-800': analysis.source_event === 'api_quick',
-                    'bg-green-100 text-green-800': analysis.source_event === 'api_deep',
-                    'bg-yellow-100 text-yellow-800': analysis.source_event === 'webhook',
-                    'bg-red-100 text-red-800': analysis.source_event === 'social_alert',
-                    'bg-gray-100 text-gray-800': !analysis.source_event
-                  }"
-                  x-text="
-                    analysis.source_event
-                      ? analysis.source_event.replace('_', ' ').toUpperCase()
-                      : 'UNKNOWN'
-                  "
-                ></span>
-              </td>
+    <!-- Loading State -->
+    <div x-show="isLoading" class="p-8 text-center">
+      <div class="loading-spinner mx-auto mb-4"></div>
+      <p class="text-gray-600">Loading analyses...</p>
+    </div>
 
-              <!-- Risk Level -->
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span
-                  class="text-xs rounded-full font-medium px-3 py-1"
-                  :class="{
-                    'bg-green-100 text-green-800': analysis.risk_level === 'low',
-                    'bg-yellow-100 text-yellow-800': analysis.risk_level === 'medium',
-                    'bg-orange-100 text-orange-800': analysis.risk_level === 'high',
-                    'bg-red-100 text-red-800': analysis.risk_level === 'critical',
-                    'bg-gray-100 text-gray-800': analysis.risk_level === 'unknown'
-                  }"
-                  x-text="(analysis.risk_level || 'unknown').toUpperCase() + ' RISK'"
-                ></span>
-              </td>
-
-              <!-- Security Status -->
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span
-                  class="text-xs rounded-full font-medium px-3 py-1"
-                  :class="{
-                    'bg-green-100 text-green-800': analysis.security_status === 'passed',
-                    'bg-red-100 text-red-800': analysis.security_status === 'failed',
-                    'bg-yellow-100 text-yellow-800': analysis.security_status === 'warning',
-                    'bg-gray-100 text-gray-800': analysis.security_status === 'unknown'
-                  }"
+    <!-- Analyses List -->
+    <div
+      x-show="!isLoading && analyses.length > 0"
+      class="divide-y divide-gray-200"
+    >
+      <template x-for="analysis in analyses" :key="analysis.id">
+        <div
+          class="p-6 hover:bg-gray-50 transition-colors cursor-pointer"
+          @click="openAnalysisPopup(analysis)"
+        >
+          <div class="flex items-start justify-between">
+            <!-- Left Section - Token Info -->
+            <div class="flex items-start space-x-4 flex-1">
+              <!-- Token Icon with Status -->
+              <div class="relative flex-shrink-0">
+                <div
+                  class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center"
                 >
-                  <i class="fas fa-shield-alt mr-1"></i>
+                  <i class="fas fa-coins text-blue-600 text-xl"></i>
+                </div>
+                <!-- Status Indicator -->
+                <div
+                  class="absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white"
+                  :class="{
+                    'bg-green-500': analysis.status === 'completed',
+                    'bg-red-500': analysis.status === 'security_failed' || analysis.status === 'critical_issues',
+                    'bg-yellow-500': analysis.status === 'warnings',
+                    'bg-gray-400': analysis.status === 'unknown'
+                  }"
+                ></div>
+              </div>
+
+              <!-- Token Details -->
+              <div class="flex-1 min-w-0">
+                <!-- Token Name and Symbol -->
+                <div class="flex items-center space-x-3 mb-2">
+                  <h4
+                    class="text-lg font-semibold text-gray-900"
+                    x-text="analysis.token_symbol || 'Unknown'"
+                  ></h4>
                   <span
-                    x-text="analysis.security_status === 'passed' ? 'SECURE' : 
+                    x-show="analysis.token_name && analysis.token_name !== 'Unknown Token'"
+                    class="text-sm text-gray-500"
+                    x-text="'(' + analysis.token_name + ')'"
+                  ></span>
+                </div>
+
+                <!-- Token Address -->
+                <div class="flex items-center space-x-2 mb-3">
+                  <code
+                    class="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700"
+                    x-text="analysis.mint ? (analysis.mint.substring(0, 16) + '...') : 'N/A'"
+                  ></code>
+                  <button
+                    x-show="analysis.mint"
+                    @click.stop="copyToClipboard(analysis.mint)"
+                    class="text-xs text-blue-600 hover:text-blue-800"
+                  >
+                    <i class="fas fa-copy"></i>
+                  </button>
+                </div>
+
+                <!-- Status Badges -->
+                <div class="flex items-center space-x-2 flex-wrap">
+                  <!-- Risk Level -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full font-medium"
+                    :class="{
+                      'bg-green-100 text-green-800': analysis.risk_level === 'low',
+                      'bg-yellow-100 text-yellow-800': analysis.risk_level === 'medium',
+                      'bg-orange-100 text-orange-800': analysis.risk_level === 'high',
+                      'bg-red-100 text-red-800': analysis.risk_level === 'critical',
+                      'bg-gray-100 text-gray-800': analysis.risk_level === 'unknown'
+                    }"
+                    x-text="(analysis.risk_level || 'unknown').toUpperCase() + ' RISK'"
+                  ></span>
+
+                  <!-- Security Status -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full font-medium"
+                    :class="{
+                      'bg-green-100 text-green-800': analysis.security_status === 'passed',
+                      'bg-red-100 text-red-800': analysis.security_status === 'failed',
+                      'bg-yellow-100 text-yellow-800': analysis.security_status === 'warning',
+                      'bg-gray-100 text-gray-800': analysis.security_status === 'unknown'
+                    }"
+                  >
+                    <i class="fas fa-shield-alt mr-1"></i>
+                    <span
+                      x-text="analysis.security_status === 'passed' ? 'SECURE' : 
                                  analysis.security_status === 'failed' ? 'UNSAFE' :
                                  analysis.security_status === 'warning' ? 'CAUTION' : 'UNKNOWN'"
-                  ></span>
-                </span>
-              </td>
+                    ></span>
+                  </span>
 
+                  <!-- Source -->
+                  <span
+                    class="px-2 py-1 text-xs rounded-full bg-blue-100 text-blue-800 font-medium"
+                  >
+                    <i class="fas fa-code mr-1"></i>
+                    <span
+                      x-text="(analysis.source_event || 'unknown').replace('_', ' ').toUpperCase()"
+                    ></span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right Section - Metrics and Actions -->
+            <div class="flex-shrink-0 text-right">
               <!-- Analysis Score -->
-              <td class="px-6 py-4 whitespace-nowrap text-right">
+              <div class="mb-3">
                 <div
-                  class="text-sm font-bold"
+                  class="text-2xl font-bold"
                   :class="{
                        'text-green-600': analysis.overall_score >= 80,
                        'text-yellow-600': analysis.overall_score >= 60 && analysis.overall_score < 80,
@@ -309,30 +351,132 @@
                      }"
                   x-text="analysis.overall_score ? Math.round(analysis.overall_score) + '%' : 'N/A'"
                 ></div>
-              </td>
+                <div class="text-xs text-gray-500">Analysis Score</div>
+              </div>
 
-              <!-- Actions -->
-              <td class="px-6 py-4 whitespace-nowrap text-right">
-                <button
-                  @click.stop="openAnalysisPopup(analysis)"
-                  class="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
-                >
-                  <i class="fas fa-eye mr-1"></i>
-                  View Details
-                </button>
-              </td>
-            </tr>
-          </template>
-        </tbody>
-      </table>
+              <!-- Issues Count -->
+              <div
+                class="mb-3 space-y-1"
+                x-show="analysis.critical_issues > 0 || analysis.warnings > 0"
+              >
+                <div
+                  x-show="analysis.critical_issues > 0"
+                  class="text-sm font-medium text-red-600"
+                  x-text="analysis.critical_issues + ' critical'"
+                ></div>
+                <div
+                  x-show="analysis.warnings > 0"
+                  class="text-sm font-medium text-yellow-600"
+                  x-text="analysis.warnings + ' warnings'"
+                ></div>
+              </div>
+
+              <!-- Time and Processing Info - FIXED: Using formatDate function -->
+              <div class="text-xs text-gray-500 space-y-1">
+                <div x-text="formatDate(analysis.timestamp)"></div>
+                <div x-show="analysis.processing_time">
+                  <span
+                    x-text="analysis.processing_time.toFixed(2) + 's'"
+                  ></span>
+                  processing
+                </div>
+              </div>
+
+              <!-- Action Button -->
+              <button
+                @click.stop="openAnalysisPopup(analysis)"
+                class="mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+              >
+                <i class="fas fa-eye mr-1"></i>
+                View Details
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
-    <!-- No Results Message -->
+    <!-- Empty State -->
+    <div x-show="!isLoading && analyses.length === 0" class="p-12 text-center">
+      <div class="text-gray-400 mb-4">
+        <i class="fas fa-chart-line text-4xl"></i>
+      </div>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">No Analyses Found</h3>
+      <p class="text-gray-600 mb-4" x-show="hasActiveFilters">
+        Try adjusting your filters or clearing them to see more results.
+      </p>
+      <p
+        class="text-gray-600 mb-4"
+        x-show="!hasActiveFilters && chromaDbAvailable"
+      >
+        No token analyses have been performed yet.
+      </p>
+      <p class="text-gray-600 mb-4" x-show="!chromaDbAvailable">
+        ChromaDB is not connected. Analysis history cannot be displayed.
+      </p>
+      <button
+        x-show="hasActiveFilters"
+        @click="clearFilters()"
+        class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        Clear All Filters
+      </button>
+      <a
+        x-show="!hasActiveFilters && chromaDbAvailable"
+        href="/analysis"
+        class="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+      >
+        Start Analyzing Tokens
+      </a>
+    </div>
+
+    <!-- Pagination -->
     <div
-      x-show="!isLoading && (!analyses || analyses.length === 0)"
-      class="p-6 text-center text-gray-500"
+      x-show="pagination && pagination.total_pages > 1"
+      class="p-6 border-t border-gray-200"
     >
-      No analyses found
+      <div class="flex items-center justify-between">
+        <!-- Page Info -->
+        <div class="text-sm text-gray-600">
+          Page <span x-text="pagination?.page || 1"></span> of
+          <span x-text="pagination?.total_pages || 1"></span>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div class="flex items-center space-x-2">
+          <!-- Previous Button -->
+          <button
+            @click="goToPage((pagination?.page || 1) - 1)"
+            :disabled="!(pagination?.has_prev || false)"
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i class="fas fa-chevron-left mr-1"></i>
+            Previous
+          </button>
+
+          <!-- Page Numbers -->
+          <div class="flex items-center space-x-1">
+            <template x-for="page in getVisiblePages()" :key="page">
+              <button
+                @click="goToPage(page)"
+                :class="page === (pagination?.page || 1) ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'"
+                class="px-3 py-2 border border-gray-300 rounded text-sm font-medium"
+                x-text="page"
+              ></button>
+            </template>
+          </div>
+
+          <!-- Next Button -->
+          <button
+            @click="goToPage((pagination?.page || 1) + 1)"
+            :disabled="!(pagination?.has_next || false)"
+            class="px-3 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Next
+            <i class="fas fa-chevron-right ml-1"></i>
+          </button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -340,19 +484,20 @@
 <script>
   function analysesData() {
     return {
-      // Initialize ALL properties upfront
+      // Initialize all required properties
       analyses: [],
-      perPage: 20,
+      perPage: 20, // Add this line
       chromaDbAvailable: false,
       showAdvancedFilters: false,
       isLoading: false,
+      hasActiveFilters: false,
       pagination: {
         page: 1,
         total_pages: 1,
         total_items: 0,
         has_prev: false,
         has_next: false,
-        per_page: 20,
+        per_page: 20, // Also set it here for consistency
       },
       filters: {
         search: "",
@@ -362,46 +507,35 @@
         date_from: "",
         date_to: "",
       },
-      debouncedSearch: null,
-
-      // Debounce helper
-      debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-          const later = () => {
-            clearTimeout(timeout);
-            func.apply(this, args);
-          };
-          clearTimeout(timeout);
-          timeout = setTimeout(later, wait);
-        }.bind(this);
-      },
 
       init() {
-        console.log("✅ Initializing analyses data...");
+        // Load initial data
+        this.loadAnalyses();
 
-        // Initialize search debounce AFTER debounce is defined
-        this.debouncedSearch = this.debounce(() => {
+        // Initialize search debounce
+        this.debouncedSearch = debounce(() => {
           if (this.filters && typeof this.filters.search !== "undefined") {
             this.handleSearch(this.filters.search);
           }
         }, 300);
-
-        // Load initial data
-        this.loadAnalyses();
-
-        console.log("✅ Analyses data initialized");
       },
 
       async handleSearch(query = "") {
         this.isLoading = true;
         try {
           const searchTerm = (query || "").toLowerCase().trim();
+
           if (!searchTerm) {
             await this.loadAnalyses();
             return;
           }
-          await this.searchAnalyses(searchTerm);
+
+          // Filter analyses by symbol or name
+          this.analyses = this.analyses.filter((analysis) => {
+            const symbol = (analysis.token_symbol || "").toLowerCase();
+            const name = (analysis.token_name || "").toLowerCase();
+            return symbol.includes(searchTerm) || name.includes(searchTerm);
+          });
         } catch (error) {
           console.error("Search failed:", error);
         } finally {
@@ -428,22 +562,13 @@
           const response = await fetch(`/api/analyses?${params}`);
           const data = await response.json();
 
-          // Ensure analyses is always an array
-          this.analyses = Array.isArray(data.analyses) ? data.analyses : [];
-
-          // Ensure pagination is properly set
-          this.pagination = data.pagination || {
-            page: 1,
-            total_pages: 1,
-            total_items: 0,
-            has_prev: false,
-            has_next: false,
-            per_page: this.perPage,
-          };
-
+          this.analyses = data.analyses || [];
+          this.pagination = data.pagination || null;
           this.chromaDbAvailable = data.chromadb_available || false;
 
-          console.log("✅ Loaded analyses:", this.analyses.length, "items");
+          if (!response.ok && !this.chromaDbAvailable) {
+            console.warn("ChromaDB not available:", data.message);
+          }
         } catch (error) {
           console.error("Failed to load analyses:", error);
           this.showNotification(
@@ -451,8 +576,6 @@
             "Load Failed",
             "Failed to load analyses"
           );
-          // Ensure safe defaults on error
-          this.analyses = [];
         } finally {
           this.isLoading = false;
         }
@@ -465,6 +588,7 @@
       async searchAnalyses(query = "") {
         this.isLoading = true;
         try {
+          // If no query, reload all analyses
           if (!query.trim()) {
             await this.loadAnalyses();
             return;
@@ -479,15 +603,8 @@
           const response = await fetch(`/api/analyses?${params}`);
           const data = await response.json();
 
-          this.analyses = Array.isArray(data.analyses) ? data.analyses : [];
-          this.pagination = data.pagination || {
-            page: 1,
-            total_pages: 1,
-            total_items: 0,
-            has_prev: false,
-            has_next: false,
-            per_page: this.perPage,
-          };
+          this.analyses = data.analyses || [];
+          this.pagination = data.pagination || null;
         } catch (error) {
           console.error("Search failed:", error);
           this.showNotification(
@@ -559,18 +676,26 @@
 
       getVisiblePages() {
         if (!this.pagination) return [];
+
         const current = this.pagination.page;
         const total = this.pagination.total_pages;
         const pages = [];
 
         if (total <= 7) {
+          // Show all pages if 7 or less
           for (let i = 1; i <= total; i++) {
             pages.push(i);
           }
         } else {
+          // Show first page
           pages.push(1);
-          if (current > 4) pages.push("...");
 
+          // Show ellipsis if needed
+          if (current > 4) {
+            pages.push("...");
+          }
+
+          // Show pages around current
           const start = Math.max(2, current - 1);
           const end = Math.min(total - 1, current + 1);
 
@@ -580,27 +705,38 @@
             }
           }
 
-          if (current < total - 3) pages.push("...");
-          if (total > 1) pages.push(total);
+          // Show ellipsis if needed
+          if (current < total - 3) {
+            pages.push("...");
+          }
+
+          // Show last page
+          if (total > 1) {
+            pages.push(total);
+          }
         }
 
-        return pages;
+        return pages.filter((p) => p !== "..." || true); // Keep ellipsis for display
       },
 
       // Date formatting function
       formatDate(timestamp) {
         if (!timestamp) return "Unknown";
+
         try {
           let date;
           if (typeof timestamp === "string") {
             date = new Date(timestamp);
           } else if (typeof timestamp === "number") {
+            // Handle both seconds and milliseconds timestamps
             date = new Date(timestamp < 1e12 ? timestamp * 1000 : timestamp);
           } else {
             return "Unknown";
           }
 
-          if (isNaN(date.getTime())) return "Invalid date";
+          if (isNaN(date.getTime())) {
+            return "Invalid date";
+          }
 
           const day = String(date.getDate()).padStart(2, "0");
           const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -608,19 +744,19 @@
 
           return `${day}.${month}.${year}`;
         } catch (error) {
+          console.error("Error formatting date:", error);
           return "Invalid date";
         }
       },
 
       openAnalysisPopup(analysisData) {
-        if (window.openAnalysisPopupGlobal) {
-          window.openAnalysisPopupGlobal(analysisData);
-        } else if (this.$root && this.$root.openAnalysisPopup) {
-          this.$root.openAnalysisPopup(analysisData);
-        } else {
-          // Fallback to local popup creation
-          this.createPopupHTML(analysisData);
-        }
+        console.log("📊 Opening popup with data:", analysisData);
+
+        // Create popup HTML directly
+        this.createPopupHTML(analysisData);
+
+        // Prevent body scroll
+        document.body.style.overflow = "hidden";
       },
 
       createPopupHTML(analysis) {
@@ -910,68 +1046,6 @@
           popup.remove();
         }
         document.body.style.overflow = "";
-      },
-
-      // Add computed property for sorted and validated analyses
-      get sortedAnalyses() {
-        return (this.analyses || [])
-          .filter((a) => a && (a.id || a.mint)) // Ensure valid key exists
-          .map((a) => ({
-            id: a.id || a.mint, // Ensure unique ID
-            mint: a.mint || "unknown",
-            token_symbol: a.token_symbol || "N/A",
-            token_name: a.token_name || "Unknown",
-            source_event: this.normalizeSourceEvent(a.source_event),
-            timestamp: a.timestamp || new Date().toISOString(),
-            // Add all other required properties with defaults
-            ...a,
-          }))
-          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); // Sort by timestamp
-      },
-
-      // Add helper to normalize source events
-      normalizeSourceEvent(event) {
-        if (!event) return "unknown";
-
-        // Handle different source event formats
-        if (event.startsWith("webhook_")) {
-          return event.replace("webhook_", "Webhook: ");
-        }
-        if (event === "api_quick") return "API Quick";
-        if (event === "api_deep") return "API Deep";
-        if (event.includes("social")) return "Social Alert";
-
-        return event;
-      },
-
-      // Update load function to ensure consistent data
-      async loadAnalyses() {
-        this.isLoading = true;
-        try {
-          const params = new URLSearchParams({
-            page: (this.pagination?.page || 1).toString(),
-            per_page: this.perPage.toString(),
-            ...this.getActiveFilters(),
-          });
-
-          const response = await fetch(`/api/analyses?${params}`);
-          const data = await response.json();
-
-          // Validate data before assignment
-          if (!Array.isArray(data.analyses)) {
-            throw new Error("Invalid analyses data received");
-          }
-
-          // Assign with validation
-          this.analyses = data.analyses;
-          this.pagination = data.pagination || { page: 1, total_pages: 1 };
-        } catch (error) {
-          console.error("Failed to load analyses:", error);
-          this.analyses = []; // Reset to safe value
-          this.pagination = { page: 1, total_pages: 1 };
-        } finally {
-          this.isLoading = false;
-        }
       },
     };
   }

@@ -10,6 +10,8 @@ from app.utils.redis_client import get_redis_client
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
 
+import inspect
+
 
 class TokenAnalyzer:
     """Token analyzer with security-first approach"""
@@ -872,38 +874,42 @@ token_analyzer = TokenAnalyzer()
 async def analyze_token_from_webhook(
     token_address: str, 
     event_type: str = "unknown",
-    store_result: bool = True  # Add this parameter
+    store_result: bool = True
 ) -> Dict[str, Any]:
-    """Analyze token from webhook trigger with storage"""
+    """Analyze token from webhook with call stack debugging"""
+    
+    # DEBUG: Log the call stack to see what's calling this function
+    frame = inspect.currentframe()
+    call_stack = []
+    try:
+        while frame:
+            call_stack.append({
+                "function": frame.f_code.co_name,
+                "filename": frame.f_code.co_filename.split('/')[-1],
+                "lineno": frame.f_lineno
+            })
+            frame = frame.f_back
+            if len(call_stack) > 10:  # Limit stack depth
+                break
+    except:
+        call_stack = ["Could not get call stack"]
+    
+    logger.info(f"🔍 WEBHOOK ANALYSIS CALL STACK for {token_address}:")
+    for i, frame_info in enumerate(call_stack[:5]):  # Show top 5 frames
+        if isinstance(frame_info, dict):
+            logger.info(f"  {i}: {frame_info['function']}() at {frame_info['filename']}:{frame_info['lineno']}")
+        else:
+            logger.info(f"  {i}: {frame_info}")
+    
+    # Continue with normal analysis...
     try:
         from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
-        logger.info(f"🤖 Webhook triggering DEEP AI-enhanced analysis for {token_address}")
+        logger.info(f"🤖 Webhook triggering analysis for {token_address}")
         
-        # Get analysis result
         analysis_result = await analyze_token_deep_comprehensive(
             token_address=token_address,
             source_event=f"webhook_{event_type}"
         )
-        
-        # Store result if requested
-        if store_result and analysis_result:
-            from app.services.analysis_storage import analysis_storage
-            
-            # Add webhook metadata
-            analysis_result["metadata"] = {
-                **analysis_result.get("metadata", {}),
-                "source_type": "webhook",
-                "event_type": event_type,
-                "webhook_timestamp": datetime.utcnow().isoformat()
-            }
-            
-            # Store in database
-            try:
-                await analysis_storage.store_analysis(analysis_result)
-                logger.info(f"✅ Webhook analysis stored for {token_address}")
-            except Exception as e:
-                logger.error(f"❌ Failed to store webhook analysis: {str(e)}")
-                # Continue execution even if storage fails
         
         return analysis_result
         
