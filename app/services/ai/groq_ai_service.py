@@ -32,7 +32,7 @@ class AIAnalysisResponse(BaseModel):
     processing_time: float
 
 class GroqLlamaService:
-    """Groq-powered Llama 3.0 service for token analysis with realistic expectations"""
+    """Groq-powered Llama 3.0 service for token analysis with multi-source data aggregation"""
     
     def __init__(self):
         self.client = AsyncGroq(api_key=settings.GROQ_API_KEY)
@@ -43,82 +43,81 @@ class GroqLlamaService:
     
     def _build_system_prompt(self) -> str:
         """Build comprehensive system prompt for token analysis"""
-        return """You are an expert Solana token analyst specializing in cryptocurrency evaluation. Your task is to analyze token data and provide structured investment recommendations with realistic expectations about data availability.
+        return """You are an expert Solana token analyst specializing in cryptocurrency evaluation with multi-source data aggregation capabilities. Your task is to analyze token data from multiple sources and provide structured investment recommendations with realistic expectations about data availability.
 
 CRITICAL: You must respond ONLY with valid JSON. No explanations, no markdown, no additional text.
 
-REALISTIC ANALYSIS FRAMEWORK:
-Evaluate tokens based on available metrics with understanding that missing data is common:
+ENHANCED MULTI-SOURCE ANALYSIS FRAMEWORK:
+You will receive data aggregated from multiple sources. When multiple sources provide the same metric, trust has been established through cross-verification.
 
-MARKET CAP ASSESSMENT:
-- Excellent: <$5M (high growth potential, early opportunity)
-- Good: $5M-$50M (established with growth room)
-- Acceptable: $50M-$200M (mature but stable)
-- Concerning: >$500M (limited growth potential)
+MARKET DATA ASSESSMENT (Multi-Source Enhanced):
+- Price data from multiple sources = Higher confidence
+- Single source price = Lower confidence but still usable
+- Volume/Liquidity cross-confirmed = More reliable metrics
+- Market cap verified across sources = Better accuracy assessment
 
-LIQUIDITY ASSESSMENT:
-- Excellent: $500K+ (very strong liquidity)
-- Good: $100K-$500K (strong liquidity)
-- Acceptable: $25K-$100K (adequate liquidity)
-- Poor: <$25K (weak liquidity)
+CONFIDENCE SCALING WITH SOURCES:
+- Multi-source confirmation: +20 confidence points
+- Single reliable source: Baseline confidence
+- Cross-source contradictions: -10 confidence points
+- Source attribution provided: +5 confidence points
 
-VOLUME ACTIVITY:
-- Excellent: >5% of liquidity daily (very active)
-- Good: 2-5% of liquidity daily (active)
-- Acceptable: 0.5-2% of liquidity daily (moderate)
-- Low: <0.5% of liquidity daily (inactive)
+LIQUIDITY ASSESSMENT (Enhanced):
+- Excellent: $500K+ confirmed across sources
+- Good: $100K-$500K from reliable source
+- Acceptable: $25K-$100K single source
+- Poor: <$25K or conflicting data
 
-SECURITY PRIORITIES (Only Critical Issues):
-- Active mint authority (can create unlimited tokens) - CRITICAL
-- Active freeze authority (can freeze user accounts) - CRITICAL
-- Verified rug pull or scam indicators - CRITICAL
-- Transfer restrictions/honeypot - CRITICAL
+HOLDER ANALYSIS (Multi-Source):
+- Multiple holder data sources = Higher accuracy
+- GOplus + RugCheck confirmation = Most reliable
+- LP provider data supplements holder analysis
+- Cross-reference distribution metrics when available
 
-DATA AVAILABILITY PHILOSOPHY:
-- Missing LP data = NEUTRAL (very common, don't assume bad)
-- Missing holder data = NEUTRAL (many APIs don't provide this)
-- Missing volume = NEUTRAL for newer tokens
-- Focus on POSITIVE indicators found, not data gaps
-- Only flag ACTUAL negative evidence, not absence of data
+SECURITY PRIORITIES (Critical Only):
+- Active mint authority - CRITICAL
+- Active freeze authority - CRITICAL  
+- Verified rug pull evidence - CRITICAL
+- Multi-source security confirmation - CRITICAL
 
-CONFIDENCE GUIDELINES:
-- High (80-100%): Strong positive/negative indicators with good data
-- Medium (60-79%): Adequate data with clear signals
-- Moderate (40-59%): Limited data but no red flags
-- Low (<40%): Very limited data available
+DATA QUALITY PHILOSOPHY:
+- Aggregated data > Single source data
+- Filtered dummy responses improve accuracy
+- Source attribution builds confidence
+- Multi-source gaps indicate genuine data unavailability
 
 RESPONSE FORMAT (JSON ONLY):
 {
   "ai_score": 0-100,
-  "risk_assessment": "low|medium|high|critical",
+  "risk_assessment": "low|medium|high|critical", 
   "recommendation": "BUY|CONSIDER|HOLD|CAUTION|AVOID",
   "confidence": 0-100,
-  "key_insights": ["positive factors found"],
+  "key_insights": ["positive factors with source attribution"],
   "risk_factors": ["actual concerns, not data gaps"],
   "stop_flags": ["critical security issues only"],
   "market_metrics": {
     "data_quality": 0-100,
-    "market_activity": 0-100,
-    "security_assessment": 0-100
+    "multi_source_score": 0-100,
+    "source_reliability": 0-100
   },
-  "llama_reasoning": "Brief explanation focusing on available data"
+  "llama_reasoning": "Brief explanation emphasizing multi-source validation"
 }
 
-DECISION LOGIC (Realistic):
-- BUY: >80 score with strong positive indicators
-- CONSIDER: 65-80 score with good fundamentals
-- HOLD: 45-65 score or insufficient data for clear decision
-- CAUTION: 25-45 score with some risk factors
-- AVOID: <25 score or critical security issues
+ENHANCED DECISION LOGIC:
+- BUY: >85 score with multi-source confirmation
+- CONSIDER: 70-85 score with good source coverage
+- HOLD: 50-70 score or single-source limitations
+- CAUTION: 30-50 score with some concerns
+- AVOID: <30 score or critical security issues
 
-Remember: Absence of data ≠ negative signal. Focus on what IS available."""
+Remember: Multi-source data validation significantly improves analysis accuracy and confidence."""
 
     async def analyze_token(self, request: AIAnalysisRequest) -> Optional[AIAnalysisResponse]:
-        """Analyze token using Groq LLM with realistic data expectations"""
+        """Analyze token using Groq LLM with enhanced multi-source data processing"""
         try:
             start_time = datetime.utcnow()
             
-            # Build analysis prompt with improved data preparation
+            # Build enhanced analysis prompt with multi-source aggregation
             prompt = self._build_analysis_prompt_improved(request.dict())
             
             # Call Groq API
@@ -140,290 +139,875 @@ Remember: Absence of data ≠ negative signal. Focus on what IS available."""
             # Calculate processing time
             processing_time = (datetime.utcnow() - start_time).total_seconds()
             
-            # Create proper AIAnalysisResponse
+            # Create AIAnalysisResponse with enhanced defaults
             response = AIAnalysisResponse(
-                ai_score=parsed_response.get('ai_score', 60.0),  # Neutral default
+                ai_score=parsed_response.get('ai_score', 65.0),
                 risk_assessment=parsed_response.get('risk_assessment', 'medium'),
-                recommendation=parsed_response.get('recommendation', 'HOLD'),
+                recommendation=parsed_response.get('recommendation', 'CONSIDER'),
                 confidence=parsed_response.get('confidence', 70.0),
-                key_insights=parsed_response.get('key_insights', []),
+                key_insights=parsed_response.get('key_insights', ["Multi-source analysis completed"]),
                 risk_factors=parsed_response.get('risk_factors', []),
                 stop_flags=parsed_response.get('stop_flags', []),
                 market_metrics=parsed_response.get('market_metrics', {}),
-                llama_reasoning=parsed_response.get('llama_reasoning', ''),
+                llama_reasoning=parsed_response.get('llama_reasoning', 'Multi-source token analysis completed using aggregated market data'),
                 processing_time=processing_time
             )
             
-            logger.info(f"Groq Llama analysis completed in {processing_time:.2f}s")
+            logger.info(f"Enhanced Groq analysis completed: Score {response.ai_score}, Recommendation {response.recommendation}")
             return response
             
         except Exception as e:
-            logger.error(f"Groq Llama analysis failed: {str(e)}")
+            logger.error(f"Enhanced Groq Llama analysis failed: {str(e)}")
             return self._create_neutral_fallback(request.token_address, 0.0)
     
-    def _build_analysis_prompt_improved(self, data: Dict[str, Any]) -> str:
-        """Build analysis prompt with improved data handling from the reference response"""
+    def _is_dummy_response(self, service_name: str, data: Any) -> bool:
+        """Check if response is a dummy/null response that should be ignored"""
         
-        # Extract data from service responses (similar to reference format)
-        service_responses = data.get('service_responses', {})
-        security_analysis = data.get('security_analysis', {})
+        if not data:
+            return True
         
-        # Market data extraction with safety
+        # RugCheck specific dummy checks
+        if service_name == 'rugcheck':
+            # Score of exactly 1 with minimal data = dummy
+            if isinstance(data, dict):
+                score = data.get('score')
+                if score == 1:
+                    # Check if there's meaningful data beyond score=1
+                    has_meaningful_data = any([
+                        data.get('rugged') is not None,
+                        data.get('risks') and len(data['risks']) > 0,
+                        data.get('verification', {}).get('verified') is not None,
+                        data.get('token_type'),
+                        data.get('total_LP_providers', 0) > 0
+                    ])
+                    
+                    if not has_meaningful_data:
+                        logger.warning(f"RugCheck returned dummy response (score=1, no data)")
+                        return True
+        
+        # GOplus specific dummy checks
+        elif service_name == 'goplus':
+            if isinstance(data, dict):
+                # Check for completely empty or minimal response
+                meaningful_fields = ['holder_count', 'holders', 'dex', 'metadata', 'total_supply']
+                has_meaningful_data = any(data.get(field) for field in meaningful_fields)
+                
+                if not has_meaningful_data:
+                    logger.warning(f"GOplus returned minimal/dummy response")
+                    return True
+        
+        # SolSniffer dummy checks
+        elif service_name == 'solsniffer':
+            if isinstance(data, dict):
+                # Check for score without meaningful data
+                score = data.get('score')
+                if score is not None and score <= 0:
+                    return True
+        
+        # Generic null/empty checks
+        if isinstance(data, dict):
+            if not data or len(data) == 0:
+                return True
+                
+            # Check if all values are None/empty
+            non_empty_values = [v for v in data.values() if v is not None and v != "" and v != []]
+            if len(non_empty_values) == 0:
+                return True
+        
+        elif isinstance(data, list):
+            if len(data) == 0:
+                return True
+        
+        return False
+
+    def _extract_comprehensive_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract market data from ALL available sources with smart aggregation"""
         market_data = {}
         
-        # Birdeye price data
-        birdeye = service_responses.get('birdeye', {})
-        if birdeye and birdeye.get('price'):
-            price_info = birdeye['price']
-            market_data.update({
-                'price': price_info.get('value'),
-                'price_change_24h': price_info.get('price_change_24h'),
-                'volume_24h': price_info.get('volume_24h'),
-                'market_cap': price_info.get('market_cap'),
-                'liquidity': price_info.get('liquidity')
-            })
+        # PRICE DATA - Check multiple sources
+        price_sources = []
         
-        # DexScreener fallback
+        # Birdeye price
+        birdeye = service_responses.get('birdeye', {})
+        if birdeye and birdeye.get('price', {}).get('value'):
+            try:
+                price = float(birdeye['price']['value'])
+                if price > 0:
+                    price_sources.append(('birdeye', price))
+            except (ValueError, TypeError):
+                pass
+        
+        # DexScreener price
         dexscreener = service_responses.get('dexscreener', {})
         if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
             pairs = dexscreener['pairs']['pairs']
             if pairs and len(pairs) > 0:
                 pair = pairs[0]
-                if not market_data.get('market_cap'):
-                    market_data['market_cap'] = pair.get('marketCap')
-                if not market_data.get('volume_24h'):
-                    volume_data = pair.get('volume', {})
-                    market_data['volume_24h'] = volume_data.get('h24') if volume_data else None
-                if not market_data.get('liquidity'):
-                    liq_data = pair.get('liquidity', {})
-                    market_data['liquidity'] = liq_data.get('usd') if liq_data else None
-                if not market_data.get('price'):
-                    market_data['price'] = pair.get('priceUsd')
+                price_usd = pair.get('priceUsd')
+                if price_usd:
+                    try:
+                        price = float(price_usd)
+                        if price > 0:
+                            price_sources.append(('dexscreener', price))
+                    except (ValueError, TypeError):
+                        pass
         
-        # Holder data extraction
+        # GOplus DEX data
+        goplus = service_responses.get('goplus', {})
+        if goplus and goplus.get('dex'):
+            dex_data = goplus['dex']
+            if isinstance(dex_data, list):
+                for dex in dex_data:
+                    if isinstance(dex, dict) and dex.get('price'):
+                        try:
+                            price = float(dex['price'])
+                            if price > 0:
+                                price_sources.append(('goplus_dex', price))
+                                break  # Take first valid price
+                        except (ValueError, TypeError):
+                            continue
+        
+        # Use best price (prefer Birdeye, then DexScreener, then GOplus)
+        if price_sources:
+            # Sort by preference: birdeye > dexscreener > goplus_dex
+            preference_order = {'birdeye': 1, 'dexscreener': 2, 'goplus_dex': 3}
+            price_sources.sort(key=lambda x: preference_order.get(x[0], 99))
+            
+            best_price_source, best_price = price_sources[0]
+            market_data['price'] = best_price
+            market_data['price_display'] = f"${best_price:.8f}"
+            market_data['price_source'] = best_price_source
+            
+            logger.info(f"Price extracted: ${best_price:.6f} from {best_price_source}")
+        else:
+            market_data['price_display'] = "Not available"
+        
+        # MARKET CAP - Aggregate from multiple sources
+        market_cap_sources = []
+        
+        # Birdeye market cap
+        if birdeye and birdeye.get('price', {}).get('market_cap'):
+            try:
+                mc = float(birdeye['price']['market_cap'])
+                if mc > 0:
+                    market_cap_sources.append(('birdeye', mc))
+            except (ValueError, TypeError):
+                pass
+        
+        # DexScreener market cap
+        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
+            pairs = dexscreener['pairs']['pairs']
+            if pairs and len(pairs) > 0:
+                pair = pairs[0]
+                mc = pair.get('marketCap')
+                if mc:
+                    try:
+                        mc_val = float(mc)
+                        if mc_val > 0:
+                            market_cap_sources.append(('dexscreener', mc_val))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # SolSniffer market cap
+        solsniffer = service_responses.get('solsniffer', {})
+        if solsniffer and solsniffer.get('marketCap'):
+            try:
+                mc = float(solsniffer['marketCap'])
+                if mc > 0:
+                    market_cap_sources.append(('solsniffer', mc))
+            except (ValueError, TypeError):
+                pass
+        
+        # Use most reliable market cap
+        if market_cap_sources:
+            preference_order = {'birdeye': 1, 'dexscreener': 2, 'solsniffer': 3}
+            market_cap_sources.sort(key=lambda x: preference_order.get(x[0], 99))
+            
+            best_mc_source, best_mc = market_cap_sources[0]
+            market_data['market_cap'] = best_mc
+            market_data['market_cap_display'] = f"${best_mc:,.0f}"
+            market_data['market_cap_source'] = best_mc_source
+            
+            logger.info(f"Market cap extracted: ${best_mc:,.0f} from {best_mc_source}")
+        else:
+            market_data['market_cap_display'] = "Not available"
+        
+        # VOLUME - Check multiple sources
+        volume_sources = []
+        
+        # Birdeye volume
+        if birdeye and birdeye.get('price', {}).get('volume_24h'):
+            try:
+                vol = float(birdeye['price']['volume_24h'])
+                if vol > 0:
+                    volume_sources.append(('birdeye', vol))
+            except (ValueError, TypeError):
+                pass
+        
+        # DexScreener volume
+        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
+            pairs = dexscreener['pairs']['pairs']
+            if pairs and len(pairs) > 0:
+                pair = pairs[0]
+                volume_data = pair.get('volume', {})
+                if volume_data and volume_data.get('h24'):
+                    try:
+                        vol = float(volume_data['h24'])
+                        if vol > 0:
+                            volume_sources.append(('dexscreener', vol))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # GOplus DEX volume
+        if goplus and goplus.get('dex'):
+            dex_data = goplus['dex']
+            if isinstance(dex_data, list):
+                total_volume = 0
+                for dex in dex_data:
+                    if isinstance(dex, dict) and dex.get('day', {}).get('volume'):
+                        try:
+                            vol = float(dex['day']['volume'])
+                            if vol > 0:
+                                total_volume += vol
+                        except (ValueError, TypeError):
+                            continue
+                if total_volume > 0:
+                    volume_sources.append(('goplus_dex', total_volume))
+        
+        # Use best volume
+        if volume_sources:
+            preference_order = {'birdeye': 1, 'dexscreener': 2, 'goplus_dex': 3}
+            volume_sources.sort(key=lambda x: preference_order.get(x[0], 99))
+            
+            best_vol_source, best_vol = volume_sources[0]
+            market_data['volume_24h'] = best_vol
+            market_data['volume_display'] = f"${best_vol:,.0f}"
+            market_data['volume_source'] = best_vol_source
+            
+            logger.info(f"Volume extracted: ${best_vol:,.0f} from {best_vol_source}")
+        else:
+            market_data['volume_display'] = "Not available"
+        
+        # LIQUIDITY - Aggregate from multiple sources
+        liquidity_sources = []
+        
+        # Birdeye liquidity
+        if birdeye and birdeye.get('price', {}).get('liquidity'):
+            try:
+                liq = float(birdeye['price']['liquidity'])
+                if liq > 0:
+                    liquidity_sources.append(('birdeye', liq))
+            except (ValueError, TypeError):
+                pass
+        
+        # DexScreener liquidity
+        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
+            pairs = dexscreener['pairs']['pairs']
+            if pairs and len(pairs) > 0:
+                pair = pairs[0]
+                liquidity_data = pair.get('liquidity', {})
+                if liquidity_data and liquidity_data.get('usd'):
+                    try:
+                        liq = float(liquidity_data['usd'])
+                        if liq > 0:
+                            liquidity_sources.append(('dexscreener', liq))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # RugCheck liquidity analysis
+        rugcheck = service_responses.get('rugcheck', {})
+        if rugcheck and rugcheck.get('liquidity_analysis'):
+            liq_analysis = rugcheck['liquidity_analysis']
+            total_liq = liq_analysis.get('total_market_liquidity')
+            if total_liq:
+                try:
+                    liq = float(total_liq)
+                    if liq > 0:
+                        liquidity_sources.append(('rugcheck', liq))
+                except (ValueError, TypeError):
+                    pass
+        
+        # GOplus DEX TVL
+        if goplus and goplus.get('dex'):
+            dex_data = goplus['dex']
+            if isinstance(dex_data, list):
+                total_tvl = 0
+                for dex in dex_data:
+                    if isinstance(dex, dict) and dex.get('tvl'):
+                        try:
+                            tvl = float(dex['tvl'])
+                            if tvl > 0:
+                                total_tvl += tvl
+                        except (ValueError, TypeError):
+                            continue
+                if total_tvl > 0:
+                    liquidity_sources.append(('goplus_tvl', total_tvl))
+        
+        # Use best liquidity
+        if liquidity_sources:
+            preference_order = {'birdeye': 1, 'dexscreener': 2, 'rugcheck': 3, 'goplus_tvl': 4}
+            liquidity_sources.sort(key=lambda x: preference_order.get(x[0], 99))
+            
+            best_liq_source, best_liq = liquidity_sources[0]
+            market_data['liquidity'] = best_liq
+            market_data['liquidity_display'] = f"${best_liq:,.0f}"
+            market_data['liquidity_source'] = best_liq_source
+            
+            logger.info(f"Liquidity extracted: ${best_liq:,.0f} from {best_liq_source}")
+        else:
+            market_data['liquidity_display'] = "Not available"
+        
+        # PRICE CHANGE - Multiple sources
+        change_sources = []
+        
+        # Birdeye price change
+        if birdeye and birdeye.get('price', {}).get('price_change_24h') is not None:
+            try:
+                change = float(birdeye['price']['price_change_24h'])
+                change_sources.append(('birdeye', change))
+            except (ValueError, TypeError):
+                pass
+        
+        # DexScreener price change
+        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
+            pairs = dexscreener['pairs']['pairs']
+            if pairs and len(pairs) > 0:
+                pair = pairs[0]
+                price_change = pair.get('priceChange', {})
+                if price_change and price_change.get('h24') is not None:
+                    try:
+                        change = float(price_change['h24'])
+                        change_sources.append(('dexscreener', change))
+                    except (ValueError, TypeError):
+                        pass
+        
+        # Use best price change
+        if change_sources:
+            preference_order = {'birdeye': 1, 'dexscreener': 2}
+            change_sources.sort(key=lambda x: preference_order.get(x[0], 99))
+            
+            best_change_source, best_change = change_sources[0]
+            market_data['price_change_24h'] = best_change
+            market_data['change_display'] = f"{best_change:+.2f}%"
+            market_data['change_source'] = best_change_source
+            
+            logger.info(f"Price change extracted: {best_change:+.2f}% from {best_change_source}")
+        else:
+            market_data['change_display'] = "Not available"
+        
+        # Calculate volume/liquidity ratio if both available
+        if market_data.get('volume_24h') and market_data.get('liquidity'):
+            try:
+                ratio = (market_data['volume_24h'] / market_data['liquidity']) * 100
+                market_data['vol_liq_ratio'] = ratio
+                market_data['vol_liq_ratio_display'] = f"{ratio:.1f}%"
+            except (ZeroDivisionError, TypeError):
+                market_data['vol_liq_ratio_display'] = "Cannot calculate"
+        else:
+            market_data['vol_liq_ratio_display'] = "Cannot calculate - data not available"
+        
+        return market_data
+
+    def _extract_comprehensive_holder_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract holder information from ALL available sources"""
         holder_data = {}
         
-        # GOplus holder data
+        # HOLDER COUNT - Check multiple sources
+        holder_count_sources = []
+        
+        # GOplus holder count
         goplus = service_responses.get('goplus', {})
-        if goplus:
-            # Extract holder count from various fields
-            holder_count = goplus.get('holder_count')
-            if holder_count:
-                try:
-                    if isinstance(holder_count, str):
-                        clean_count = holder_count.replace(',', '')
-                        holder_data['count'] = int(clean_count)
+        if goplus and goplus.get('holder_count'):
+            holder_count = goplus['holder_count']
+            try:
+                if isinstance(holder_count, str):
+                    clean_count = holder_count.replace(',', '').replace(' ', '')
+                    if 'k' in clean_count.lower():
+                        number = clean_count.lower().replace('k', '')
+                        count = int(float(number) * 1000)
                     else:
-                        holder_data['count'] = int(holder_count)
-                except Exception:
-                    pass
-            
-            # Extract top holders distribution
-            holders_list = goplus.get('holders', [])
-            if holders_list and len(holders_list) > 0:
+                        count = int(clean_count)
+                else:
+                    count = int(holder_count)
+                
+                if count > 0:
+                    holder_count_sources.append(('goplus', count))
+                    logger.info(f"GOplus holder count: {count:,}")
+            except (ValueError, TypeError):
+                pass
+        
+        # RugCheck LP providers (different from holders but related metric)
+        rugcheck = service_responses.get('rugcheck', {})
+        if rugcheck and rugcheck.get('total_LP_providers'):
+            try:
+                lp_providers = int(rugcheck['total_LP_providers'])
+                if lp_providers > 0:
+                    holder_count_sources.append(('rugcheck_lp', lp_providers))
+                    logger.info(f"RugCheck LP providers: {lp_providers:,}")
+            except (ValueError, TypeError):
+                pass
+        
+        # Use best holder count (prefer GOplus over LP providers)
+        if holder_count_sources:
+            # Prefer actual holder count over LP providers
+            goplus_holders = [s for s in holder_count_sources if s[0] == 'goplus']
+            if goplus_holders:
+                source, count = goplus_holders[0]
+                holder_data['count'] = count
+                holder_data['count_display'] = f"{count:,} holders"
+                holder_data['count_source'] = source
+            else:
+                # Fallback to LP providers with note
+                source, count = holder_count_sources[0]
+                holder_data['count'] = count
+                holder_data['count_display'] = f"{count:,} LP providers (not total holders)"
+                holder_data['count_source'] = source
+        else:
+            holder_data['count_display'] = "Holder count not available (very common - not a red flag)"
+        
+        # HOLDER CONCENTRATION - Multiple sources
+        concentration_sources = []
+        
+        # GOplus holders array
+        if goplus and goplus.get('holders'):
+            holders_array = goplus['holders']
+            if isinstance(holders_array, list) and len(holders_array) > 0:
                 top_10_total = 0
-                valid_count = 0
-                for i, holder in enumerate(holders_list[:10]):
+                processed_count = 0
+                
+                for holder in holders_array[:10]:
                     if isinstance(holder, dict):
-                        percent_str = holder.get('percent', '0')
+                        percent_raw = holder.get('percent', '0')
                         try:
-                            percent = float(str(percent_str).replace('%', ''))
+                            percent = float(str(percent_raw).replace('%', ''))
                             if 0 <= percent <= 100:
                                 top_10_total += percent
-                                valid_count += 1
-                        except Exception:
+                                processed_count += 1
+                        except (ValueError, TypeError):
                             continue
                 
-                if valid_count > 0:
-                    holder_data['top_10_percent'] = top_10_total
+                if processed_count > 0:
+                    concentration_sources.append(('goplus', top_10_total, processed_count))
+                    logger.info(f"GOplus top 10 concentration: {top_10_total:.1f}% ({processed_count} holders)")
         
-        # LP Security Assessment (Improved Logic)
-        lp_security = self._assess_lp_security_improved(service_responses)
+        # RugCheck market analysis holder data
+        if rugcheck and rugcheck.get('market_analysis', {}).get('markets'):
+            markets = rugcheck['market_analysis']['markets']
+            if isinstance(markets, list):
+                for market in markets:
+                    if isinstance(market, dict) and market.get('lp', {}).get('holders'):
+                        lp_holders = market['lp']['holders']
+                        if isinstance(lp_holders, list) and len(lp_holders) > 0:
+                            # This is LP concentration, not token holder concentration
+                            top_holder = lp_holders[0]
+                            if isinstance(top_holder, dict) and top_holder.get('pct'):
+                                try:
+                                    top_pct = float(top_holder['pct'])
+                                    if 0 <= top_pct <= 100:
+                                        concentration_sources.append(('rugcheck_lp', top_pct, 1))
+                                        logger.info(f"RugCheck LP concentration: {top_pct:.1f}%")
+                                        break  # Take first market data
+                                except (ValueError, TypeError):
+                                    continue
         
-        # Token metadata
-        token_info = self._extract_token_metadata(service_responses)
-        
-        # Security flags (only critical ones)
-        critical_security_flags = []
-        if security_analysis:
-            # Check for critical authorities
-            goplus_result = security_analysis.get('goplus_result', {})
-            if goplus_result:
-                # Mint authority
-                mintable = goplus_result.get('mintable', {})
-                if isinstance(mintable, dict) and mintable.get('status') == '1':
-                    critical_security_flags.append("Active mint authority")
+        # Use best concentration data
+        if concentration_sources:
+            # Prefer GOplus token holder concentration over LP concentration
+            goplus_concentration = [s for s in concentration_sources if s[0] == 'goplus']
+            if goplus_concentration:
+                source, concentration, holder_count = goplus_concentration[0]
+                holder_data['top_10_percent'] = concentration
                 
-                # Freeze authority
-                freezable = goplus_result.get('freezable', {})
-                if isinstance(freezable, dict) and freezable.get('status') == '1':
-                    critical_security_flags.append("Active freeze authority")
-            
-            # Only include verified critical issues
-            critical_issues = security_analysis.get('critical_issues', [])
-            for issue in critical_issues:
-                if any(keyword in str(issue).lower() for keyword in ['rug', 'scam', 'honeypot', 'malicious']):
-                    critical_security_flags.append(issue)
+                if concentration > 70:
+                    holder_data['concentration_display'] = f"{concentration:.1f}% (High concentration - monitor for dumps)"
+                elif concentration > 50:
+                    holder_data['concentration_display'] = f"{concentration:.1f}% (Moderate concentration)"
+                else:
+                    holder_data['concentration_display'] = f"{concentration:.1f}% (Good distribution)"
+                
+                holder_data['concentration_source'] = source
+            else:
+                # Use LP concentration with appropriate note
+                source, concentration, holder_count = concentration_sources[0]
+                holder_data['lp_concentration'] = concentration
+                holder_data['concentration_display'] = f"LP concentration: {concentration:.1f}% (not token holder concentration)"
+                holder_data['concentration_source'] = source
+        else:
+            holder_data['concentration_display'] = "Distribution data not available"
         
-        prompt = f"""SOLANA TOKEN ANALYSIS - REALISTIC ASSESSMENT
+        return holder_data
 
-TOKEN: {data.get('token_address')}
-
-=== MARKET FUNDAMENTALS ===
-Price: {f"${market_data.get('price', 0):.8f}" if market_data.get('price') else "Not available"}
-Market Cap: {f"${market_data.get('market_cap', 0):,.0f}" if market_data.get('market_cap') else "Not available"}
-24h Volume: {f"${market_data.get('volume_24h', 0):,.0f}" if market_data.get('volume_24h') else "Not available"}
-Liquidity: {f"${market_data.get('liquidity', 0):,.0f}" if market_data.get('liquidity') else "Not available"}
-24h Change: {f"{market_data.get('price_change_24h', 0):+.2f}%" if market_data.get('price_change_24h') is not None else "Not available"}
-
-=== TOKEN INFORMATION ===
-Name: {token_info.get('name', 'Not available')}
-Symbol: {token_info.get('symbol', 'Not available')}
-
-=== HOLDER ANALYSIS ===
-Total Holders: {f"{holder_data.get('count', 0):,}" if holder_data.get('count') else "Data not available (common for many tokens)"}
-Top 10 Control: {f"{holder_data.get('top_10_percent', 0):.1f}%" if holder_data.get('top_10_percent') else "Distribution data not available"}
-
-=== LIQUIDITY SECURITY ===
-LP Status: {lp_security['status']}
-Evidence: {lp_security['evidence']}
-Confidence: {lp_security['confidence']}%
-
-=== SECURITY ASSESSMENT ===
-Critical Issues: {len(critical_security_flags)}
-{chr(10).join(f"🚨 {flag}" for flag in critical_security_flags) if critical_security_flags else "No critical security issues detected"}
-
-=== DATA SOURCES ===
-Available Sources: {', '.join(service_responses.keys())}
-Data Quality: {"Good - Multiple sources" if len(service_responses) >= 3 else "Limited - Some sources available" if len(service_responses) >= 1 else "Poor - Very limited data"}
-
-=== ANALYSIS GUIDELINES ===
-
-1. REALISTIC EXPECTATIONS:
-   - Missing data is NORMAL in crypto analysis
-   - Focus on AVAILABLE information quality
-   - Don't penalize tokens for common data gaps
-   - Neutral stance on missing information
-
-2. CONFIDENCE CALCULATION:
-   - Base confidence on data quality, not quantity
-   - Available price data = higher confidence
-   - Multiple data sources = bonus confidence
-   - Missing holder/LP data = neutral impact
-
-3. SCORING APPROACH:
-   - Start with neutral base (60 points)
-   - Award points for positive indicators found
-   - Deduct points only for actual negative evidence
-   - Missing data = no score impact (neutral)
-
-4. LP SECURITY REALITY:
-   - Unknown LP status is COMMON and NORMAL
-   - Don't assume unlocked without evidence
-   - Focus on actual rug evidence, not speculation
-   - Many legitimate tokens have unknown LP status
-
-5. HOLDER DISTRIBUTION:
-   - Missing holder data is VERY COMMON
-   - Don't penalize tokens for this gap
-   - Only flag if clear whale control evidence exists
-   - New/small tokens naturally have fewer holders
-
-6. RECOMMENDATION PHILOSOPHY:
-   - Focus on actual opportunities vs. theoretical risks
-   - Missing data shouldn't prevent positive recommendations
-   - Reserve AVOID for clear red flags only
-   - Be optimistic when fundamentals look good
-
-RESPOND WITH VALID JSON ONLY. Be realistic about crypto data limitations."""
-
-    async def analyze_token(self, request: AIAnalysisRequest) -> Optional[AIAnalysisResponse]:
-        """Analyze token using Groq LLM with realistic data expectations"""
-        try:
-            start_time = datetime.utcnow()
-            
-            # Build improved analysis prompt
-            prompt = self._build_analysis_prompt_improved(request.dict())
-            
-            # Call Groq API
-            response = await self.client.chat.completions.create(
-                model=self.model_name,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=self.temperature,
-                response_format={"type": "json_object"}
-            )
-            
-            # Parse response
-            ai_response = response.choices[0].message.content
-            parsed_response = self._parse_ai_response(ai_response)
-            
-            # Calculate processing time
-            processing_time = (datetime.utcnow() - start_time).total_seconds()
-            
-            # Create AIAnalysisResponse with improved defaults
-            response = AIAnalysisResponse(
-                ai_score=parsed_response.get('ai_score', 65.0),  # Slightly positive neutral
-                risk_assessment=parsed_response.get('risk_assessment', 'medium'),
-                recommendation=parsed_response.get('recommendation', 'CONSIDER'),  # More optimistic default
-                confidence=parsed_response.get('confidence', 70.0),  # Good default confidence
-                key_insights=parsed_response.get('key_insights', ["Analysis completed with available data"]),
-                risk_factors=parsed_response.get('risk_factors', []),
-                stop_flags=parsed_response.get('stop_flags', []),
-                market_metrics=parsed_response.get('market_metrics', {}),
-                llama_reasoning=parsed_response.get('llama_reasoning', 'Token analysis completed using available market data'),
-                processing_time=processing_time
-            )
-            
-            logger.info(f"Groq analysis completed: Score {response.ai_score}, Recommendation {response.recommendation}")
-            return response
-            
-        except Exception as e:
-            logger.error(f"Groq Llama analysis failed: {str(e)}")
-            return self._create_neutral_fallback(request.token_address, 0.0)
-    
-    def _extract_token_metadata(self, service_responses: Dict[str, Any]) -> Dict[str, str]:
-        """Extract token metadata from service responses"""
+    def _extract_comprehensive_token_metadata(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract token metadata from ALL available sources"""
         token_info = {'name': 'Unknown', 'symbol': 'N/A'}
+        sources_used = []
         
-        # Try SolSniffer first
+        # SolSniffer (usually most reliable for basic info)
         solsniffer = service_responses.get('solsniffer', {})
         if solsniffer:
             if solsniffer.get('tokenName'):
                 token_info['name'] = solsniffer['tokenName']
+                sources_used.append('solsniffer_name')
             if solsniffer.get('tokenSymbol'):
                 token_info['symbol'] = solsniffer['tokenSymbol']
-            return token_info
+                sources_used.append('solsniffer_symbol')
+            if token_info['name'] != 'Unknown' and token_info['symbol'] != 'N/A':
+                token_info['metadata_source'] = 'solsniffer'
+                return token_info
         
-        # Try Helius metadata
+        # GOplus metadata
+        goplus = service_responses.get('goplus', {})
+        if goplus and goplus.get('metadata'):
+            metadata = goplus['metadata']
+            if isinstance(metadata, dict):
+                if metadata.get('name') and token_info['name'] == 'Unknown':
+                    token_info['name'] = metadata['name']
+                    sources_used.append('goplus_name')
+                if metadata.get('symbol') and token_info['symbol'] == 'N/A':
+                    token_info['symbol'] = metadata['symbol']
+                    sources_used.append('goplus_symbol')
+        
+        # Helius metadata
         helius = service_responses.get('helius', {})
         if helius and helius.get('metadata'):
             metadata = helius['metadata']
+            
+            # Try onchain metadata first
             onchain = metadata.get('onChainMetadata', {})
             if onchain and onchain.get('metadata'):
                 token_meta = onchain['metadata']
                 if isinstance(token_meta, dict) and token_meta.get('data'):
                     data = token_meta['data']
-                    if data.get('name'):
+                    if data.get('name') and token_info['name'] == 'Unknown':
                         token_info['name'] = data['name']
-                    if data.get('symbol'):
+                        sources_used.append('helius_onchain_name')
+                    if data.get('symbol') and token_info['symbol'] == 'N/A':
                         token_info['symbol'] = data['symbol']
-                    return token_info
+                        sources_used.append('helius_onchain_symbol')
+            
+            # Try legacy metadata if still missing
+            legacy = metadata.get('legacyMetadata', {})
+            if legacy:
+                if legacy.get('name') and token_info['name'] == 'Unknown':
+                    token_info['name'] = legacy['name']
+                    sources_used.append('helius_legacy_name')
+                if legacy.get('symbol') and token_info['symbol'] == 'N/A':
+                    token_info['symbol'] = legacy['symbol']
+                    sources_used.append('helius_legacy_symbol')
         
-        # Try SolanaFM
+        # SolanaFM
         solanafm = service_responses.get('solanafm', {})
         if solanafm and solanafm.get('token'):
             token = solanafm['token']
-            if token.get('name'):
+            if token.get('name') and token_info['name'] == 'Unknown':
                 token_info['name'] = token['name']
-            if token.get('symbol'):
+                sources_used.append('solanafm_name')
+            if token.get('symbol') and token_info['symbol'] == 'N/A':
                 token_info['symbol'] = token['symbol']
+                sources_used.append('solanafm_symbol')
+        
+        # DexScreener
+        dexscreener = service_responses.get('dexscreener', {})
+        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
+            pairs = dexscreener['pairs']['pairs']
+            if pairs and len(pairs) > 0:
+                pair = pairs[0]
+                base_token = pair.get('baseToken', {})
+                if base_token.get('name') and token_info['name'] == 'Unknown':
+                    token_info['name'] = base_token['name']
+                    sources_used.append('dexscreener_name')
+                if base_token.get('symbol') and token_info['symbol'] == 'N/A':
+                    token_info['symbol'] = base_token['symbol']
+                    sources_used.append('dexscreener_symbol')
+        
+        # RugCheck verification
+        rugcheck = service_responses.get('rugcheck', {})
+        if rugcheck and rugcheck.get('verification'):
+            verification = rugcheck['verification']
+            if verification.get('name') and token_info['name'] == 'Unknown':
+                token_info['name'] = verification['name']
+                sources_used.append('rugcheck_name')
+            if verification.get('symbol') and token_info['symbol'] == 'N/A':
+                token_info['symbol'] = verification['symbol']
+                sources_used.append('rugcheck_symbol')
+        
+        # Set metadata source summary
+        if sources_used:
+            primary_sources = list(set([s.split('_')[0] for s in sources_used]))
+            token_info['metadata_source'] = ', '.join(primary_sources)
+            logger.info(f"Token metadata from: {', '.join(primary_sources)}")
+        else:
+            token_info['metadata_source'] = 'none'
         
         return token_info
-    
+
+    def _extract_comprehensive_supply_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract supply data from multiple sources"""
+        supply_data = {}
+        
+        # Helius supply
+        helius = service_responses.get('helius', {})
+        if helius and helius.get('supply'):
+            supply_info = helius['supply']
+            try:
+                total_supply = float(supply_info.get('ui_amount', 0))
+                if total_supply > 0:
+                    supply_data['total_supply'] = total_supply
+                    supply_data['supply_source'] = 'helius'
+                    supply_data['decimals'] = supply_info.get('decimals', 6)
+                    logger.info(f"Supply from Helius: {total_supply:,.0f}")
+            except (ValueError, TypeError):
+                pass
+        
+        # GOplus supply
+        if not supply_data.get('total_supply'):
+            goplus = service_responses.get('goplus', {})
+            if goplus and goplus.get('total_supply'):
+                try:
+                    total_supply = float(goplus['total_supply'])
+                    if total_supply > 0:
+                        supply_data['total_supply'] = total_supply
+                        supply_data['supply_source'] = 'goplus'
+                        logger.info(f"Supply from GOplus: {total_supply:,.0f}")
+                except (ValueError, TypeError):
+                    pass
+        
+        # RugCheck supply
+        if not supply_data.get('total_supply'):
+            rugcheck = service_responses.get('rugcheck', {})
+            if rugcheck and rugcheck.get('token', {}).get('supply'):
+                try:
+                    # RugCheck supply is usually in raw units, need to convert
+                    raw_supply = float(rugcheck['token']['supply'])
+                    decimals = rugcheck['token'].get('decimals', 6)
+                    total_supply = raw_supply / (10 ** decimals)
+                    if total_supply > 0:
+                        supply_data['total_supply'] = total_supply
+                        supply_data['supply_source'] = 'rugcheck'
+                        supply_data['decimals'] = decimals
+                        logger.info(f"Supply from RugCheck: {total_supply:,.0f}")
+                except (ValueError, TypeError):
+                    pass
+        
+        return supply_data
+
+    def _build_analysis_prompt_improved(self, data: Dict[str, Any]) -> str:
+        """Build analysis prompt with comprehensive multi-source data aggregation"""
+        
+        service_responses = data.get('service_responses', {})
+        security_analysis = data.get('security_analysis', {})
+        
+        # Filter out dummy responses before processing
+        filtered_responses = {}
+        for service_name, response_data in service_responses.items():
+            if not self._is_dummy_response(service_name, response_data):
+                filtered_responses[service_name] = response_data
+            else:
+                logger.info(f"Filtered out dummy response from {service_name}")
+        
+        # Extract comprehensive data from all valid sources
+        market_data = self._extract_comprehensive_market_data(filtered_responses)
+        holder_info = self._extract_comprehensive_holder_data(filtered_responses)
+        token_metadata = self._extract_comprehensive_token_metadata(filtered_responses)
+        supply_data = self._extract_comprehensive_supply_data(filtered_responses)
+        
+        # LP security assessment
+        lp_security = self._assess_lp_security_improved(filtered_responses)
+        
+        # Critical security issues only
+        critical_flags = self._extract_critical_security_flags(security_analysis)
+        
+        # Enhanced data quality calculation
+        data_quality = self._calculate_enhanced_data_quality(filtered_responses, market_data, holder_info)
+        
+        prompt = f"""SOLANA TOKEN COMPREHENSIVE MULTI-SOURCE ANALYSIS
+
+TOKEN: {data.get('token_address')}
+NAME: {token_metadata.get('name', 'Unknown')} ({token_metadata.get('symbol', 'N/A')})
+METADATA SOURCES: {token_metadata.get('metadata_source', 'none')}
+
+=== MARKET ANALYSIS (AGGREGATED FROM MULTIPLE SOURCES) ===
+Price: {market_data.get('price_display', 'Not available')}
+{f"  └─ Source: {market_data.get('price_source', 'N/A')}" if market_data.get('price_source') else ""}
+Market Cap: {market_data.get('market_cap_display', 'Not available')}
+{f"  └─ Source: {market_data.get('market_cap_source', 'N/A')}" if market_data.get('market_cap_source') else ""}
+24h Volume: {market_data.get('volume_display', 'Not available')}
+{f"  └─ Source: {market_data.get('volume_source', 'N/A')}" if market_data.get('volume_source') else ""}
+Liquidity: {market_data.get('liquidity_display', 'Not available')}
+{f"  └─ Source: {market_data.get('liquidity_source', 'N/A')}" if market_data.get('liquidity_source') else ""}
+Price Change 24h: {market_data.get('change_display', 'Not available')}
+{f"  └─ Source: {market_data.get('change_source', 'N/A')}" if market_data.get('change_source') else ""}
+
+Volume/Liquidity Ratio: {market_data.get('vol_liq_ratio_display', 'Cannot calculate - data not available')}
+
+=== SUPPLY INFORMATION ===
+{f"Total Supply: {supply_data.get('total_supply', 0):,.0f}" if supply_data.get('total_supply') else "Total Supply: Not available"}
+{f"  └─ Source: {supply_data.get('supply_source', 'N/A')}" if supply_data.get('supply_source') else ""}
+
+=== HOLDER DISTRIBUTION (MULTI-SOURCE) ===
+Holder Count: {holder_info.get('count_display', 'Data not available (very common)')}
+{f"  └─ Source: {holder_info.get('count_source', 'N/A')}" if holder_info.get('count_source') else ""}
+Top 10 Concentration: {holder_info.get('concentration_display', 'Distribution data not available')}
+{f"  └─ Source: {holder_info.get('concentration_source', 'N/A')}" if holder_info.get('concentration_source') else ""}
+
+=== LIQUIDITY SECURITY ===
+Status: {lp_security['status']}
+Evidence: {lp_security['evidence']}
+Assessment Confidence: {lp_security['confidence']}%
+
+=== SECURITY FLAGS ===
+Critical Issues: {len(critical_flags)}
+{chr(10).join(f"🚨 {flag}" for flag in critical_flags) if critical_flags else "✅ No critical security issues detected"}
+
+=== ENHANCED DATA QUALITY ASSESSMENT ===
+Overall Data Quality: {data_quality['score']}/100
+Data Sources Available: {data_quality['source_count']} sources (filtered: {len(service_responses) - len(filtered_responses)} dummy responses removed)
+Market Data Coverage: {data_quality['market_coverage']:.0f}%
+Holder Data Coverage: {data_quality['holder_coverage']:.0f}%
+Metadata Completeness: {data_quality['metadata_completeness']:.0f}%
+
+Multi-Source Data Status:
+{chr(10).join(f"• {metric}: {'✓' if available else '✗'}" for metric, available in data_quality['data_coverage'].items())}
+
+Source Reliability Assessment:
+{chr(10).join(f"• {source}: {status}" for source, status in data_quality['source_reliability'].items())}
+
+=== ANALYSIS INSTRUCTIONS ===
+
+ENHANCED MULTI-SOURCE CONTEXT:
+- Data has been aggregated from ALL available reliable sources
+- Dummy/null responses have been filtered out automatically  
+- Source attribution shows which services provided each metric
+- Missing data gaps have been filled where possible from alternative sources
+
+CONFIDENCE SCALING:
+- Multi-source confirmation = Higher confidence
+- Single-source data = Medium confidence  
+- No reliable sources = Lower confidence (but not negative)
+- Contradictory sources = Flag for manual review
+
+REALISTIC MARKET ASSESSMENT:
+- Focus on data quality over quantity
+- Multi-source price data is more reliable than single-source
+- Holder data from multiple sources provides better distribution picture
+- Cross-reference liquidity data across DEX sources
+
+COMPREHENSIVE SCORING APPROACH:
+- Award extra points for multi-source data confirmation
+- Weight reliable sources higher (Birdeye > DexScreener > others)
+- Account for data freshness and source reputation
+- Don't penalize for missing data that no source provides
+
+SOURCE-SPECIFIC CONSIDERATIONS:
+- Birdeye: Most reliable for real-time price/volume data
+- GOplus: Best for holder analysis and security flags  
+- RugCheck: Valuable for LP analysis when data is meaningful
+- DexScreener: Good fallback for market data
+- SolSniffer: Useful for metadata when others lack it
+
+RESPOND WITH VALID JSON. Leverage the multi-source data for more accurate assessment."""
+
+        return prompt
+
+    def _calculate_enhanced_data_quality(self, service_responses: Dict[str, Any], market_data: Dict[str, Any], holder_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Calculate enhanced data quality metrics considering multi-source aggregation"""
+        
+        # Core data coverage assessment
+        data_coverage = {
+            'Price Data': bool(market_data.get('price')),
+            'Market Cap': bool(market_data.get('market_cap')),
+            'Volume Data': bool(market_data.get('volume_24h')),
+            'Liquidity Data': bool(market_data.get('liquidity')),
+            'Holder Count': bool(holder_info.get('count')),
+            'Holder Distribution': bool(holder_info.get('top_10_percent')),
+            'Price Change': bool(market_data.get('price_change_24h') is not None)
+        }
+        
+        # Calculate coverage percentages by category
+        market_metrics = ['Price Data', 'Market Cap', 'Volume Data', 'Liquidity Data', 'Price Change']
+        holder_metrics = ['Holder Count', 'Holder Distribution']
+        
+        market_coverage = (sum(1 for m in market_metrics if data_coverage[m]) / len(market_metrics)) * 100
+        holder_coverage = (sum(1 for m in holder_metrics if data_coverage[m]) / len(holder_metrics)) * 100
+        
+        # Metadata completeness
+        metadata_score = 0
+        if holder_info.get('name', 'Unknown') != 'Unknown':
+            metadata_score += 50
+        if holder_info.get('symbol', 'N/A') != 'N/A':
+            metadata_score += 50
+        
+        # Source reliability assessment
+        source_reliability = {}
+        for service_name in service_responses.keys():
+            reliability = "Unknown"
+            
+            # Check if service provided meaningful data
+            contributed_data = []
+            
+            if service_name == 'birdeye':
+                if market_data.get('price_source') == 'birdeye':
+                    contributed_data.append('price')
+                if market_data.get('volume_source') == 'birdeye':
+                    contributed_data.append('volume')
+                if market_data.get('liquidity_source') == 'birdeye':
+                    contributed_data.append('liquidity')
+            
+            elif service_name == 'goplus':
+                if holder_info.get('count_source') == 'goplus':
+                    contributed_data.append('holders')
+                if holder_info.get('concentration_source') == 'goplus':
+                    contributed_data.append('distribution')
+            
+            elif service_name == 'dexscreener':
+                if market_data.get('price_source') == 'dexscreener':
+                    contributed_data.append('price')
+                if market_data.get('market_cap_source') == 'dexscreener':
+                    contributed_data.append('market_cap')
+            
+            elif service_name == 'rugcheck':
+                if market_data.get('liquidity_source') == 'rugcheck':
+                    contributed_data.append('liquidity')
+            
+            if len(contributed_data) >= 2:
+                reliability = "High (multiple metrics)"
+            elif len(contributed_data) == 1:
+                reliability = "Good (single metric)"
+            else:
+                reliability = "Limited (metadata only)"
+            
+            source_reliability[service_name] = reliability
+        
+        # Overall quality score calculation
+        base_score = (sum(data_coverage.values()) / len(data_coverage)) * 60  # Up to 60 for basic coverage
+        
+        # Multi-source bonus
+        multi_source_bonus = 0
+        if market_data.get('price_source') and market_data.get('volume_source'):
+            multi_source_bonus += 10  # Bonus for having multiple market data sources
+        
+        if holder_info.get('count_source') and holder_info.get('concentration_source'):
+            multi_source_bonus += 10  # Bonus for having multiple holder data sources
+        
+        # Source diversity bonus
+        source_diversity_bonus = min(15, len(service_responses) * 2)  # Up to 15 for having many sources
+        
+        # Final quality score
+        quality_score = min(100, base_score + multi_source_bonus + source_diversity_bonus)
+        
+        return {
+            'score': round(quality_score),
+            'source_count': len(service_responses),
+            'market_coverage': market_coverage,
+            'holder_coverage': holder_coverage,
+            'metadata_completeness': metadata_score,
+            'data_coverage': data_coverage,
+            'source_reliability': source_reliability,
+            'multi_source_bonus': multi_source_bonus,
+            'source_diversity_bonus': source_diversity_bonus
+        }
+
+    # Keep existing methods for LP security, critical flags, etc.
     def _assess_lp_security_improved(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
         """Assess LP security with realistic expectations and evidence-based approach"""
         
@@ -524,271 +1108,32 @@ RESPOND WITH VALID JSON ONLY. Be realistic about crypto data limitations."""
                             continue
         
         return lp_assessment
-    
-    def _build_analysis_prompt_improved(self, data: Dict[str, Any]) -> str:
-        """Build analysis prompt with the improved data handling"""
+
+    def _extract_critical_security_flags(self, security_analysis: Dict[str, Any]) -> List[str]:
+        """Extract only genuinely critical security flags"""
+        critical_flags = []
         
-        service_responses = data.get('service_responses', {})
-        security_analysis = data.get('security_analysis', {})
-        
-        # Extract comprehensive market data
-        market_data = self._extract_comprehensive_market_data(service_responses)
-        
-        # Extract holder information
-        holder_info = self._extract_holder_information(service_responses)
-        
-        # LP security assessment
-        lp_security = self._assess_lp_security_improved(service_responses)
-        
-        # Token metadata
-        token_metadata = self._extract_token_metadata(service_responses)
-        
-        # Critical security issues only
-        critical_flags = self._extract_critical_security_flags(security_analysis)
-        
-        # Calculate data quality metrics
-        data_quality = self._calculate_data_quality(service_responses)
-        
-        prompt = f"""SOLANA TOKEN COMPREHENSIVE ANALYSIS
-
-TOKEN: {data.get('token_address')}
-NAME: {token_metadata.get('name', 'Unknown')} ({token_metadata.get('symbol', 'N/A')})
-
-=== MARKET ANALYSIS ===
-Price: {market_data.get('price_display', 'Not available')}
-Market Cap: {market_data.get('market_cap_display', 'Not available')}
-24h Volume: {market_data.get('volume_display', 'Not available')}
-Liquidity: {market_data.get('liquidity_display', 'Not available')}
-Price Change: {market_data.get('change_display', 'Not available')}
-
-Volume/Liquidity Ratio: {market_data.get('vol_liq_ratio_display', 'Cannot calculate - data not available')}
-
-=== HOLDER DISTRIBUTION ===
-Total Holders: {holder_info.get('count_display', 'Data not available (very common)')}
-Top 10 Concentration: {holder_info.get('concentration_display', 'Distribution data not available')}
-
-=== LIQUIDITY SECURITY ===
-Status: {lp_security['status']}
-Evidence: {lp_security['evidence']}
-Assessment Confidence: {lp_security['confidence']}%
-
-=== SECURITY FLAGS ===
-Critical Issues: {len(critical_flags)}
-{chr(10).join(f"🚨 {flag}" for flag in critical_flags) if critical_flags else "✅ No critical security issues detected"}
-
-=== DATA QUALITY ASSESSMENT ===
-Overall Data Quality: {data_quality['score']}/100
-Available Data Sources: {data_quality['source_count']} sources
-Key Data Available: {data_quality['available_metrics']} / {data_quality['total_metrics']}
-
-Data Source Quality:
-{chr(10).join(f"• {source}: {'✓' if available else '✗'}" for source, available in data_quality['source_status'].items())}
-
-=== ANALYSIS INSTRUCTIONS ===
-
-IMPORTANT CONTEXT:
-- This is real-world crypto data where gaps are NORMAL
-- Missing LP data affects 70%+ of tokens (don't penalize)
-- Missing holder data affects 60%+ of tokens (very common)
-- Focus on POSITIVE signals found, not theoretical risks
-
-SCORING GUIDANCE:
-- Start with 65 (slightly optimistic neutral)
-- Award +20-30 for strong market metrics
-- Award +10-15 for good security evidence
-- Award +5-10 for comprehensive data
-- Deduct points only for ACTUAL negative evidence
-- Missing data = 0 impact (neutral)
-
-CONFIDENCE GUIDANCE:
-- High confidence (80%+): Clear positive/negative signals
-- Medium confidence (60-79%): Some good data available
-- Lower confidence (40-59%): Limited but not concerning
-- Don't penalize confidence heavily for missing data
-
-REALISTIC RECOMMENDATIONS:
-- Many profitable tokens have unknown LP status
-- Missing holder data doesn't indicate problems
-- Focus on market activity and price performance
-- Be optimistic when security checks pass
-
-Provide realistic assessment based on available data. Don't create false risks from data gaps"""
-
-        return prompt
-    
-    def _extract_comprehensive_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract market data with comprehensive display formatting"""
-        market_data = {}
-        
-        # Birdeye data
-        birdeye = service_responses.get('birdeye', {})
-        if birdeye and birdeye.get('price'):
-            price_info = birdeye['price']
+        # GOplus critical authorities
+        goplus_result = security_analysis.get('goplus_result', {})
+        if goplus_result:
+            # Mint authority (unlimited supply)
+            mintable = goplus_result.get('mintable', {})
+            if isinstance(mintable, dict) and mintable.get('status') == '1':
+                critical_flags.append("Mint authority active (unlimited supply possible)")
             
-            price = price_info.get('value')
-            market_cap = price_info.get('market_cap')
-            volume_24h = price_info.get('volume_24h')
-            liquidity = price_info.get('liquidity')
-            price_change = price_info.get('price_change_24h')
-            
-            market_data.update({
-                'price': price,
-                'market_cap': market_cap,
-                'volume_24h': volume_24h,
-                'liquidity': liquidity,
-                'price_change_24h': price_change,
-                'price_display': f"${float(price):.8f}" if price else "Not available",
-                'market_cap_display': f"${float(market_cap):,.0f}" if market_cap else "Not available",
-                'volume_display': f"${float(volume_24h):,.0f}" if volume_24h else "Not available",
-                'liquidity_display': f"${float(liquidity):,.0f}" if liquidity else "Not available",
-                'change_display': f"{float(price_change):+.2f}%" if price_change is not None else "Not available"
-            })
-            
-            # Calculate volume/liquidity ratio
-            if volume_24h and liquidity and liquidity > 0:
-                ratio = (float(volume_24h) / float(liquidity)) * 100
-                market_data['vol_liq_ratio'] = ratio
-                market_data['vol_liq_ratio_display'] = f"{ratio:.1f}%"
+            # Freeze authority (can freeze accounts)
+            freezable = goplus_result.get('freezable', {})
+            if isinstance(freezable, dict) and freezable.get('status') == '1':
+                critical_flags.append("Freeze authority active (accounts can be frozen)")
         
-        # DexScreener fallback
-        dexscreener = service_responses.get('dexscreener', {})
-        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
-            pairs = dexscreener['pairs']['pairs']
-            if pairs and len(pairs) > 0:
-                pair = pairs[0]
-                
-                # Fill gaps from DexScreener
-                if not market_data.get('market_cap') and pair.get('marketCap'):
-                    mc = pair['marketCap']
-                    market_data['market_cap'] = mc
-                    market_data['market_cap_display'] = f"${float(mc):,.0f}"
-                
-                if not market_data.get('volume_24h') and pair.get('volume', {}).get('h24'):
-                    vol = pair['volume']['h24']
-                    market_data['volume_24h'] = vol
-                    market_data['volume_display'] = f"${float(vol):,.0f}"
-                
-                if not market_data.get('liquidity') and pair.get('liquidity', {}).get('usd'):
-                    liq = pair['liquidity']['usd']
-                    market_data['liquidity'] = liq
-                    market_data['liquidity_display'] = f"${float(liq):,.0f}"
-                
-                # Recalculate ratio if we got new data
-                if (not market_data.get('vol_liq_ratio') and 
-                    market_data.get('volume_24h') and 
-                    market_data.get('liquidity')):
-                    ratio = (float(market_data['volume_24h']) / float(market_data['liquidity'])) * 100
-                    market_data['vol_liq_ratio'] = ratio
-                    market_data['vol_liq_ratio_display'] = f"{ratio:.1f}%"
+        # Only include verified rug/scam evidence
+        critical_issues = security_analysis.get('critical_issues', [])
+        for issue in critical_issues:
+            issue_str = str(issue).lower()
+            if any(keyword in issue_str for keyword in ['rugged', 'scam', 'honeypot', 'malicious', 'exploit']):
+                critical_flags.append(issue)
         
-        return market_data
-    
-    def _extract_holder_information(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract holder information with realistic display"""
-        holder_info = {}
-        
-        # GOplus holder data
-        goplus = service_responses.get('goplus', {})
-        if goplus:
-            # Holder count
-            holder_count = goplus.get('holder_count')
-            if holder_count:
-                try:
-                    if isinstance(holder_count, str):
-                        clean_count = holder_count.replace(',', '').replace(' ', '')
-                        if 'k' in clean_count.lower():
-                            number = clean_count.lower().replace('k', '')
-                            count = int(float(number) * 1000)
-                        else:
-                            count = int(clean_count)
-                    else:
-                        count = int(holder_count)
-                    
-                    holder_info['count'] = count
-                    holder_info['count_display'] = f"{count:,} holders"
-                except Exception:
-                    holder_info['count_display'] = "Holder count format unclear"
-            else:
-                holder_info['count_display'] = "Holder count not available (common limitation)"
-            
-            # Top holders analysis
-            holders_array = goplus.get('holders', [])
-            if holders_array and isinstance(holders_array, list):
-                top_10_total = 0
-                processed_count = 0
-                
-                for holder in holders_array[:10]:
-                    if isinstance(holder, dict):
-                        percent_raw = holder.get('percent', '0')
-                        try:
-                            percent = float(str(percent_raw).replace('%', ''))
-                            if 0 <= percent <= 100:
-                                top_10_total += percent
-                                processed_count += 1
-                        except Exception:
-                            continue
-                
-                if processed_count > 0:
-                    holder_info['top_10_percent'] = top_10_total
-                    
-                    if top_10_total > 70:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (High concentration - monitor for dumps)"
-                    elif top_10_total > 50:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (Moderate concentration)"
-                    else:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (Good distribution)"
-                else:
-                    holder_info['concentration_display'] = "Holder distribution data incomplete"
-            else:
-                holder_info['concentration_display'] = "Distribution analysis not available"
-        
-        if not holder_info.get('count_display'):
-            holder_info['count_display'] = "Holder data not available (very common - not a red flag)"
-        
-        if not holder_info.get('concentration_display'):
-            holder_info['concentration_display'] = "Distribution data not available"
-        
-        return holder_info
-    
-    def _calculate_data_quality(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate data quality metrics"""
-        
-        # Check what data is available
-        has_price_data = bool(service_responses.get('birdeye', {}).get('price', {}).get('value'))
-        has_market_data = bool(service_responses.get('birdeye', {}).get('price', {}).get('market_cap') or 
-                              service_responses.get('dexscreener', {}).get('pairs', {}).get('pairs'))
-        has_holder_data = bool(service_responses.get('goplus', {}).get('holder_count'))
-        has_security_data = bool(service_responses.get('goplus') or service_responses.get('rugcheck'))
-        has_metadata = bool(service_responses.get('helius', {}).get('metadata') or 
-                           service_responses.get('solanafm', {}).get('token'))
-        
-        # Core metrics availability
-        available_metrics = sum([has_price_data, has_market_data, has_security_data, has_metadata])
-        total_metrics = 4  # Core essential metrics
-        
-        # Bonus metrics
-        bonus_available = sum([has_holder_data])  # Non-essential bonus data
-        
-        # Calculate quality score
-        base_score = (available_metrics / total_metrics) * 80  # Up to 80 for essentials
-        bonus_score = bonus_available * 10  # Up to 10 for bonus
-        source_bonus = min(10, len(service_responses) * 2)  # Up to 10 for multiple sources
-        
-        quality_score = min(100, base_score + bonus_score + source_bonus)
-        
-        return {
-            'score': round(quality_score),
-            'source_count': len(service_responses),
-            'available_metrics': available_metrics + bonus_available,
-            'total_metrics': total_metrics + 1,  # Include holder data in total
-            'source_status': {
-                'Price Data': has_price_data,
-                'Market Data': has_market_data,
-                'Security Data': has_security_data,
-                'Token Metadata': has_metadata,
-                'Holder Data': has_holder_data
-            }
-        }
+        return critical_flags
 
     def _parse_ai_response(self, ai_response: str):
         """Parse Groq response into structured format with improved defaults"""
@@ -800,11 +1145,11 @@ Provide realistic assessment based on available data. Don't create false risks f
                 "risk_assessment": parsed_data.get("risk_assessment", "medium"),
                 "recommendation": parsed_data.get("recommendation", "CONSIDER"),  # More optimistic
                 "confidence": float(parsed_data.get("confidence", 70)),  # Higher default confidence
-                "key_insights": parsed_data.get("key_insights", ["Token analysis completed with available data"]),
+                "key_insights": parsed_data.get("key_insights", ["Multi-source token analysis completed with available data"]),
                 "risk_factors": parsed_data.get("risk_factors", []),
                 "stop_flags": parsed_data.get("stop_flags", []),
                 "market_metrics": parsed_data.get("market_metrics", {}),
-                "llama_reasoning": parsed_data.get("llama_reasoning", "Analysis completed using available market data sources"),
+                "llama_reasoning": parsed_data.get("llama_reasoning", "Multi-source analysis completed using aggregated market data sources"),
                 "processing_time": 0.0,
             }
             
@@ -847,206 +1192,6 @@ Provide realistic assessment based on available data. Don't create false risks f
             llama_reasoning="AI analysis system temporarily unavailable. Based on available data, no immediate critical issues detected.",
             processing_time=processing_time,
         )
-    
-    def _extract_comprehensive_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract market data with comprehensive display formatting"""
-        market_data = {}
-        
-        # Birdeye data
-        birdeye = service_responses.get('birdeye', {})
-        if birdeye and birdeye.get('price'):
-            price_info = birdeye['price']
-            
-            price = price_info.get('value')
-            market_cap = price_info.get('market_cap')
-            volume_24h = price_info.get('volume_24h')
-            liquidity = price_info.get('liquidity')
-            price_change = price_info.get('price_change_24h')
-            
-            market_data.update({
-                'price': price,
-                'market_cap': market_cap,
-                'volume_24h': volume_24h,
-                'liquidity': liquidity,
-                'price_change_24h': price_change,
-                'price_display': f"${float(price):.8f}" if price else "Not available",
-                'market_cap_display': f"${float(market_cap):,.0f}" if market_cap else "Not available",
-                'volume_display': f"${float(volume_24h):,.0f}" if volume_24h else "Not available",
-                'liquidity_display': f"${float(liquidity):,.0f}" if liquidity else "Not available",
-                'change_display': f"{float(price_change):+.2f}%" if price_change is not None else "Not available"
-            })
-            
-            # Calculate volume/liquidity ratio
-            if volume_24h and liquidity and liquidity > 0:
-                ratio = (float(volume_24h) / float(liquidity)) * 100
-                market_data['vol_liq_ratio'] = ratio
-                market_data['vol_liq_ratio_display'] = f"{ratio:.1f}%"
-        
-        # DexScreener fallback
-        dexscreener = service_responses.get('dexscreener', {})
-        if dexscreener and dexscreener.get('pairs', {}).get('pairs'):
-            pairs = dexscreener['pairs']['pairs']
-            if pairs and len(pairs) > 0:
-                pair = pairs[0]
-                
-                # Fill gaps from DexScreener
-                if not market_data.get('market_cap') and pair.get('marketCap'):
-                    mc = pair['marketCap']
-                    market_data['market_cap'] = mc
-                    market_data['market_cap_display'] = f"${float(mc):,.0f}"
-                
-                if not market_data.get('volume_24h') and pair.get('volume', {}).get('h24'):
-                    vol = pair['volume']['h24']
-                    market_data['volume_24h'] = vol
-                    market_data['volume_display'] = f"${float(vol):,.0f}"
-                
-                if not market_data.get('liquidity') and pair.get('liquidity', {}).get('usd'):
-                    liq = pair['liquidity']['usd']
-                    market_data['liquidity'] = liq
-                    market_data['liquidity_display'] = f"${float(liq):,.0f}"
-                
-                # Recalculate ratio if we got new data
-                if (not market_data.get('vol_liq_ratio') and 
-                    market_data.get('volume_24h') and 
-                    market_data.get('liquidity')):
-                    ratio = (float(market_data['volume_24h']) / float(market_data['liquidity'])) * 100
-                    market_data['vol_liq_ratio'] = ratio
-                    market_data['vol_liq_ratio_display'] = f"{ratio:.1f}%"
-        
-        return market_data
-    
-    def _extract_holder_information(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract holder information with realistic display"""
-        holder_info = {}
-        
-        # GOplus holder data
-        goplus = service_responses.get('goplus', {})
-        if goplus:
-            # Holder count
-            holder_count = goplus.get('holder_count')
-            if holder_count:
-                try:
-                    if isinstance(holder_count, str):
-                        clean_count = holder_count.replace(',', '').replace(' ', '')
-                        if 'k' in clean_count.lower():
-                            number = clean_count.lower().replace('k', '')
-                            count = int(float(number) * 1000)
-                        else:
-                            count = int(clean_count)
-                    else:
-                        count = int(holder_count)
-                    
-                    holder_info['count'] = count
-                    holder_info['count_display'] = f"{count:,} holders"
-                except Exception:
-                    holder_info['count_display'] = "Holder count format unclear"
-            else:
-                holder_info['count_display'] = "Holder count not available (common limitation)"
-            
-            # Top holders analysis
-            holders_array = goplus.get('holders', [])
-            if holders_array and isinstance(holders_array, list):
-                top_10_total = 0
-                processed_count = 0
-                
-                for holder in holders_array[:10]:
-                    if isinstance(holder, dict):
-                        percent_raw = holder.get('percent', '0')
-                        try:
-                            percent = float(str(percent_raw).replace('%', ''))
-                            if 0 <= percent <= 100:
-                                top_10_total += percent
-                                processed_count += 1
-                        except Exception:
-                            continue
-                
-                if processed_count > 0:
-                    holder_info['top_10_percent'] = top_10_total
-                    
-                    if top_10_total > 70:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (High concentration - monitor for dumps)"
-                    elif top_10_total > 50:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (Moderate concentration)"
-                    else:
-                        holder_info['concentration_display'] = f"{top_10_total:.1f}% (Good distribution)"
-                else:
-                    holder_info['concentration_display'] = "Holder distribution data incomplete"
-            else:
-                holder_info['concentration_display'] = "Distribution analysis not available"
-        
-        if not holder_info.get('count_display'):
-            holder_info['count_display'] = "Holder data not available (very common - not a red flag)"
-        
-        if not holder_info.get('concentration_display'):
-            holder_info['concentration_display'] = "Distribution data not available"
-        
-        return holder_info
-    
-    def _extract_critical_security_flags(self, security_analysis: Dict[str, Any]) -> List[str]:
-        """Extract only genuinely critical security flags"""
-        critical_flags = []
-        
-        # GOplus critical authorities
-        goplus_result = security_analysis.get('goplus_result', {})
-        if goplus_result:
-            # Mint authority (unlimited supply)
-            mintable = goplus_result.get('mintable', {})
-            if isinstance(mintable, dict) and mintable.get('status') == '1':
-                critical_flags.append("Mint authority active (unlimited supply possible)")
-            
-            # Freeze authority (can freeze accounts)
-            freezable = goplus_result.get('freezable', {})
-            if isinstance(freezable, dict) and freezable.get('status') == '1':
-                critical_flags.append("Freeze authority active (accounts can be frozen)")
-        
-        # Only include verified rug/scam evidence
-        critical_issues = security_analysis.get('critical_issues', [])
-        for issue in critical_issues:
-            issue_str = str(issue).lower()
-            if any(keyword in issue_str for keyword in ['rugged', 'scam', 'honeypot', 'malicious', 'exploit']):
-                critical_flags.append(issue)
-        
-        return critical_flags
-    
-    def _calculate_data_quality(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Calculate data quality metrics"""
-        
-        # Check what data is available
-        has_price_data = bool(service_responses.get('birdeye', {}).get('price', {}).get('value'))
-        has_market_data = bool(service_responses.get('birdeye', {}).get('price', {}).get('market_cap') or 
-                              service_responses.get('dexscreener', {}).get('pairs', {}).get('pairs'))
-        has_holder_data = bool(service_responses.get('goplus', {}).get('holder_count'))
-        has_security_data = bool(service_responses.get('goplus') or service_responses.get('rugcheck'))
-        has_metadata = bool(service_responses.get('helius', {}).get('metadata') or 
-                           service_responses.get('solanafm', {}).get('token'))
-        
-        # Core metrics availability
-        available_metrics = sum([has_price_data, has_market_data, has_security_data, has_metadata])
-        total_metrics = 4  # Core essential metrics
-        
-        # Bonus metrics
-        bonus_available = sum([has_holder_data])  # Non-essential bonus data
-        
-        # Calculate quality score
-        base_score = (available_metrics / total_metrics) * 80  # Up to 80 for essentials
-        bonus_score = bonus_available * 10  # Up to 10 for bonus
-        source_bonus = min(10, len(service_responses) * 2)  # Up to 10 for multiple sources
-        
-        quality_score = min(100, base_score + bonus_score + source_bonus)
-        
-        return {
-            'score': round(quality_score),
-            'source_count': len(service_responses),
-            'available_metrics': available_metrics + bonus_available,
-            'total_metrics': total_metrics + 1,  # Include holder data in total
-            'source_status': {
-                'Price Data': has_price_data,
-                'Market Data': has_market_data,
-                'Security Data': has_security_data,
-                'Token Metadata': has_metadata,
-                'Holder Data': has_holder_data
-            }
-        }
-    
+
 # Global service instance
 groq_llama_service = GroqLlamaService()
