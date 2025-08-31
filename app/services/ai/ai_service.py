@@ -140,19 +140,19 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         processing_time = time.time() - start_time
         parsed_response.processing_time = processing_time
         
-        logger.info(f"AI analysis completed for {request.get('token_address', 'unknown')} in {processing_time:.2f}s")
+        logger.info(f"AI analysis completed for {request.token_address} in {processing_time:.2f}s")
         
         return parsed_response
     
     def _prepare_analysis_data(self, request: AIAnalysisRequest) -> Dict[str, Any]:
         """Extract and calculate key metrics from service responses with enhanced data handling"""
         data = {
-            "token_address": request.get("token_address"),
-            "analysis_type": request.get("analysis_type")
+            "token_address": request.token_address,
+            "analysis_type": request.analysis_type
         }
         
-        logger.info(f"Extracting enhanced data for {request.get('token_address')}")
-        logger.info(f"Available services: {list(request.get('service_responses').keys())}")
+        logger.info(f"Extracting enhanced data for {request.token_address}")
+        logger.info(f"Available services: {list(request.service_responses.keys())}")
         
         # === MARKET DATA EXTRACTION (Improved) ===
         market_cap = None
@@ -162,7 +162,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         liquidity = None
         
         # Primary: Birdeye
-        birdeye_data = request.get("service_responses").get("birdeye", {})
+        birdeye_data = request.service_responses.get("birdeye", {})
         if birdeye_data and isinstance(birdeye_data, dict):
             price_data = birdeye_data.get("price", {})
             if price_data and isinstance(price_data, dict):
@@ -194,7 +194,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # Fallback: DexScreener
         if any(x is None for x in [volume_24h, market_cap, liquidity]):
-            dex_data = request.get("service_responses").get("dexscreener", {})
+            dex_data = request.service_responses.get("dexscreener", {})
             if dex_data and dex_data.get("pairs", {}).get("pairs"):
                 pairs = dex_data["pairs"]["pairs"]
                 if isinstance(pairs, list) and len(pairs) > 0:
@@ -220,7 +220,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # Additional Fallback: SolSniffer for market cap
         if market_cap is None:
-            solsniffer_data = request.get("service_responses").get("solsniffer", {})
+            solsniffer_data = request.service_responses.get("solsniffer", {})
             if solsniffer_data and isinstance(solsniffer_data, dict):
                 try:
                     # Try both field names that might contain market cap
@@ -246,7 +246,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         # === ENHANCED VOLATILITY EXTRACTION ===
         recent_volatility = None
         if birdeye_data and birdeye_data.get("trades"):
-            recent_volatility = self._calculate_simple_volatility(birdeye_data, request.get("token_address"))
+            recent_volatility = self._calculate_simple_volatility(birdeye_data, request.token_address)
         
         data.update({
             "recent_volatility_percent": recent_volatility,
@@ -258,7 +258,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         top_holders_percent = None
         
         # Primary: GOplus
-        goplus_data = request.get("service_responses").get("goplus", {})
+        goplus_data = request.service_responses.get("goplus", {})
         if goplus_data and isinstance(goplus_data, dict):
             logger.info("Processing GOplus holder data...")
             
@@ -326,7 +326,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         # Fallback sources for holder data
         if holder_count is None:
             # Try RugCheck
-            rugcheck_data = request.get("service_responses").get("rugcheck", {})
+            rugcheck_data = request.service_responses.get("rugcheck", {})
             if rugcheck_data and rugcheck_data.get("total_LP_providers"):
                 try:
                     holder_count = int(rugcheck_data["total_LP_providers"])
@@ -336,7 +336,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             
             # Try SolSniffer
             if holder_count is None:
-                solsniffer_data = request.get("service_responses").get("solsniffer", {})
+                solsniffer_data = request.service_responses.get("solsniffer", {})
                 if solsniffer_data:
                     for field in ["holderCount", "holder_count", "holders", "totalHolders"]:
                         value = solsniffer_data.get(field)
@@ -359,12 +359,12 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         lp_evidence = []
         
         # Method 1: RugCheck LP analysis
-        rugcheck_data = request.get("service_responses").get("rugcheck", {})
-        if rugcheck_data:
+        rugcheck_data = request.service_responses.get("rugcheck", {})
+        if rugcheck_data and rugcheck_data.get("token"):
             # Check for LP lock evidence
             lockers_data = rugcheck_data.get("lockers_data", {})
             if lockers_data and lockers_data.get("lockers"):
-                lockers = lockers_data["lockers"]
+                lockers = lockers_data.get("lockers", [])
                 if isinstance(lockers, dict) and len(lockers) > 0:
                     total_locked_value = 0
                     for locker_id, locker_info in lockers.items():
@@ -418,9 +418,9 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                                         lp_status = "concentrated"
                                         lp_confidence = 60
                                         lp_evidence.append(f"{top_percent:.1f}% concentrated (possibly locked)")
-        
+
         # Method 2: GOplus LP data
-        goplus_data = request.get("service_responses").get("goplus", {})
+        goplus_data = request.service_responses.get("goplus", {})
         if lp_status == "unknown" and goplus_data:
             lp_holders = goplus_data.get("lp_holders")
             if lp_holders and isinstance(lp_holders, list) and len(lp_holders) > 0:
@@ -446,7 +446,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # === SUPPLY AND DEV DATA ===
         total_supply = None
-        helius_data = request.get("service_responses").get("helius", {})
+        helius_data = request.service_responses.get("helius", {})
         if helius_data and helius_data.get("supply"):
             supply_info = helius_data["supply"]
             try:
@@ -458,7 +458,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # Dev holdings from RugCheck
         dev_percent = None
-        rugcheck_data = request.get("service_responses").get("rugcheck", {})
+        rugcheck_data = request.service_responses.get("rugcheck", {})
         if rugcheck_data and total_supply:
             creator_analysis = rugcheck_data.get("creator_analysis", {})
             if creator_analysis:
@@ -478,7 +478,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         security_flags = []
         
         # Only include truly critical security issues
-        goplus_security = request.get("service_responses").get("goplus_result", {})
+        goplus_security = request.service_responses.get("goplus_result", {})
         if goplus_security:
             # Mint authority (unlimited supply)
             mintable = goplus_security.get("mintable", {})
@@ -497,7 +497,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                 data["freeze_authority_active"] = False
         
         # Only include verified critical issues from other sources
-        critical_issues = request.get("service_responses").get("critical_issues", [])
+        critical_issues = request.service_responses.get("critical_issues", [])
         for issue in critical_issues:
             if "rugged" in str(issue).lower() or "scam" in str(issue).lower():
                 security_flags.append(issue)
@@ -806,7 +806,7 @@ COMPREHENSIVE RISK SCORING:
 - Missing data = neutral assessment, not negative
 
 RESPONSE FORMAT (JSON ONLY):
-{
+{{
   "ai_score": 0-100,
   "risk_assessment": "low|medium|high|critical",
   "recommendation": "BUY|CONSIDER|HOLD|CAUTION|AVOID", 
@@ -814,16 +814,16 @@ RESPONSE FORMAT (JSON ONLY):
   "key_insights": ["specific positive factors with data"],
   "risk_factors": ["specific concerns with data"],
   "stop_flags": ["critical issues only"],
-  "market_metrics": {
+  "market_metrics": {{
     "volatility_risk": "low|medium|high|unknown",
     "whale_risk": "low|medium|high|unknown", 
     "sniper_risk": "low|medium|high|unknown",
     "liquidity_health": "excellent|good|poor|unknown",
     "dev_risk": "low|medium|high|unknown",
     "lp_security": "secure|likely_secure|unknown|risky"
-  },
+  }},
   "llama_reasoning": "Comprehensive analysis of all available metrics"
-}
+}}
 
 ENHANCED DECISION FRAMEWORK:
 - BUY: Score >85, all major risks low, strong data confidence
@@ -844,8 +844,6 @@ RESPOND WITH ONLY VALID JSON."""
             from app.services.ai.groq_ai_service import groq_llama_service
 
             response = await groq_llama_service.send_request(prompt)
-
-            print(response)
 
             return response
             

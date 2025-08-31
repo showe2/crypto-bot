@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 from app.utils.redis_client import get_redis_client
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
-from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisResponse
+from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisRequest
 
 
 class EnhancedTokenAnalyzer:
@@ -244,13 +244,12 @@ class EnhancedTokenAnalyzer:
             # Log data availability for transparency
             self._log_data_availability(service_responses)
 
-            request = {
-                "token_address": "So11111111111111111111111111111111111112",
-                "service_responses": service_responses,
-                "security_analysis": security_data,
-                "analysis_type": "deep"
-            }
-            
+            request = AIAnalysisRequest(
+                token_address=token_address,
+                service_responses=service_responses,
+                security_analysis=security_data,
+                analysis_type="deep"
+            )
             # Call AI service
             ai_result = await analyze_token_with_ai(request)
             
