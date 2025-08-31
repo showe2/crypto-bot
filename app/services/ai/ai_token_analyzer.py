@@ -243,14 +243,16 @@ class EnhancedTokenAnalyzer:
             
             # Log data availability for transparency
             self._log_data_availability(service_responses)
+
+            request = {
+                "token_address": "So11111111111111111111111111111111111112",
+                "service_responses": service_responses,
+                "security_analysis": security_data,
+                "analysis_type": "deep"
+            }
             
             # Call AI service
-            ai_result = await analyze_token_with_ai(
-                token_address=token_address,
-                service_responses=service_responses,
-                security_analysis=security_data,
-                analysis_type="deep"
-            )
+            ai_result = await analyze_token_with_ai(request)
             
             # Handle AI analysis result
             if ai_result is None:

@@ -35,6 +35,7 @@ class TokenAnalyzer:
             "rugcheck": True,
             "solsniffer": True
         }
+        
     
     async def analyze_token_comprehensive(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
         """Comprehensive token analysis with security-first approach"""
@@ -172,6 +173,7 @@ class TokenAnalyzer:
         except Exception as e:
             # Don't let ChromaDB errors affect the main analysis flow
             logger.warning(f"ChromaDB storage error: {str(e)}")
+
     
     async def _run_security_checks(self, token_address: str, analysis_response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Run security checks first (GOplus + RugCheck + SolSniffer)"""
@@ -340,6 +342,7 @@ class TokenAnalyzer:
         security_data["overall_safe"] = True
         return True, security_data
     
+    
     def _analyze_goplus_security(self, goplus_result: Dict[str, Any]) -> Dict[str, List[str]]:
         """Analyze GOplus results for critical security issues - focus on security mechanisms only"""
         critical_issues = []
@@ -394,6 +397,7 @@ class TokenAnalyzer:
                 pass
         
         return {"critical": critical_issues, "warnings": warnings}
+    
     
     def _analyze_rugcheck_security(self, rugcheck_result: Dict[str, Any]) -> Dict[str, List[str]]:
         """Analyze RugCheck results for critical security issues - ignore if insufficient data"""
@@ -471,6 +475,7 @@ class TokenAnalyzer:
         
         return {"critical": critical_issues, "warnings": warnings}
     
+    
     def _analyze_solsniffer_security(self, solsniffer_result: Dict[str, Any]) -> Dict[str, List[str]]:
         """Analyze SolSniffer results for critical security issues"""
         critical_issues = []
@@ -522,6 +527,7 @@ class TokenAnalyzer:
         
         # Always return meaningful data if we have any indicator data
         return {"critical": critical_issues, "warnings": warnings}
+    
 
     async def _run_market_analysis_services(self, token_address: str, analysis_response: Dict[str, Any]) -> None:
         """Run market analysis services (Birdeye, Helius, SolanaFM, DexScreener)"""
@@ -644,41 +650,9 @@ class TokenAnalyzer:
                 logger.error(f"Market analysis execution failed: {str(e)}")
                 analysis_response["errors"].append(f"Market analysis failed: {str(e)}")
 
-    async def _generate_security_focused_analysis(self, security_data: Dict[str, Any], token_address: str, passed: bool) -> Dict[str, Any]:
-        """Generate analysis focused on security results when security check fails"""
-        
-        if passed:
-            return {
-                "score": 70.0,
-                "risk_level": "low",
-                "recommendation": "consider",
-                "confidence": 90.0,
-                "confidence_score": 90.0,
-                "summary": "Security checks passed",
-                "positive_signals": ["Security verification completed"],
-                "risk_factors": [],
-                "security_focused": True
-            }
-        
-        critical_count = len(security_data.get("critical_issues", []))
-        warning_count = len(security_data.get("warnings", []))
-        
-        return {
-            "score": 10.0,
-            "risk_level": "critical",
-            "recommendation": "avoid",
-            "confidence": 95.0,
-            "confidence_score": 95.0,
-            "summary": f"SECURITY FAILED: {critical_count} critical issues, {warning_count} warnings",
-            "positive_signals": [],
-            "risk_factors": security_data.get("critical_issues", []) + security_data.get("warnings", []),
-            "security_focused": True,
-            "critical_security_issues": security_data.get("critical_issues", []),
-            "security_warnings": security_data.get("warnings", [])
-        }
-    
+
     async def _generate_comprehensive_analysis(self, service_responses: Dict[str, Any], security_data: Dict[str, Any], token_address: str) -> Dict[str, Any]:
-        """Generate comprehensive analysis when security checks pass"""
+        """Generate comprehensive analysis when security checks pass - ENHANCED with new metrics"""
         
         # START WITH SECURITY BASE SCORE (60-95 range)
         security_base = 60  # Minimum for passing security
@@ -696,8 +670,21 @@ class TokenAnalyzer:
         if security_data.get("warnings"):
             risk_factors.extend(security_data["warnings"])
         
-        # MARKET DATA QUALITY SCORING (0-20 points)
+        # === ENHANCED METRICS EXTRACTION ===
+        
+        # Extract enhanced data from services
         birdeye_data = service_responses.get("birdeye", {})
+        goplus_data = service_responses.get("goplus", {})
+        rugcheck_data = service_responses.get("rugcheck", {})
+        
+        # Calculate enhanced metrics
+        volatility = self._calculate_simple_volatility(birdeye_data)
+        whale_info = self._detect_simple_whales(goplus_data, rugcheck_data)
+        sniper_info = self._detect_sniper_patterns(goplus_data)
+        
+        # === ENHANCED SCORING WITH NEW METRICS ===
+        
+        # MARKET DATA QUALITY SCORING (0-20 points)
         if birdeye_data:
             price_data = birdeye_data.get("price")
             if price_data and price_data.get("value") and float(price_data["value"]) > 0:
@@ -710,7 +697,42 @@ class TokenAnalyzer:
                 if price_data.get("update_unix_time"):
                     total_points += 5  # Recent price update
         
-        # VOLUME RANGE SCORING (0-25 points)
+        # VOLATILITY SCORING (0-15 points) - NEW
+        if volatility is not None:
+            if volatility <= 5:  # Very stable
+                total_points += 15
+                positive_signals.append(f"Low volatility ({volatility}% from recent trades)")
+            elif volatility <= 15:  # Moderate volatility
+                total_points += 10
+                positive_signals.append(f"Moderate volatility ({volatility}%)")
+            elif volatility <= 30:  # High but acceptable
+                total_points += 5
+            else:  # Very high volatility
+                risk_factors.append(f"High volatility ({volatility}% from recent trades)")
+        
+        # WHALE RISK SCORING (0-20 points) - NEW
+        if whale_info["whale_risk_level"] != "unknown":
+            if whale_info["whale_risk_level"] == "low":
+                total_points += 20
+                positive_signals.append(f"Low whale risk ({whale_info['whale_count']} whales, {whale_info['whale_control_percent']}% control)")
+            elif whale_info["whale_risk_level"] == "medium":
+                total_points += 10
+                positive_signals.append(f"Moderate whale distribution ({whale_info['whale_count']} whales)")
+            else:  # high
+                risk_factors.append(f"High whale concentration ({whale_info['whale_count']} whales control {whale_info['whale_control_percent']}%)")
+        
+        # SNIPER RISK SCORING (0-10 points) - NEW
+        if sniper_info["sniper_risk"] != "unknown":
+            if sniper_info["sniper_risk"] == "low":
+                total_points += 10
+                positive_signals.append("No sniper patterns detected")
+            elif sniper_info["sniper_risk"] == "medium":
+                total_points += 5
+                risk_factors.append("Possible sniper activity detected")
+            else:  # high
+                risk_factors.append(f"High sniper risk - {sniper_info['similar_holders']} similar holder patterns")
+        
+        # VOLUME RANGE SCORING (0-25 points) - existing logic
         if birdeye_data and birdeye_data.get("price"):
             volume = birdeye_data["price"].get("volume_24h")
             if volume:
@@ -734,7 +756,7 @@ class TokenAnalyzer:
                 except (ValueError, TypeError):
                     pass
         
-        # LIQUIDITY RANGE SCORING (0-15 points)
+        # LIQUIDITY RANGE SCORING (0-15 points) - existing logic
         if birdeye_data and birdeye_data.get("price"):
             liquidity = birdeye_data["price"].get("liquidity")
             if liquidity:
@@ -758,7 +780,7 @@ class TokenAnalyzer:
                 except (ValueError, TypeError):
                     pass
         
-        # PRICE STABILITY SCORING (0-10 points)
+        # PRICE STABILITY SCORING (0-10 points) - existing logic
         if birdeye_data and birdeye_data.get("price"):
             price_change = birdeye_data["price"].get("price_change_24h")
             if price_change is not None:
@@ -776,7 +798,7 @@ class TokenAnalyzer:
                 except (ValueError, TypeError):
                     pass
         
-        # DATA SOURCE DIVERSITY (0-10 points)
+        # DATA SOURCE DIVERSITY (0-10 points) - existing logic
         source_count = len(service_responses)
         if source_count >= 5:
             total_points += 10
@@ -793,7 +815,7 @@ class TokenAnalyzer:
         else:
             risk_factors.append("Limited data sources")
         
-        # METADATA COMPLETENESS (0-5 points)
+        # METADATA COMPLETENESS (0-5 points) - existing logic
         has_name = False
         has_symbol = False
         
@@ -825,19 +847,21 @@ class TokenAnalyzer:
             total_points += 1
             positive_signals.append("Complete token information")
         
-        # NORMALIZE TO 0-100 SCALE
-        # Maximum possible points: 95 (security) + 20 (market) + 25 (volume) + 15 (liquidity) + 10 (stability) + 10 (sources) + 5 (metadata) = 180
-        max_possible = 180
+        # === ENHANCED ANALYSIS DATA STRUCTURE ===
+        
+        # Calculate final score
+        # Maximum possible points: 95 (security) + 20 (market) + 15 (volatility) + 20 (whales) + 10 (snipers) + 25 (volume) + 15 (liquidity) + 10 (stability) + 10 (sources) + 5 (metadata) = 225
+        max_possible = 225
         final_score = min(100, (total_points / max_possible) * 100)
         
         # Ensure minimum score for tokens that pass security
         final_score = max(60, final_score)
         
-        # Determine risk level
-        if final_score >= 85:
+        # Determine risk level with enhanced criteria
+        if final_score >= 85 and whale_info["whale_risk_level"] in ["low", "medium"]:
             risk_level = "low"
             recommendation = "consider"
-        elif final_score >= 70:
+        elif final_score >= 70 and whale_info["whale_risk_level"] != "high":
             risk_level = "low"
             recommendation = "consider"
         elif final_score >= 55:
@@ -849,19 +873,54 @@ class TokenAnalyzer:
         
         confidence = min(100, 80 + len(service_responses) * 5)
         
-        return {
+        # === ENHANCED RESPONSE STRUCTURE ===
+        enhanced_analysis = {
+            # Existing fields
             "score": round(final_score, 1),
             "risk_level": risk_level,
             "recommendation": recommendation,
             "confidence": round(confidence, 1),
             "confidence_score": round(confidence, 1),
-            "summary": f"Security verified. Market analysis from {len(service_responses)} sources.",
+            "summary": f"Security verified. Enhanced analysis from {len(service_responses)} sources.",
             "positive_signals": positive_signals,
             "risk_factors": risk_factors,
             "security_passed": True,
-            "services_analyzed": len(service_responses)
+            "services_analyzed": len(service_responses),
+
+            "volatility": {
+                "recent_volatility_percent": volatility,
+                "volatility_available": volatility is not None,
+                "volatility_risk": "high" if volatility and volatility > 30 else "medium" if volatility and volatility > 15 else "low"
+            },
+            "whale_analysis": {
+                "whale_count": whale_info["whale_count"],
+                "whale_control_percent": whale_info["whale_control_percent"],
+                "top_whale_percent": whale_info["top_whale_percent"],
+                "whale_risk_level": whale_info["whale_risk_level"]
+            },
+            "sniper_detection": {
+                "sniper_risk": sniper_info["sniper_risk"],
+                "pattern_detected": sniper_info["pattern_detected"],
+                "similar_holders": sniper_info.get("similar_holders", 0)
+            },
+            "market_structure": {
+                "data_sources": len(service_responses),
+                "has_price_data": bool(birdeye_data.get("price", {}).get("value")),
+                "has_volume_data": bool(birdeye_data.get("price", {}).get("volume_24h")),
+                "has_liquidity_data": bool(birdeye_data.get("price", {}).get("liquidity"))
+            },
+            
+            # Simple verdict (quick analysis gets basic verdict only)
+            "verdict": {
+                "decision": self._calculate_simple_verdict(final_score, whale_info, sniper_info, volatility)
+            }
         }
+
+        logger.info(f"Analysis completed: Score {final_score}")
+        
+        return enhanced_analysis
     
+
     async def _safe_service_call(self, service_func, *args, **kwargs):
         """Execute service call with error handling"""
         try:
@@ -871,6 +930,180 @@ class TokenAnalyzer:
             logger.error(f"{service_func.__name__} failed: {str(e)}")
             return None
 
+
+    def _calculate_simple_volatility(self, birdeye_data: Dict[str, Any]) -> Optional[float]:
+        """Calculate simple volatility from recent trades"""
+        try:
+            trades = birdeye_data.get("trades", []).get("items", [])
+            if not trades or len(trades) < 5:
+                return None
+            
+            token_address = birdeye_data.get("price", {}).get("address", None)
+
+            if token_address is not None:
+                # Extract prices from recent trades
+                prices = []
+                for trade in trades[:20]:  # Use up to 20 recent trades
+                    source = "from" if trade["from"]["address"] == token_address else "to"
+                    if isinstance(trade, dict) and source and trade.get(source):
+                        try:
+                            price = float(trade[source]["price"])
+                            if price > 0:
+                                prices.append(price)
+                        except (ValueError, TypeError):
+                            continue
+                
+                if len(prices) < 3:
+                    return None
+            else:
+                raise Exception("Unnable to extract token address from Birdeye data")
+            
+            # Simple volatility = (max_price - min_price) / avg_price * 100
+            max_price = max(prices)
+            min_price = min(prices)
+            avg_price = sum(prices) / len(prices)
+            
+            volatility = ((max_price - min_price) / avg_price) * 100 if avg_price > 0 else 0
+            
+            logger.info(f"Simple volatility calculated: {volatility:.2f}% from {len(prices)} trades")
+            return round(volatility, 2)
+            
+        except Exception as e:
+            logger.warning(f"Volatility calculation failed: {e}")
+            return None
+        
+
+    def _detect_simple_whales(self, goplus_data: Dict[str, Any], rugcheck_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Simple whale detection from existing holder data"""
+        try:
+            whale_info = {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "whale_risk_level": "low",
+                "dev_whale_percent": 0.0
+            }
+            
+            # Method 1: GOplus holders
+            holders = goplus_data.get("holders", [])
+            if holders and isinstance(holders, list):
+                whales = []
+                for holder in holders:
+                    if isinstance(holder, dict):
+                        try:
+                            percent_raw = holder.get("percent", "0")
+                            percent = float(percent_raw)
+                            
+                            # Whale threshold: >2% = whale
+                            if percent > 2.0:
+                                whales.append(percent)
+                        except (ValueError, TypeError):
+                            continue
+                
+                if whales:
+                    whale_info["whale_count"] = len(whales)
+                    whale_info["whale_control_percent"] = round(sum(whales), 2)
+                    whale_info["top_whale_percent"] = round(max(whales), 2)
+                    
+                    # Simple risk assessment
+                    if whale_info["whale_control_percent"] > 60:
+                        whale_info["whale_risk_level"] = "high"
+                    elif whale_info["whale_control_percent"] > 30:
+                        whale_info["whale_risk_level"] = "medium"  
+                    else:
+                        whale_info["whale_risk_level"] = "low"
+                    
+                    logger.info(f"Whales detected: {whale_info['whale_count']} whales control {whale_info['whale_control_percent']}%")
+            
+            return whale_info
+            
+        except Exception as e:
+            logger.warning(f"Whale detection failed: {e}")
+            return {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "whale_risk_level": "unknown",
+                "dev_whale_percent": 0.0
+            }
+        
+
+    def _detect_sniper_patterns(self, goplus_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Simple sniper pattern detection from holder distribution"""
+        try:
+            holders = goplus_data.get("holders", [])
+            if not holders or len(holders) < 10:
+                return {"sniper_risk": "unknown", "pattern_detected": False, "similar_holders": 0}
+            
+            # Simple pattern: many holders with very similar percentages
+            percentages = []
+            for holder in holders[:50]:  # Check top 50 holders
+                if isinstance(holder, dict):
+                    try:
+                        percent_raw = holder.get("percent", "0")
+                        percent = float(percent_raw)
+                        if 0.1 <= percent <= 5.0:  # Sniper range
+                            percentages.append(percent)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(percentages) < 5:
+                return {"sniper_risk": "low", "pattern_detected": False, "similar_holders": 0}
+            
+            # Simple pattern detection: count very similar percentages
+            similar_count = 0
+            for i, p1 in enumerate(percentages):
+                for p2 in percentages[i+1:]:
+                    if abs(p1 - p2) < 0.05:  # Very similar percentages (within 0.05%)
+                        similar_count += 1
+            
+            # Risk assessment based on similar holder count
+            if similar_count > 10:
+                sniper_risk = "high"
+                pattern_detected = True
+            elif similar_count > 5:
+                sniper_risk = "medium" 
+                pattern_detected = True
+            else:
+                sniper_risk = "low"
+                pattern_detected = False
+            
+            logger.info(f"Sniper analysis: {similar_count} similar holder pairs, risk: {sniper_risk}")
+            
+            return {
+                "sniper_risk": sniper_risk,
+                "pattern_detected": pattern_detected,
+                "similar_holders": similar_count
+            }
+            
+        except Exception as e:
+            logger.warning(f"Sniper pattern detection failed: {e}")
+            return {"sniper_risk": "unknown", "pattern_detected": False, "similar_holders": 0}
+        
+
+    def _calculate_simple_verdict(self, score: float, whale_info: Dict, sniper_info: Dict, volatility: Optional[float]) -> str:
+        """Calculate simple GO/WATCH/NO verdict"""
+        
+        # Critical factors that force NO
+        if whale_info.get("whale_control_percent", 0) > 70:
+            return "NO"
+        if sniper_info.get("sniper_risk") == "high":
+            return "NO" 
+        if volatility and volatility > 50:
+            return "NO"
+        
+        # GO criteria
+        if (score >= 80 and 
+            whale_info.get("whale_risk_level") == "low" and 
+            sniper_info.get("sniper_risk") == "low"):
+            return "GO"
+        
+        # WATCH criteria  
+        if score >= 65 and whale_info.get("whale_risk_level") in ["low", "medium"]:
+            return "WATCH"
+        
+        # Default to NO for lower scores
+        return "NO"
 
 # Global analyzer instance
 token_analyzer = TokenAnalyzer()

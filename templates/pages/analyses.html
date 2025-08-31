@@ -507,6 +507,7 @@
         date_from: "",
         date_to: "",
       },
+      isExporting: false,
 
       init() {
         // Load initial data
@@ -518,6 +519,159 @@
             this.handleSearch(this.filters.search);
           }
         }, 300);
+      },
+
+      getCacheKey(analysis) {
+        if (!analysis) return null;
+
+        const source = analysis.source_event;
+        const namespace =
+          source === "api_quick"
+            ? "token_analysis:analysis"
+            : "enhanced_token_analysis:deep_analysis";
+
+        return `${namespace}:${analysis.mint}`;
+      },
+
+      async exportAnalysisDocx(analysis) {
+        if (!analysis) {
+          this.showNotification(
+            "error",
+            "Export Failed",
+            "No analysis data available"
+          );
+          return;
+        }
+
+        this.isExporting = true;
+
+        try {
+          await this.downloadDocxReport(analysis);
+        } catch (error) {
+          console.error("Export failed:", error);
+
+          // Enhanced error handling with specific messages
+          let errorMessage = "Failed to export analysis";
+          let errorTitle = "Export Failed";
+
+          if (error.message.includes("expired")) {
+            errorTitle = "Report Expired";
+            errorMessage =
+              "Analysis report has expired. Please run a new analysis to generate a fresh report.";
+          } else if (
+            error.message.includes("404") ||
+            error.message.includes("not found")
+          ) {
+            errorTitle = "Report Not Found";
+            errorMessage =
+              "Report data not found. This may happen for older analyses.";
+          } else if (
+            error.message.includes("network") ||
+            error.message.includes("fetch")
+          ) {
+            errorTitle = "Network Error";
+            errorMessage =
+              "Failed to download report due to network issues. Please try again.";
+          } else if (error.message) {
+            errorMessage = error.message;
+          }
+
+          this.showNotification("error", errorTitle, errorMessage);
+        } finally {
+          this.isExporting = false;
+        }
+      },
+
+      async downloadDocxReport(analysis) {
+        try {
+          this.showNotification(
+            "info",
+            "Generating Report",
+            "Creating professional DOCX document..."
+          );
+
+          const cacheKey = this.getCacheKey(analysis);
+
+          if (!cacheKey) {
+            throw new Error("Unable to generate report cache key");
+          }
+
+          console.log("📄 Attempting DOCX download with cache key:", cacheKey);
+
+          const response = await fetch(
+            `/document/${encodeURIComponent(cacheKey)}`
+          );
+
+          // Enhanced response handling
+          if (!response.ok) {
+            if (response.status === 404) {
+              throw new Error(
+                "Report data has expired or not found (DOCX reports are available for 2 hours after analysis)"
+              );
+            } else if (response.status === 500) {
+              throw new Error(
+                "Server error while generating report. Please try again in a moment."
+              );
+            } else if (response.status === 403) {
+              throw new Error("Access denied to report data");
+            } else {
+              const errorText = await response
+                .text()
+                .catch(() => "Unknown error");
+              throw new Error(
+                `Report generation failed (${response.status}): ${errorText}`
+              );
+            }
+          }
+
+          // Validate response content
+          const contentType = response.headers.get("content-type");
+          if (
+            !contentType ||
+            !contentType.includes(
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+          ) {
+            console.warn("Unexpected content type:", contentType);
+          }
+
+          const blob = await response.blob();
+
+          if (blob.size === 0) {
+            throw new Error("Generated report is empty");
+          }
+
+          // Enhanced file download
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+
+          const tokenSymbol = analysis.token_symbol || "Unknown";
+          const tokenShort = (analysis.mint || "unknown").substring(0, 8);
+          const date = new Date().toISOString().split("T")[0];
+          const time = new Date()
+            .toTimeString()
+            .split(" ")[0]
+            .replace(/:/g, "-");
+
+          a.download = `${tokenSymbol}_Analysis_${tokenShort}_${date}_${time}.docx`;
+
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+
+          console.log("✅ DOCX download completed successfully");
+
+          this.showNotification(
+            "success",
+            "Download Complete",
+            `Professional analysis report for ${tokenSymbol} downloaded successfully`
+          );
+        } catch (error) {
+          console.error("DOCX download failed:", error);
+          throw error; // Re-throw to trigger failure flag
+        }
       },
 
       async handleSearch(query = "") {
@@ -942,6 +1096,46 @@
                       }
                     </div>
                   </div>
+                  <!-- Export Section -->
+                  <div class="bg-gray-50 rounded-lg p-4 mb-6">
+                    <div class="font-bold mb-3">📄 Export Analysis</div>
+                    <div class="space-y-3">
+                      <!-- DOCX Export Button -->
+                      <button
+                        onclick="exportAnalysisFromPopup('${
+                          analysis.id || analysis.analysis_id
+                        }')"
+                        id="export-btn-${analysis.id || analysis.analysis_id}"
+                        class="w-full px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-[1.02] bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
+                      >
+                        <i class="fas fa-file-word mr-2 text-base"></i>
+                        <span class="font-medium">Export Professional DOCX Report</span>
+                      </button>
+                      
+                      <!-- Status Text -->
+                      <div class="text-center">
+                        <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-700">
+                          <i class="fas fa-check-circle mr-1"></i>
+                          Professional DOCX report ready for download
+                        </div>
+                      </div>
+                      
+                      <!-- Progress indicator (hidden by default) -->
+                      <div id="export-progress-${
+                        analysis.id || analysis.analysis_id
+                      }" class="hidden mt-3">
+                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                          <div class="flex items-center">
+                            <div class="loading-spinner mr-3"></div>
+                            <div class="flex-1">
+                              <div class="text-sm font-medium text-blue-800">Generating DOCX Report</div>
+                              <div class="text-xs text-blue-600">This may take a few seconds...</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1045,6 +1239,8 @@
         if (popup) {
           popup.remove();
         }
+        // Reset export flags
+        this.isExporting = false;
         document.body.style.overflow = "";
       },
     };
@@ -1061,6 +1257,26 @@
       clearTimeout(timeout);
       timeout = setTimeout(later, wait);
     };
+  }
+
+  function getNotificationIcon(type) {
+    const icons = {
+      success: "fas fa-check-circle",
+      error: "fas fa-exclamation-circle",
+      warning: "fas fa-exclamation-triangle",
+      info: "fas fa-info-circle",
+    };
+    return icons[type] || icons.info;
+  }
+
+  function getNotificationColor(type) {
+    const colors = {
+      success: "text-green-500",
+      error: "text-red-500",
+      warning: "text-yellow-500",
+      info: "text-blue-500",
+    };
+    return colors[type] || colors.info;
   }
 
   // Global functions for popup
@@ -1089,6 +1305,189 @@
     } catch (error) {
       console.error("Failed to copy:", error);
       alert("Failed to copy to clipboard");
+    }
+  };
+
+  window.showEnhancedNotification = function (type, title, message) {
+    // Remove existing notifications
+    const existing = document.querySelectorAll(".notification-overlay");
+    existing.forEach((n) => n.remove());
+
+    // Create notification
+    const notification = document.createElement("div");
+    notification.className = "notification-overlay";
+    notification.innerHTML = `
+    <div class="notification-item notification-${type}">
+      <div class="flex items-start">
+        <div class="flex-shrink-0">
+          <i class="text-lg ${getNotificationIcon(type)} ${getNotificationColor(
+      type
+    )}"></i>
+        </div>
+        <div class="ml-3 flex-1">
+          <p class="font-semibold text-gray-900 text-sm">${title}</p>
+          <p class="text-sm text-gray-600 mt-1">${message}</p>
+        </div>
+        <button onclick="this.parentElement.parentElement.parentElement.remove()" class="ml-4 text-gray-400 hover:text-gray-600 transition-colors">
+          <i class="fas fa-times text-sm"></i>
+        </button>
+      </div>
+    </div>
+  `;
+
+    document.body.appendChild(notification);
+
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.remove();
+      }
+    }, 5000);
+  };
+
+  // Global export function for popup
+  window.exportAnalysisFromPopup = async function (analysisId) {
+    const btn = document.getElementById(`export-btn-${analysisId}`);
+    const progress = document.getElementById(`export-progress-${analysisId}`);
+
+    if (!btn) return;
+
+    // Find the analysis data
+    const alpineComponent = document.querySelector('[x-data*="analysesData"]')
+      .__x.$data;
+    const analysis = alpineComponent.analyses.find(
+      (a) => a.id === analysisId || a.analysis_id === analysisId
+    );
+
+    if (!analysis) {
+      showEnhancedNotification(
+        "error",
+        "Export Failed",
+        "Analysis data not found"
+      );
+      return;
+    }
+
+    // Update button to loading state
+    btn.disabled = true;
+    btn.className =
+      "w-full px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md bg-blue-500 text-white cursor-wait";
+    btn.innerHTML =
+      '<i class="fas fa-spinner fa-spin mr-2 text-base"></i><span class="font-medium">Generating Report...</span>';
+
+    // Show progress
+    if (progress) {
+      progress.classList.remove("hidden");
+    }
+
+    try {
+      showEnhancedNotification(
+        "info",
+        "Generating Report",
+        "Creating professional DOCX document..."
+      );
+
+      const source = analysis.source_event;
+      const namespace =
+        source === "api_quick"
+          ? "token_analysis:analysis"
+          : "enhanced_token_analysis:deep_analysis";
+      const cacheKey = `${namespace}:${analysis.mint}`;
+
+      console.log("📄 Attempting DOCX download with cache key:", cacheKey);
+
+      const response = await fetch(`/document/${encodeURIComponent(cacheKey)}`);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error(
+            "Report data has expired or not found (DOCX reports are available for 2 hours after analysis)"
+          );
+        } else if (response.status === 500) {
+          throw new Error(
+            "Server error while generating report. Please try again in a moment."
+          );
+        } else if (response.status === 403) {
+          throw new Error("Access denied to report data");
+        } else {
+          const errorText = await response.text().catch(() => "Unknown error");
+          throw new Error(
+            `Report generation failed (${response.status}): ${errorText}`
+          );
+        }
+      }
+
+      const blob = await response.blob();
+
+      if (blob.size === 0) {
+        throw new Error("Generated report is empty");
+      }
+
+      // Download file
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+
+      const tokenSymbol = analysis.token_symbol || "Unknown";
+      const tokenShort = (analysis.mint || "unknown").substring(0, 8);
+      const date = new Date().toISOString().split("T")[0];
+      const time = new Date().toTimeString().split(" ")[0].replace(/:/g, "-");
+
+      a.download = `${tokenSymbol}_Analysis_${tokenShort}_${date}_${time}.docx`;
+
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      console.log("✅ DOCX download completed successfully");
+
+      showEnhancedNotification(
+        "success",
+        "Download Complete",
+        `Professional analysis report for ${tokenSymbol} downloaded successfully`
+      );
+    } catch (error) {
+      console.error("DOCX download failed:", error);
+
+      // Update button to failed state
+      btn.className =
+        "w-full px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md bg-red-500 text-white cursor-not-allowed";
+      btn.innerHTML =
+        '<i class="fas fa-exclamation-triangle mr-2 text-base"></i><span class="font-medium">Export Failed - Close & Reopen Popup</span>';
+
+      // Enhanced error messages
+      let errorMessage = "Failed to export analysis";
+      let errorTitle = "Export Failed";
+
+      if (error.message.includes("expired")) {
+        errorTitle = "Report Expired";
+        errorMessage =
+          "Analysis report has expired. Please run a new analysis to generate a fresh report.";
+      } else if (
+        error.message.includes("404") ||
+        error.message.includes("not found")
+      ) {
+        errorTitle = "Report Not Found";
+        errorMessage =
+          "Report data not found. This may happen for older analyses.";
+      } else if (
+        error.message.includes("network") ||
+        error.message.includes("fetch")
+      ) {
+        errorTitle = "Network Error";
+        errorMessage =
+          "Failed to download report due to network issues. Please try again.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      showEnhancedNotification("error", errorTitle, errorMessage);
+    } finally {
+      // Hide progress
+      if (progress) {
+        progress.classList.add("hidden");
+      }
     }
   };
 </script>

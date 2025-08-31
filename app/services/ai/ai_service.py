@@ -125,41 +125,34 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         """Perform comprehensive AI analysis of token"""
         start_time = time.time()
         
-        try:
-            # Extract and structure data for AI analysis
-            analysis_data = self._prepare_analysis_data(request)
-            
-            # Build analysis prompt
-            analysis_prompt = self._build_analysis_prompt(analysis_data)
-            
-            # Call Llama model (using Claude API as proxy for now)
-            ai_response = await self._call_llama_model(analysis_prompt)
-            
-            # Parse and validate response
-            parsed_response = self._parse_ai_response(ai_response)
-            
-            processing_time = time.time() - start_time
-            parsed_response.processing_time = processing_time
-            
-            logger.info(f"AI analysis completed for {request.token_address} in {processing_time:.2f}s")
-            
-            return parsed_response
-            
-        except Exception as e:
-            logger.error(f"AI analysis failed for {request.token_address}: {str(e)}")
-            
-            # Return fallback analysis
-            return self._create_fallback_response(request.token_address, time.time() - start_time)
+        # Extract and structure data for AI analysis
+        analysis_data = self._prepare_analysis_data(request)
+        
+        # Build analysis prompt
+        analysis_prompt = self._build_analysis_prompt(analysis_data)
+        
+        # Call Llama model (using Claude API as proxy for now)
+        ai_response = await self._call_llama_model(analysis_prompt)
+        
+        # Parse and validate response
+        parsed_response = self._parse_ai_response(ai_response)
+        
+        processing_time = time.time() - start_time
+        parsed_response.processing_time = processing_time
+        
+        logger.info(f"AI analysis completed for {request.get('token_address', 'unknown')} in {processing_time:.2f}s")
+        
+        return parsed_response
     
     def _prepare_analysis_data(self, request: AIAnalysisRequest) -> Dict[str, Any]:
-        """Extract and calculate key metrics from service responses with improved data handling"""
+        """Extract and calculate key metrics from service responses with enhanced data handling"""
         data = {
-            "token_address": request.token_address,
-            "analysis_type": request.analysis_type
+            "token_address": request.get("token_address"),
+            "analysis_type": request.get("analysis_type")
         }
         
-        logger.info(f"Extracting data for {request.token_address}")
-        logger.info(f"Available services: {list(request.service_responses.keys())}")
+        logger.info(f"Extracting enhanced data for {request.get('token_address')}")
+        logger.info(f"Available services: {list(request.get('service_responses').keys())}")
         
         # === MARKET DATA EXTRACTION (Improved) ===
         market_cap = None
@@ -169,7 +162,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         liquidity = None
         
         # Primary: Birdeye
-        birdeye_data = request.service_responses.get("birdeye", {})
+        birdeye_data = request.get("service_responses").get("birdeye", {})
         if birdeye_data and isinstance(birdeye_data, dict):
             price_data = birdeye_data.get("price", {})
             if price_data and isinstance(price_data, dict):
@@ -201,7 +194,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # Fallback: DexScreener
         if any(x is None for x in [volume_24h, market_cap, liquidity]):
-            dex_data = request.service_responses.get("dexscreener", {})
+            dex_data = request.get("service_responses").get("dexscreener", {})
             if dex_data and dex_data.get("pairs", {}).get("pairs"):
                 pairs = dex_data["pairs"]["pairs"]
                 if isinstance(pairs, list) and len(pairs) > 0:
@@ -225,6 +218,23 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                     except Exception as e:
                         logger.warning(f"DexScreener extraction error: {e}")
         
+        # Additional Fallback: SolSniffer for market cap
+        if market_cap is None:
+            solsniffer_data = request.get("service_responses").get("solsniffer", {})
+            if solsniffer_data and isinstance(solsniffer_data, dict):
+                try:
+                    # Try both field names that might contain market cap
+                    for field_name in ['marketCap', 'market_cap']:
+                        raw_mc = solsniffer_data.get(field_name)
+                        if raw_mc is not None:
+                            market_cap = float(raw_mc)
+                            if market_cap > 0:
+                                logger.info(f"SolSniffer market cap fallback applied: ${market_cap:,.0f}")
+                                break
+                    
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"SolSniffer market cap conversion error: {e}")
+        
         data.update({
             "price_usd": price_usd,
             "price_change_24h": price_change_24h,
@@ -233,12 +243,22 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             "liquidity": liquidity
         })
         
+        # === ENHANCED VOLATILITY EXTRACTION ===
+        recent_volatility = None
+        if birdeye_data and birdeye_data.get("trades"):
+            recent_volatility = self._calculate_simple_volatility(birdeye_data, request.get("token_address"))
+        
+        data.update({
+            "recent_volatility_percent": recent_volatility,
+            "volatility_data_available": recent_volatility is not None
+        })
+        
         # === HOLDER DATA EXTRACTION (Improved with realistic expectations) ===
         holder_count = None
         top_holders_percent = None
         
         # Primary: GOplus
-        goplus_data = request.service_responses.get("goplus", {})
+        goplus_data = request.get("service_responses").get("goplus", {})
         if goplus_data and isinstance(goplus_data, dict):
             logger.info("Processing GOplus holder data...")
             
@@ -269,7 +289,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                     except Exception:
                         continue
             
-            # Extract top holders percentage
+            # Extract top holders percentage (already extracted in whale analysis, but keep for compatibility)
             holders_array = goplus_data.get("holders")
             if holders_array and isinstance(holders_array, list):
                 logger.info(f"Processing {len(holders_array)} holders for distribution analysis...")
@@ -306,7 +326,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         # Fallback sources for holder data
         if holder_count is None:
             # Try RugCheck
-            rugcheck_data = request.service_responses.get("rugcheck", {})
+            rugcheck_data = request.get("service_responses").get("rugcheck", {})
             if rugcheck_data and rugcheck_data.get("total_LP_providers"):
                 try:
                     holder_count = int(rugcheck_data["total_LP_providers"])
@@ -316,7 +336,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             
             # Try SolSniffer
             if holder_count is None:
-                solsniffer_data = request.service_responses.get("solsniffer", {})
+                solsniffer_data = request.get("service_responses").get("solsniffer", {})
                 if solsniffer_data:
                     for field in ["holderCount", "holder_count", "holders", "totalHolders"]:
                         value = solsniffer_data.get(field)
@@ -339,7 +359,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         lp_evidence = []
         
         # Method 1: RugCheck LP analysis
-        rugcheck_data = request.service_responses.get("rugcheck", {})
+        rugcheck_data = request.get("service_responses").get("rugcheck", {})
         if rugcheck_data:
             # Check for LP lock evidence
             lockers_data = rugcheck_data.get("lockers_data", {})
@@ -400,6 +420,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                                         lp_evidence.append(f"{top_percent:.1f}% concentrated (possibly locked)")
         
         # Method 2: GOplus LP data
+        goplus_data = request.get("service_responses").get("goplus", {})
         if lp_status == "unknown" and goplus_data:
             lp_holders = goplus_data.get("lp_holders")
             if lp_holders and isinstance(lp_holders, list) and len(lp_holders) > 0:
@@ -425,7 +446,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # === SUPPLY AND DEV DATA ===
         total_supply = None
-        helius_data = request.service_responses.get("helius", {})
+        helius_data = request.get("service_responses").get("helius", {})
         if helius_data and helius_data.get("supply"):
             supply_info = helius_data["supply"]
             try:
@@ -437,6 +458,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         # Dev holdings from RugCheck
         dev_percent = None
+        rugcheck_data = request.get("service_responses").get("rugcheck", {})
         if rugcheck_data and total_supply:
             creator_analysis = rugcheck_data.get("creator_analysis", {})
             if creator_analysis:
@@ -456,7 +478,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         security_flags = []
         
         # Only include truly critical security issues
-        goplus_security = request.security_analysis.get("goplus_result", {})
+        goplus_security = request.get("service_responses").get("goplus_result", {})
         if goplus_security:
             # Mint authority (unlimited supply)
             mintable = goplus_security.get("mintable", {})
@@ -475,7 +497,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                 data["freeze_authority_active"] = False
         
         # Only include verified critical issues from other sources
-        critical_issues = request.security_analysis.get("critical_issues", [])
+        critical_issues = request.get("service_responses").get("critical_issues", [])
         for issue in critical_issues:
             if "rugged" in str(issue).lower() or "scam" in str(issue).lower():
                 security_flags.append(issue)
@@ -495,7 +517,8 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             "has_liquidity": liquidity is not None,
             "has_volume": volume_24h is not None,
             "has_holders": holder_count is not None,
-            "has_lp_data": lp_status != "unknown"
+            "has_lp_data": lp_status != "unknown",
+            "has_volatility": recent_volatility is not None
         }
         
         available_data_count = sum(data_availability.values())
@@ -505,10 +528,11 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         data["data_availability"] = data_availability
         
         # === STATUS LOGGING ===
-        logger.info("Data extraction summary:")
+        logger.info("Enhanced data extraction summary:")
         logger.info(f"  Market Cap: {f'${market_cap:,.0f}' if market_cap else 'Not available'}")
         logger.info(f"  Liquidity: {f'${liquidity:,.0f}' if liquidity else 'Not available'}")
         logger.info(f"  Volume 24h: {f'${volume_24h:,.0f}' if volume_24h else 'Not available'}")
+        logger.info(f"  Volatility: {f'{recent_volatility}%' if recent_volatility else 'Not available'}")
         logger.info(f"  Holder Count: {f'{holder_count:,}' if holder_count else 'Not available'}")
         logger.info(f"  LP Status: {lp_status}")
         logger.info(f"  Security Flags: {len(security_flags)}")
@@ -516,8 +540,144 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         
         return data
     
+    def _calculate_simple_volatility(self, birdeye_data: Dict[str, Any], token_address: str) -> Optional[float]:
+        """Calculate simple volatility from recent trades"""
+        try:
+            trades_data = birdeye_data.get("trades", {})
+            trades = trades_data.get("items", []) if isinstance(trades_data, dict) else trades_data
+            
+            if not trades or len(trades) < 5:
+                return None
+            
+            # Extract prices from recent trades
+            prices = []
+            for trade in trades[:20]:  # Use up to 20 recent trades
+                if isinstance(trade, dict):
+                    try:
+                        # Check if our token is 'from' or 'to'
+                        if trade.get("from", {}).get("address") == token_address:
+                            price = float(trade["from"]["price"])
+                        elif trade.get("to", {}).get("address") == token_address:
+                            price = float(trade["to"]["price"])
+                        else:
+                            continue  # Skip trades not involving our token
+                        
+                        if price > 0:
+                            prices.append(price)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(prices) < 3:
+                return None
+            
+            # Simple volatility = (max_price - min_price) / avg_price * 100
+            max_price = max(prices)
+            min_price = min(prices)
+            avg_price = sum(prices) / len(prices)
+            
+            volatility = ((max_price - min_price) / avg_price) * 100 if avg_price > 0 else 0
+            
+            logger.info(f"Volatility calculated: {volatility:.2f}% from {len(prices)} trades")
+            return round(volatility, 2)
+            
+        except Exception as e:
+            logger.warning(f"Volatility calculation failed: {e}")
+            return None
+    
+    def _extract_whale_data(self, goplus_data: Dict[str, Any], rugcheck_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract whale data from existing holder information"""
+        try:
+            whale_data = {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "data_available": False
+            }
+            
+            # Extract from GOplus holders
+            holders = goplus_data.get("holders", [])
+            if holders and isinstance(holders, list):
+                whales = []
+                for holder in holders:
+                    if isinstance(holder, dict):
+                        try:
+                            percent_raw = holder.get("percent", "0")
+                            percent = float(percent_raw)
+                            
+                            # Whale threshold: >2% = whale
+                            if percent > 2.0:
+                                whales.append(percent)
+                        except (ValueError, TypeError):
+                            continue
+                
+                if whales:
+                    whale_data["whale_count"] = len(whales)
+                    whale_data["whale_control_percent"] = round(sum(whales), 2)
+                    whale_data["top_whale_percent"] = round(max(whales), 2)
+                    whale_data["data_available"] = True
+                    
+                    logger.info(f"Whales extracted: {whale_data['whale_count']} whales control {whale_data['whale_control_percent']}%")
+                else:
+                    # No whales = good distribution
+                    whale_data["data_available"] = True
+                    logger.info("No whales detected - excellent distribution")
+            
+            return whale_data
+            
+        except Exception as e:
+            logger.warning(f"Whale extraction failed: {e}")
+            return {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "data_available": False
+            }
+    
+    def _analyze_sniper_patterns(self, goplus_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze sniper patterns from holder distribution"""
+        try:
+            holders = goplus_data.get("holders", [])
+            if not holders or len(holders) < 10:
+                return {"similar_holders": 0, "pattern_detected": False, "data_available": False}
+            
+            # Count holders with very similar percentages
+            percentages = []
+            for holder in holders[:50]:  # Check top 50 holders
+                if isinstance(holder, dict):
+                    try:
+                        percent_raw = holder.get("percent", "0")
+                        percent = float(percent_raw)
+                        if 0.1 <= percent <= 5.0:  # Sniper range
+                            percentages.append(percent)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(percentages) < 5:
+                return {"similar_holders": 0, "pattern_detected": False, "data_available": True}
+            
+            # Count very similar percentages
+            similar_count = 0
+            for i, p1 in enumerate(percentages):
+                for p2 in percentages[i+1:]:
+                    if abs(p1 - p2) < 0.05:  # Very similar percentages (within 0.05%)
+                        similar_count += 1
+            
+            pattern_detected = similar_count > 5
+            
+            logger.info(f"Sniper analysis: {similar_count} similar holder pairs, pattern: {pattern_detected}")
+            
+            return {
+                "similar_holders": similar_count,
+                "pattern_detected": pattern_detected,
+                "data_available": True
+            }
+            
+        except Exception as e:
+            logger.warning(f"Sniper pattern analysis failed: {e}")
+            return {"similar_holders": 0, "pattern_detected": False, "data_available": False}
+    
     def _build_analysis_prompt(self, data: Dict[str, Any]) -> str:
-        """Build analysis prompt with realistic data availability expectations"""
+        """Build analysis prompt with enhanced metrics for AI risk assessment"""
         
         # Helper function to format data availability
         def format_data_point(value, label, format_func=None):
@@ -534,6 +694,16 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             format_data_point(data.get('volume_liquidity_ratio'), "Volume/Liquidity", lambda x: f"{x:.1f}%"),
             format_data_point(data.get('price_usd'), "Price", lambda x: f"${x:.8f}"),
             format_data_point(data.get('price_change_24h'), "24h Change", lambda x: f"{x:+.2f}%")
+        ]
+        
+        # Build enhanced metrics section
+        enhanced_metrics_lines = [
+            format_data_point(data.get('recent_volatility_percent'), "Recent Volatility", lambda x: f"{x}%"),
+            format_data_point(data.get('whale_count'), "Whale Count", lambda x: f"{x} whales"),
+            format_data_point(data.get('whale_control_percent'), "Whale Control", lambda x: f"{x}%"),
+            format_data_point(data.get('top_whale_percent'), "Top Whale", lambda x: f"{x}%"),
+            format_data_point(data.get('sniper_similar_holders'), "Similar Holders", lambda x: f"{x} patterns"),
+            f"Sniper Pattern Detected: {data.get('sniper_pattern_detected', False)}"
         ]
         
         # Build holder data section
@@ -565,12 +735,15 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         security_flags = data.get('security_flags', [])
         security_section = "No critical security issues detected" if not security_flags else "\n".join(f"🚨 {flag}" for flag in security_flags)
         
-        prompt = f"""SOLANA TOKEN ANALYSIS - REALISTIC DATA EXPECTATIONS
+        prompt = f"""ENHANCED SOLANA TOKEN ANALYSIS - AI RISK ASSESSMENT
 
 TOKEN: {data['token_address']}
 
 === MARKET FUNDAMENTALS ===
 {chr(10).join(market_data_lines)}
+
+=== ENHANCED RISK METRICS ===
+{chr(10).join(enhanced_metrics_lines)}
 
 === HOLDER DISTRIBUTION ===  
 {chr(10).join(holder_data_lines)}
@@ -587,89 +760,97 @@ Freeze Authority: {'ACTIVE ⚠️' if data.get('freeze_authority_active') else '
 Overall Completeness: {data.get('data_completeness', 0):.1f}%
 Available Data Points: {sum(data.get('data_availability', {}).values())} / {len(data.get('data_availability', {}))}
 
-=== ANALYSIS INSTRUCTIONS ===
+=== AI ANALYSIS INSTRUCTIONS ===
 
-1. REALISTIC DATA EXPECTATIONS:
-   - Missing data is NORMAL in crypto markets
-   - Focus on AVAILABLE data quality, not gaps
-   - Only penalize for CLEARLY NEGATIVE indicators
-   - Unknown status = NEUTRAL (not negative)
+You are analyzing this token with ENHANCED METRICS. Assess each metric's risk level:
 
-2. SCORING FRAMEWORK:
-   - Start with base score of 60 (neutral)
-   - Add points for positive indicators found
-   - Subtract points only for actual risk factors
-   - Missing data should not reduce score significantly
+1. MARKET CAP RISK ASSESSMENT:
+   - Evaluate if market cap suggests pump risk, growth potential, or stability
+   - Consider market cap in context of liquidity and volume
 
-3. LP SECURITY ASSESSMENT:
-   - UNKNOWN LP status = Neutral (don't assume bad)
-   - Only flag if evidence suggests it's unlocked
-   - Concentration ≠ automatically bad
-   - Focus on actual rug evidence, not speculation
+2. VOLATILITY RISK ASSESSMENT:
+   - Analyze recent trading volatility percentage
+   - High volatility could indicate instability OR opportunity
+   - Consider volatility in context of volume and whale activity
 
-4. HOLDER ANALYSIS:
-   - Missing holder data = Neutral assessment
-   - Only flag if clear concentration abuse detected
-   - Normal for newer/smaller tokens to have limited data
+3. WHALE RISK ASSESSMENT:
+   - Evaluate whale concentration and dump risk
+   - 0 whales = BEST (perfect distribution)
+   - Consider whale count vs control percentage
+   - Assess potential for coordinated selling
 
-5. CONFIDENCE SCORING:
-   - Base confidence on data quality, not quantity
-   - High confidence possible with limited but good data
-   - Don't over-penalize for missing non-critical data
+4. SNIPER/BOT RISK ASSESSMENT:
+   - Analyze holder patterns for artificial demand
+   - Many similar holder percentages = bot activity
+   - Pattern detection indicates coordinated buying
 
-6. RECOMMENDATION LOGIC:
-   - BUY: Strong positive indicators with good data
-   - CONSIDER: Generally positive with adequate data  
-   - HOLD: Mixed signals or insufficient data for decision
-   - CAUTION: Some risk indicators present
-   - AVOID: Clear red flags or critical security issues
+5. LIQUIDITY DEPTH ASSESSMENT:
+   - Evaluate volume/liquidity ratio for market health
+   - High ratio = active trading, Low ratio = thin markets
+   - Consider liquidity depth for price impact assessment
 
-BE REALISTIC: Crypto markets have incomplete data. Focus on actual risk signals, not data gaps.
+6. DEV HOLDINGS RISK ASSESSMENT:
+   - Evaluate developer token percentage
+   - High dev holdings = dump risk
+   - Consider if dev holdings are reasonable for project stage
 
-RESPOND WITH ONLY VALID JSON in the specified format."""
+7. LP SECURITY ASSESSMENT:
+   - Evaluate liquidity provider lock/burn status
+   - Locked/Burned = secure, Unknown = neutral (not negative)
+   - Consider LP evidence and confidence level
+
+COMPREHENSIVE RISK SCORING:
+- DO NOT pre-categorize risks - analyze each metric independently
+- Consider metric interactions (e.g., high volatility + whales = extra risk)
+- Weight metrics based on confidence in data quality
+- Missing data = neutral assessment, not negative
+
+RESPONSE FORMAT (JSON ONLY):
+{
+  "ai_score": 0-100,
+  "risk_assessment": "low|medium|high|critical",
+  "recommendation": "BUY|CONSIDER|HOLD|CAUTION|AVOID", 
+  "confidence": 0-100,
+  "key_insights": ["specific positive factors with data"],
+  "risk_factors": ["specific concerns with data"],
+  "stop_flags": ["critical issues only"],
+  "market_metrics": {
+    "volatility_risk": "low|medium|high|unknown",
+    "whale_risk": "low|medium|high|unknown", 
+    "sniper_risk": "low|medium|high|unknown",
+    "liquidity_health": "excellent|good|poor|unknown",
+    "dev_risk": "low|medium|high|unknown",
+    "lp_security": "secure|likely_secure|unknown|risky"
+  },
+  "llama_reasoning": "Comprehensive analysis of all available metrics"
+}
+
+ENHANCED DECISION FRAMEWORK:
+- BUY: Score >85, all major risks low, strong data confidence
+- CONSIDER: Score >70, acceptable risk levels, good data
+- HOLD: Score >55, mixed signals or moderate risks
+- CAUTION: Score >40, some concerning factors
+- AVOID: Score <40 or any critical security flags
+
+Let the AI evaluate each metric's risk level independently based on the actual data values. Do not impose predefined risk thresholds - let the AI determine what constitutes high/medium/low risk for each metric based on crypto market context.
+
+RESPOND WITH ONLY VALID JSON."""
 
         return prompt
     
     async def _call_llama_model(self, prompt: str) -> str:
         """Call Llama model for analysis (using Claude API as proxy)"""
         try:
-            # For now, using Claude API as a proxy - replace with actual Llama API call
-            response = await self._call_claude_api(prompt)
+            from app.services.ai.groq_ai_service import groq_llama_service
+
+            response = await groq_llama_service.send_request(prompt)
+
+            print(response)
+
             return response
             
         except Exception as e:
             logger.error(f"Llama model call failed: {str(e)}")
-            raise
-    
-    async def _call_claude_api(self, prompt: str) -> str:
-        """Call Claude API as proxy for Llama (replace with actual Llama integration)"""
-        try:
-            import aiohttp
-            
-            # This is a placeholder - replace with your actual Llama API endpoint
-            async with aiohttp.ClientSession() as session:
-                payload = {
-                    "model": "claude-sonnet-4-20250514",
-                    "max_tokens": self.max_tokens,
-                    "messages": [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": prompt}
-                    ]
-                }
-                
-                async with session.post(
-                    "https://api.anthropic.com/v1/messages",
-                    headers={"Content-Type": "application/json"},
-                    json=payload
-                ) as response:
-                    if response.status == 200:
-                        data = await response.json()
-                        return data["content"][0]["text"]
-                    else:
-                        raise Exception(f"API call failed: {response.status}")
-                        
-        except Exception as e:
-            logger.error(f"Claude API call failed: {str(e)}")
             raise
     
     def _parse_ai_response(self, ai_response: str) -> AIAnalysisResponse:
@@ -733,27 +914,13 @@ RESPOND WITH ONLY VALID JSON in the specified format."""
         )
 
 
-llama_ai_service = groq_llama_service
+llama_ai_service = LlamaAIService()
 
-async def analyze_token_with_ai(
-    token_address: str,
-    service_responses: Dict[str, Any],
-    security_analysis: Dict[str, Any],
-    analysis_type: str = "deep"
-) -> Optional[AIAnalysisResponse]:
+async def analyze_token_with_ai(request: AIAnalysisRequest) -> Optional[AIAnalysisResponse]:
     """Perform AI analysis of token using Llama 3.0"""
+
     try:
-        # Create proper AIAnalysisRequest instance
-        request = AIAnalysisRequest(
-            token_address=token_address,
-            service_responses=service_responses,
-            security_analysis=security_analysis,
-            analysis_type=analysis_type,
-            timestamp=datetime.utcnow()
-        )
-        
         return await llama_ai_service.analyze_token(request)
-        
     except Exception as e:
         logger.error(f"AI analysis service error: {str(e)}")
         return None

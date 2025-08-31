@@ -28,12 +28,15 @@ async def test_ai_integration():
     print("🧪 Testing AI integration...")
     
     try:
-        result = await analyze_token_with_ai(
-            token_address="So11111111111111111111111111111111111112",
-            service_responses=test_data["service_responses"],
-            security_analysis=test_data["security_analysis"],
-            analysis_type="deep"
-        )
+
+        request = {
+            "token_address": "So11111111111111111111111111111111111112",
+            "service_responses": test_data["service_responses"],
+            "security_analysis": test_data["security_analysis"],
+            "analysis_type": "deep"
+        }
+
+        result = await analyze_token_with_ai(request)
         
         if result:
             print("✅ AI Analysis successful!")

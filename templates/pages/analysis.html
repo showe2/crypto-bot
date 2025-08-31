@@ -891,15 +891,20 @@
                 this.results?.service_responses?.birdeye?.price;
               const solSnifferData =
                 this.results?.service_responses?.solsniffer;
+              const dexScreenerData =
+                this.results?.service_responses?.dexscreener?.pairs?.pairs[0];
 
               if (birdeyePrice) {
                 return {
                   value: birdeyePrice.value,
                   price_change_24h: birdeyePrice.price_change_24h,
-                  volume_24h: birdeyePrice.volume_24h,
+                  volume_24h:
+                    birdeyePrice.volume_24h ||
+                    (dexScreenerData && dexScreenerData.volume?.h24),
                   market_cap:
                     birdeyePrice.market_cap ||
-                    (solSnifferData && solSnifferData.marketCap),
+                    (solSnifferData && solSnifferData.marketCap) ||
+                    (dexScreenerData && dexScreenerData.marketCap),
                   liquidity: birdeyePrice.liquidity,
                 };
               }
