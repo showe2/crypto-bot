@@ -547,6 +547,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
             trades = trades_data.get("items", []) if isinstance(trades_data, dict) else trades_data
             
             if not trades or len(trades) < 5:
+                logger.info("Insufficient trades data for volatility calculation")
                 return None
             
             # Extract prices from recent trades
@@ -560,7 +561,8 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                         elif trade.get("to", {}).get("address") == token_address:
                             price = float(trade["to"]["price"])
                         else:
-                            continue  # Skip trades not involving our token
+                            # For your case, token is usually 'from' in buy orders
+                            price = float(trade.get("from", {}).get("price", 0))
                         
                         if price > 0:
                             prices.append(price)
@@ -568,6 +570,7 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
                         continue
             
             if len(prices) < 3:
+                logger.info(f"Only {len(prices)} valid prices found, need at least 3")
                 return None
             
             # Simple volatility = (max_price - min_price) / avg_price * 100

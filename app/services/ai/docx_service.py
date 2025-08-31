@@ -13,24 +13,56 @@ except ImportError:
     DOCX_AVAILABLE = False
     logger.warning("python-docx not installed. Install with: pip install python-docx")
 
-from app.utils.redis_client import get_redis_client
-
 
 class DocxReportService:
     """Simple DOCX report generator for token analysis"""
     
     async def generate_analysis_docx_from_data(self, analysis_data: Dict[str, Any]) -> Optional[bytes]:
-        """Generate DOCX report from analysis data directly - NEW METHOD"""
+        """Generate DOCX report from analysis data directly - WITH DEBUGGING"""
+
+        logger.info(f"=== ANALYSIS DATA STRUCTURE DEBUG ===")
+        logger.info(f"Overall analysis keys: {list(analysis_data.get('overall_analysis', {}).keys())}")
+        logger.info(f"Service responses keys: {list(analysis_data.get('service_responses', {}).keys())}")
+
+        # Check for duplicate content in the data
+        positive_signals = analysis_data.get("overall_analysis", {}).get("positive_signals", [])
+        risk_factors = analysis_data.get("overall_analysis", {}).get("risk_factors", [])
+
+        logger.info(f"Positive signals count: {len(positive_signals)}")
+        logger.info(f"Risk factors count: {len(risk_factors)}")
+
+        # Check for duplicates within the lists
+        if len(positive_signals) != len(set(positive_signals)):
+            logger.warning("DUPLICATE positive signals detected in analysis data!")
+            
+        if len(risk_factors) != len(set(risk_factors)):
+            logger.warning("DUPLICATE risk factors detected in analysis data!")
         
         if not DOCX_AVAILABLE:
             raise RuntimeError("python-docx not installed")
         
         try:
-            logger.info(f"📄 Generating DOCX from analysis data")
+            token_address = analysis_data.get("token_address", "unknown")
+            logger.info(f"📄 DOCX Generation Debug - Token: {token_address}")
+            logger.info(f"Analysis ID: {analysis_data.get('analysis_id', 'unknown')}")
             
-            # Generate DOCX
+            # Create FRESH document - this is the key
             doc = Document()
+            logger.info("Fresh Document() created")
+            
+            # Check document initial state
+            logger.info(f"Initial paragraphs: {len(doc.paragraphs)}")
+            logger.info(f"Initial tables: {len(doc.tables)}")
+            
+            # CRITICAL: Check if this DocxReportService instance is being reused
+            logger.info(f"DocxReportService instance id: {id(self)}")
+            
+            # Build report
             self._build_report(doc, analysis_data)
+            
+            # Check final document state  
+            logger.info(f"Final paragraphs: {len(doc.paragraphs)}")
+            logger.info(f"Final tables: {len(doc.tables)}")
             
             # Convert to bytes
             temp_path = None
@@ -54,15 +86,17 @@ class DocxReportService:
     
     def _build_report(self, doc: Document, analysis_data: Dict[str, Any]):
         """Build the enhanced DOCX report structure with AI analysis"""
-        
+
         try:
+            logger.info("=== DOCX SECTION GENERATION START ===")
+
             # Extract token info with fallbacks
             token_symbol = self._get_token_symbol(analysis_data)
             token_name = self._get_token_name(analysis_data)
             token_address = analysis_data.get("token_address", "N/A")
             
             # Header
-            heading = doc.add_heading(f'AI Token Analysis Report: {token_symbol}', 0)
+            heading = doc.add_heading(f'Token Analysis: {token_symbol}', 0)
             heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
             
             # Token Info
@@ -77,32 +111,177 @@ class DocxReportService:
             p.add_run(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
             
             # AI VERDICT SECTION
+            logger.info("Adding AI verdict section...")
             self._add_ai_verdict_section(doc, analysis_data)
             
-            # ENHANCED SCORING TABLE
+            logger.info("Adding enhanced scoring table...")
             self._add_enhanced_scoring_table(doc, analysis_data)
             
-            # TOP 3 PROS/CONS
+            logger.info("Adding pros/cons section...")
             self._add_pros_cons_section(doc, analysis_data)
             
-            # AI INVESTMENT REASONING
+            logger.info("Adding AI reasoning section...")
             self._add_ai_reasoning_section(doc, analysis_data)
             
-            # Enhanced market data with sources
+            logger.info("Adding market data section...")
             self._add_market_data_safe(doc, analysis_data)
             
-            # Security analysis  
+            logger.info("Adding security analysis section...")
             self._add_security_analysis_safe(doc, analysis_data)
             
-            # LP analysis
+            logger.info("Adding LP analysis section...")
             self._add_lp_analysis_safe(doc, analysis_data)
+            
+            logger.info("=== DOCX SECTION GENERATION COMPLETE ===")
             
         except Exception as e:
             logger.error(f"Error building enhanced DOCX report: {e}")
             doc.add_paragraph(f"Error generating full report: {str(e)}")
 
+    def _add_enhanced_scoring_table(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add enhanced scoring table with risk metrics - FIXED"""
+        try:
+            doc.add_heading('Risk Metrics Analysis', level=1)
+            
+            # Get enhanced metrics
+            overall_analysis = analysis_data.get("overall_analysis", {})
+            ai_analysis = analysis_data.get("ai_analysis", {})
+            service_responses = analysis_data.get("service_responses", {})
+            
+            # Create enhanced metrics table
+            table = doc.add_table(rows=1, cols=3)
+            table.style = 'Table Grid'
+            
+            # Header row
+            header_row = table.rows[0]
+            header_row.cells[0].text = "Risk Metric"
+            header_row.cells[1].text = "Value"
+            header_row.cells[2].text = "AI Risk Level"
+            
+            # Collect metrics from various sources
+            metrics_data = []
+            
+            # Volatility - FIXED extraction
+            volatility = None
+            if overall_analysis.get("volatility", {}).get("recent_volatility_percent") is not None:
+                volatility = overall_analysis["volatility"]["recent_volatility_percent"]
+                ai_volatility_risk = ai_analysis.get("market_metrics", {}).get("volatility_risk", "unknown")
+                metrics_data.append(("Volatility", f"{volatility}%", ai_volatility_risk.upper()))
+            
+            # Whale Analysis - FIXED extraction
+            whale_data = overall_analysis.get("whale_analysis", {})
+            if whale_data and whale_data.get("whale_count") is not None:
+                whale_control = whale_data.get("whale_control_percent", 0)
+                whale_count = whale_data.get("whale_count", 0)
+                ai_whale_risk = ai_analysis.get("market_metrics", {}).get("whale_risk", "unknown")
+                metrics_data.append(("Whale Control", f"{whale_count} whales ({whale_control}%)", ai_whale_risk.upper()))
+            
+            # Volume/Liquidity Ratio - FIXED extraction
+            vol_liq_ratio = None
+            birdeye = service_responses.get("birdeye", {}).get("price", {})
+            if birdeye.get("volume_24h") and birdeye.get("liquidity"):
+                try:
+                    vol_liq_ratio = (float(birdeye["volume_24h"]) / float(birdeye["liquidity"])) * 100
+                    ai_liquidity_health = ai_analysis.get("market_metrics", {}).get("liquidity_health", "unknown")
+                    metrics_data.append(("Volume/Liquidity", f"{vol_liq_ratio:.1f}%", ai_liquidity_health.upper()))
+                except:
+                    pass
+            
+            # Sniper Risk - FIXED extraction
+            sniper_data = overall_analysis.get("sniper_detection", {})
+            if sniper_data and sniper_data.get("similar_holders") is not None:
+                similar_holders = sniper_data.get("similar_holders", 0)
+                pattern_detected = sniper_data.get("pattern_detected", False)
+                ai_sniper_risk = ai_analysis.get("market_metrics", {}).get("sniper_risk", "unknown")
+                metrics_data.append(("Sniper Patterns", f"{similar_holders} similar ({'Yes' if pattern_detected else 'No'})", ai_sniper_risk.upper()))
+            
+            # Dev Holdings - FIXED extraction
+            dev_percent = self._extract_dev_percent(analysis_data)
+            if dev_percent is not None:
+                ai_dev_risk = ai_analysis.get("market_metrics", {}).get("dev_risk", "unknown")
+                metrics_data.append(("Dev Holdings", f"{dev_percent:.1f}%", ai_dev_risk.upper()))
+            
+            # LP Security
+            lp_status = self._extract_lp_status(analysis_data)
+            ai_lp_security = ai_analysis.get("market_metrics", {}).get("lp_security", "unknown")
+            metrics_data.append(("LP Security", lp_status, ai_lp_security.upper()))
+            
+            # Add rows to table
+            for metric, value, ai_risk in metrics_data:
+                row = table.add_row()
+                row.cells[0].text = metric
+                row.cells[1].text = str(value)
+                row.cells[2].text = str(ai_risk)
+                
+                # FIXED: Color code AI risk levels properly
+                try:
+                    risk_cell = row.cells[2]
+                    if ai_risk.upper() == "LOW":
+                        risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(34, 197, 94)  # Green
+                    elif ai_risk.upper() == "HIGH":
+                        risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(239, 68, 68)  # Red
+                    elif ai_risk.upper() == "MEDIUM":
+                        risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(245, 158, 11)  # Yellow
+                except Exception as color_error:
+                    logger.debug(f"Color coding failed: {color_error}")
+            
+            logger.info(f"Enhanced scoring table created with {len(metrics_data)} metrics")
+            
+        except Exception as e:
+            logger.warning(f"Failed to add enhanced scoring table: {e}")
+            doc.add_paragraph("Enhanced scoring section unavailable")
+
+    def _add_pros_cons_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add top 3 pros and cons section"""
+        try:
+            doc.add_heading('Investment Analysis', level=1)
+            
+            # Get pros and cons from analysis
+            pros, cons = self._extract_pros_cons(analysis_data)
+            
+            # Create pros/cons table
+            table = doc.add_table(rows=1, cols=2)
+            table.style = 'Table Grid'
+            
+            # Header row
+            header_row = table.rows[0]
+            header_row.cells[0].text = "TOP 3 REASONS TO BUY"
+            header_row.cells[1].text = "TOP 3 REASONS TO AVOID"
+            
+            # FIXED: Make headers bold and colored properly
+            try:
+                header_row.cells[0].paragraphs[0].runs[0].bold = True
+                header_row.cells[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(34, 197, 94)  # Green
+                header_row.cells[1].paragraphs[0].runs[0].bold = True  
+                header_row.cells[1].paragraphs[0].runs[0].font.color.rgb = RGBColor(239, 68, 68)  # Red
+            except Exception:
+                logger.debug("Header formatting failed")
+            
+            # Add content rows
+            max_items = max(len(pros), len(cons))
+            for i in range(max_items):
+                row = table.add_row()
+                
+                # Add pro (if available)
+                if i < len(pros):
+                    row.cells[0].text = f"• {pros[i]}"
+                else:
+                    row.cells[0].text = ""
+                
+                # Add con (if available)
+                if i < len(cons):
+                    row.cells[1].text = f"• {cons[i]}"
+                else:
+                    row.cells[1].text = ""
+            
+            logger.info(f"Pros/cons section added: {len(pros)} pros, {len(cons)} cons")
+            
+        except Exception as e:
+            logger.warning(f"Failed to add pros/cons section: {e}")
+            doc.add_paragraph("Pros/cons section unavailable")
+
     def _add_ai_verdict_section(self, doc: Document, analysis_data: Dict[str, Any]):
-        """Add AI verdict section with GO/WATCH/NO decision"""
+        """Add AI verdict section with GO/WATCH/NO decision - FIXED"""
         try:
             doc.add_heading('AI Investment Verdict', level=1)
             
@@ -138,7 +317,7 @@ class DocxReportService:
             
             verdict_run = p.add_run(verdict_decision)
             verdict_run.bold = True
-            verdict_run.font.size = RGBColor(255, 255, 255)  # White text
+            # FIXED: Don't set font.size to RGBColor
             
             # Color coding
             if verdict_decision == "GO":
@@ -162,105 +341,6 @@ class DocxReportService:
             logger.warning(f"Failed to add AI verdict section: {e}")
             doc.add_paragraph("AI verdict section unavailable")
 
-    def _add_enhanced_scoring_table(self, doc: Document, analysis_data: Dict[str, Any]):
-        """Add enhanced scoring table with risk metrics"""
-        try:
-            doc.add_heading('Risk Metrics Analysis', level=1)
-            
-            # Get enhanced metrics
-            overall_analysis = analysis_data.get("overall_analysis", {})
-            ai_analysis = analysis_data.get("ai_analysis", {})
-            
-            # Create enhanced metrics table
-            table = doc.add_table(rows=1, cols=3)
-            table.style = 'Table Grid'
-            
-            # Header row
-            header_row = table.rows[0]
-            header_row.cells[0].text = "Risk Metric"
-            header_row.cells[1].text = "Value"
-            header_row.cells[2].text = "AI Risk Level"
-            
-            # Collect metrics from various sources
-            metrics_data = []
-            
-            # Volatility
-            volatility = overall_analysis.get("volatility", {}).get("recent_volatility_percent")
-            if volatility is not None:
-                ai_volatility_risk = ai_analysis.get("market_metrics", {}).get("volatility_risk", "unknown")
-                metrics_data.append(("Volatility", f"{volatility}%", ai_volatility_risk.upper()))
-            
-            # Whale Analysis
-            whale_data = overall_analysis.get("whale_analysis", {})
-            if whale_data.get("whale_count") is not None:
-                whale_control = whale_data.get("whale_control_percent", 0)
-                whale_count = whale_data.get("whale_count", 0)
-                ai_whale_risk = ai_analysis.get("market_metrics", {}).get("whale_risk", "unknown")
-                metrics_data.append(("Whale Control", f"{whale_count} whales ({whale_control}%)", ai_whale_risk.upper()))
-            
-            # Volume/Liquidity Ratio
-            vol_liq_ratio = None
-            if overall_analysis.get("volume_24h") and overall_analysis.get("liquidity"):
-                try:
-                    vol_liq_ratio = (overall_analysis["volume_24h"] / overall_analysis["liquidity"]) * 100
-                except:
-                    pass
-            
-            # Try to get from market data
-            if vol_liq_ratio is None:
-                service_responses = analysis_data.get("service_responses", {})
-                birdeye = service_responses.get("birdeye", {}).get("price", {})
-                if birdeye.get("volume_24h") and birdeye.get("liquidity"):
-                    try:
-                        vol_liq_ratio = (float(birdeye["volume_24h"]) / float(birdeye["liquidity"])) * 100
-                    except:
-                        pass
-            
-            if vol_liq_ratio is not None:
-                ai_liquidity_health = ai_analysis.get("market_metrics", {}).get("liquidity_health", "unknown")
-                metrics_data.append(("Volume/Liquidity", f"{vol_liq_ratio:.1f}%", ai_liquidity_health.upper()))
-            
-            # Sniper Risk
-            sniper_data = overall_analysis.get("sniper_detection", {})
-            if sniper_data.get("similar_holders") is not None:
-                similar_holders = sniper_data.get("similar_holders", 0)
-                pattern_detected = sniper_data.get("pattern_detected", False)
-                ai_sniper_risk = ai_analysis.get("market_metrics", {}).get("sniper_risk", "unknown")
-                metrics_data.append(("Sniper Patterns", f"{similar_holders} similar ({'Yes' if pattern_detected else 'No'})", ai_sniper_risk.upper()))
-            
-            # Dev Holdings
-            dev_percent = self._extract_dev_percent(analysis_data)
-            if dev_percent is not None:
-                ai_dev_risk = ai_analysis.get("market_metrics", {}).get("dev_risk", "unknown")
-                metrics_data.append(("Dev Holdings", f"{dev_percent:.1f}%", ai_dev_risk.upper()))
-            
-            # LP Security
-            lp_status = self._extract_lp_status(analysis_data)
-            ai_lp_security = ai_analysis.get("market_metrics", {}).get("lp_security", "unknown")
-            metrics_data.append(("LP Security", lp_status, ai_lp_security.upper()))
-            
-            # Add rows to table
-            for metric, value, ai_risk in metrics_data:
-                row = table.add_row()
-                row.cells[0].text = metric
-                row.cells[1].text = str(value)
-                row.cells[2].text = str(ai_risk)
-                
-                # Color code AI risk levels
-                risk_cell = row.cells[2]
-                if ai_risk.upper() == "LOW":
-                    risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(34, 197, 94)  # Green
-                elif ai_risk.upper() == "HIGH":
-                    risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(239, 68, 68)  # Red
-                elif ai_risk.upper() == "MEDIUM":
-                    risk_cell.paragraphs[0].runs[0].font.color.rgb = RGBColor(245, 158, 11)  # Yellow
-            
-            logger.info(f"Enhanced scoring table created with {len(metrics_data)} metrics")
-            
-        except Exception as e:
-            logger.warning(f"Failed to add enhanced scoring table: {e}")
-            doc.add_paragraph("Enhanced scoring section unavailable")
-
     def _add_ai_reasoning_section(self, doc: Document, analysis_data: Dict[str, Any]):
         """Add AI-generated investment reasoning section"""
         try:
@@ -269,7 +349,7 @@ class DocxReportService:
             # Get AI reasoning
             ai_reasoning = self._extract_ai_reasoning(analysis_data)
             
-            if ai_reasoning:
+            if ai_reasoning and len(ai_reasoning) > 20:
                 # Add AI reasoning text
                 reasoning_paragraph = doc.add_paragraph()
                 reasoning_paragraph.add_run('AI Analysis: ').bold = True
@@ -316,13 +396,40 @@ class DocxReportService:
                     logger.info("Pros/cons extracted from overall analysis reasoning")
                     return pros, cons
             
-            # Method 3: Fallback - extract from positive signals and risk factors
+            # Method 3: Fallback - construct from available data
             positive_signals = overall_analysis.get("positive_signals", [])
             risk_factors = overall_analysis.get("risk_factors", [])
             
-            # Use top 3 from each
-            pros = positive_signals[:3] if positive_signals else ["Security checks passed"]
-            cons = risk_factors[:3] if risk_factors else ["Limited analysis data"]
+            # Build pros from positive signals and metrics
+            if positive_signals:
+                pros.extend(positive_signals[:2])
+            
+            # Add specific metric pros
+            if overall_analysis.get("whale_analysis", {}).get("whale_count", 0) == 0:
+                pros.append("Perfect token distribution - no whales")
+            elif overall_analysis.get("whale_analysis", {}).get("whale_risk_level") == "low":
+                pros.append("Low whale concentration risk")
+            
+            if overall_analysis.get("volatility", {}).get("recent_volatility_percent"):
+                vol = overall_analysis["volatility"]["recent_volatility_percent"]
+                if vol <= 15:
+                    pros.append(f"Low recent volatility ({vol}%)")
+            
+            # Build cons from risk factors and metrics
+            if risk_factors:
+                cons.extend(risk_factors[:2])
+            
+            # Add specific metric cons
+            whale_control = overall_analysis.get("whale_analysis", {}).get("whale_control_percent", 0)
+            if whale_control > 50:
+                cons.append(f"High whale concentration ({whale_control}%)")
+            
+            if overall_analysis.get("sniper_detection", {}).get("pattern_detected"):
+                cons.append("Potential bot/sniper activity detected")
+            
+            # Ensure we have at least something
+            pros = pros[:3] if pros else ["Security checks passed"]
+            cons = cons[:3] if cons else ["Limited analysis data"]
             
             logger.info("Pros/cons extracted from fallback method")
             return pros, cons
@@ -345,13 +452,13 @@ class DocxReportService:
                 # Try to construct from AI metrics
                 market_metrics = ai_analysis.get("market_metrics", {})
                 if market_metrics:
-                    risk_levels = []
+                    risk_assessments = []
                     for metric, risk_level in market_metrics.items():
                         if risk_level and risk_level != "unknown":
-                            risk_levels.append(f"{metric}: {risk_level}")
+                            risk_assessments.append(f"{metric.replace('_', ' ')}: {risk_level}")
                     
-                    if risk_levels:
-                        return f"AI assessment based on risk analysis: {'; '.join(risk_levels[:5])}"
+                    if risk_assessments:
+                        return f"AI risk assessment: {'; '.join(risk_assessments[:5])}"
             
             # Fallback to overall analysis summary
             overall_analysis = analysis_data.get("overall_analysis", {})
@@ -404,19 +511,43 @@ class DocxReportService:
             
         except Exception:
             return None
-
-    def _extract_lp_status(self, analysis_data: Dict[str, Any]) -> str:
-        """Extract LP status description"""
+        
+    def _add_lp_analysis_safe(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add LP analysis with error handling"""
         try:
+            doc.add_heading('Liquidity Provider Analysis', level=1)
+            
             rugcheck = analysis_data.get("service_responses", {}).get("rugcheck", {})
             
-            # Check for locked LP
-            lockers_data = rugcheck.get('lockers_data', {})
+            if rugcheck:
+                table = doc.add_table(rows=1, cols=2)
+                table.style = 'Table Grid'
+                
+                lp_data = [
+                    ("LP Status", self._extract_lp_status(rugcheck)),
+                    ("LP Providers", rugcheck.get('total_LP_providers', 'N/A')),
+                    ("Locked Value", self._get_locked_value(rugcheck)),
+                ]
+                
+                for key, value in lp_data:
+                    row = table.add_row()
+                    row.cells[0].text = key
+                    row.cells[1].text = str(value)
+            else:
+                doc.add_paragraph("LP analysis data not available")
+        except Exception as e:
+            logger.warning(f"Failed to add LP analysis: {e}")
+            doc.add_paragraph("LP analysis section unavailable")
+
+    def _extract_lp_status(self, rugcheck_data: Dict[str, Any]) -> str:
+        """Determine LP status from RugCheck data"""
+        try:
+            lockers_data = rugcheck_data.get('lockers_data', {})
             if lockers_data and lockers_data.get('lockers'):
                 return "LOCKED"
             
-            # Check for burned LP
-            markets = rugcheck.get('market_analysis', {}).get('markets', [])
+            # Check for burn patterns
+            markets = rugcheck_data.get('market_analysis', {}).get('markets', [])
             for market in markets:
                 if isinstance(market, dict) and market.get('lp'):
                     holders = market['lp'].get('holders', [])
@@ -434,6 +565,33 @@ class DocxReportService:
         except Exception:
             return "UNKNOWN"
         
+    
+    def _get_locked_value(self, rugcheck_data: Dict[str, Any]) -> str:
+        """Get total locked value from RugCheck data"""
+        try:
+            lockers_data = rugcheck_data.get('lockers_data', {})
+            if lockers_data and lockers_data.get('lockers'):
+                total_value = 0
+                locker_count = 0
+                
+                for locker_info in lockers_data['lockers'].values():
+                    if isinstance(locker_info, dict):
+                        usd_locked = locker_info.get('usdcLocked', 0)
+                        if isinstance(usd_locked, (int, float)) and usd_locked > 0:
+                            total_value += usd_locked
+                            locker_count += 1
+                
+                if total_value > 0:
+                    return f"${total_value:,.0f} ({locker_count} lockers)"
+                else:
+                    return "N/A"
+            
+            return "N/A"
+            
+        except Exception as e:
+            logger.warning(f"Error extracting locked value: {e}")
+            return "N/A"
+
     def _calculate_rating(self, analysis_data: Dict[str, Any]) -> Dict[str, str]:
         """Calculate GO/WATCH/NO rating based on enhanced data"""
         
@@ -473,16 +631,17 @@ class DocxReportService:
         reasoning_parts.append(f"AI Score: {normalized_score:.2f}/1.00")
         
         # Add key factors
-        if overall_analysis.get("whale_analysis", {}).get("whale_count") == 0:
+        whale_count = overall_analysis.get("whale_analysis", {}).get("whale_count", 0)
+        if whale_count == 0:
             reasoning_parts.append("Perfect token distribution")
         elif overall_analysis.get("whale_analysis", {}).get("whale_control_percent", 0) > 50:
             reasoning_parts.append("High whale concentration risk")
         
-        if overall_analysis.get("volatility", {}).get("recent_volatility_percent"):
-            vol = overall_analysis["volatility"]["recent_volatility_percent"]
-            if vol <= 10:
+        volatility = overall_analysis.get("volatility", {}).get("recent_volatility_percent")
+        if volatility is not None:
+            if volatility <= 10:
                 reasoning_parts.append("Low volatility")
-            elif vol > 30:
+            elif volatility > 30:
                 reasoning_parts.append("High volatility")
         
         reasoning = " | ".join(reasoning_parts[:3]) if reasoning_parts else f"Score-based assessment ({normalized_score:.2f}/1.00)"
