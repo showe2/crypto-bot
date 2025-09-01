@@ -330,6 +330,8 @@ class EnhancedTokenAnalyzer:
         traditional_analysis = await token_analyzer._generate_comprehensive_analysis(
             service_responses, security_data, token_address
         )
+
+        print(traditional_analysis)
         
         # If no AI analysis available, return traditional analysis
         if not ai_analysis or not isinstance(ai_analysis, dict):
@@ -433,7 +435,10 @@ class EnhancedTokenAnalyzer:
             },
             "ai_processing_time": float(ai_analysis.get("processing_time", 0.0)) if ai_analysis.get("processing_time") is not None else 0.0,
             "ai_model": ai_analysis.get("model_used", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile",
-            "ai_stop_flags": ai_stop_flags
+            "ai_stop_flags": ai_stop_flags,
+            "volatility": traditional_analysis.get("volatility"),
+            "whale_analysis": traditional_analysis.get("whale_analysis"),
+            "sniper_detection": traditional_analysis.get("sniper_detection")
         }
         
         return enhanced_analysis

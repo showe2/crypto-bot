@@ -311,7 +311,7 @@ class AnalysisStorageService:
                 "analysis_stopped_at_security": analysis_result.get("metadata", {}).get("analysis_stopped_at_security", False),
                 "overall_score": float(overall_analysis.get("score", 0)),
                 "risk_level": overall_analysis.get("risk_level", "unknown"),
-                "recommendation": overall_analysis.get("recommendation", "unknown"),
+                "recommendation": ai_analysis.get("recommendation", "unknown") if has_ai_analysis else overall_analysis.get("recommendation", "unknown"),
                 "confidence_score": float(overall_analysis.get("confidence_score", 0)),
                 
                 # NEW: AI Analysis Results

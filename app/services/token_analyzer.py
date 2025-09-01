@@ -650,6 +650,38 @@ class TokenAnalyzer:
                 logger.error(f"Market analysis execution failed: {str(e)}")
                 analysis_response["errors"].append(f"Market analysis failed: {str(e)}")
 
+    async def _generate_security_focused_analysis(self, security_data: Dict[str, Any], token_address: str, passed: bool) -> Dict[str, Any]:
+        """Generate analysis focused on security results when security check fails"""
+        
+        if passed:
+            return {
+                "score": 70.0,
+                "risk_level": "low",
+                "recommendation": "consider",
+                "confidence": 90.0,
+                "confidence_score": 90.0,
+                "summary": "Security checks passed",
+                "positive_signals": ["Security verification completed"],
+                "risk_factors": [],
+                "security_focused": True
+            }
+        
+        critical_count = len(security_data.get("critical_issues", []))
+        warning_count = len(security_data.get("warnings", []))
+        
+        return {
+            "score": 10.0,
+            "risk_level": "critical",
+            "recommendation": "avoid",
+            "confidence": 95.0,
+            "confidence_score": 95.0,
+            "summary": f"SECURITY FAILED: {critical_count} critical issues, {warning_count} warnings",
+            "positive_signals": [],
+            "risk_factors": security_data.get("critical_issues", []) + security_data.get("warnings", []),
+            "security_focused": True,
+            "critical_security_issues": security_data.get("critical_issues", []),
+            "security_warnings": security_data.get("warnings", [])
+        }
 
     async def _generate_comprehensive_analysis(self, service_responses: Dict[str, Any], security_data: Dict[str, Any], token_address: str) -> Dict[str, Any]:
         """Generate comprehensive analysis when security checks pass - ENHANCED with new metrics"""

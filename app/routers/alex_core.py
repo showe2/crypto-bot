@@ -114,9 +114,9 @@ async def analysis_page(request: Request, token: Optional[str] = None):
         "selected_token": token,
         "analysis_types": ["quick", "deep"],
         "example_tokens": [
-            {"name": "Wrapped SOL", "mint": "So11111111111111111111111111111111111111112", "symbol": "WSOL"},
-            {"name": "USD Coin", "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "symbol": "USDC"},
-            {"name": "Raydium", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "symbol": "RAY"}
+            {"name": "Wrapped SOL", "mint": "So11111111111111111111111111111111111111112", "symbol": "WSOL", "type": "safe"},
+            {"name": "Raydium", "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "symbol": "RAY", "type": "safe"},
+            {"name": "High Risk Token ⚠️", "mint": "FAqqjnPo3VidhSRb3ADYKG14NvXsWV68Ajr7P9bHq9Tt", "symbol": "FAQOFF", "type": "warning"}
         ]
     })
     
@@ -404,9 +404,15 @@ async def dashboard_api():
         healthy_services = health_data.get("summary", {}).get("healthy_services", 0)
         total_services = health_data.get("summary", {}).get("total_services", 1)
         
-        recent_analyses_data = await _get_recent_analyses_from_chromadb()
+        recent_analyses_data = await _get_recent_analyses_from_chromadb(limit=10)
         total_analyses = recent_analyses_data.get("total_count", 0)
         recent_analyses = recent_analyses_data.get("analyses", [])
+        
+        # Log recent analyses order
+        if recent_analyses:
+            logger.info(f"📊 Dashboard showing {len(recent_analyses)} most recent analyses:")
+            for i, analysis in enumerate(recent_analyses[:3]):  # Show first 3
+                logger.info(f"  {i+1}. {analysis['token_symbol']} - {analysis['time']} (timestamp: {analysis['timestamp']})")
         
         # Calculate success rate from recent analyses
         if recent_analyses:
@@ -447,10 +453,10 @@ async def dashboard_api():
                 "healthy_services": healthy_services,
                 "total_services": total_services
             },
-            "recentActivity": recent_analyses,  # 🆕 Real data from ChromaDB
+            "recentActivity": recent_analyses,  # 🆕 Now contains most recent analyses
             "aiModels": {
                 "mistral": {"status": "ready", "type": "Quick Analysis"},
-                "llama": {"status": "coming_soon", "type": "Deep Analysis"}
+                "llama": {"status": "ready", "type": "Deep Analysis"}  # Updated status
             },
             "chromadb_status": recent_analyses_data.get("chromadb_available", False)
         }
@@ -493,10 +499,10 @@ async def get_all_analyses_api(
     _: None = Depends(rate_limit_per_ip)
 ):
     """
-    Get paginated list of all analyses with filtering options
+    Get paginated list of all analyses with filtering options - ORDERED BY MOST RECENT FIRST
     """
     try:
-        logger.info(f"📊 Retrieving analyses - Page {page}, Per page {per_page}")
+        logger.info(f"📊 Retrieving analyses - Page {page}, Per page {per_page} (most recent first)")
         
         # Build filters
         filters = {}
@@ -536,8 +542,19 @@ async def get_all_analyses_api(
                 "chromadb_available": False,
                 "message": "Analysis history not available - ChromaDB not connected"
             }
+        
+        analyses = result.get("analyses", [])
+        if analyses:
+            analyses.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            logger.debug(f"✅ Frontend backup sort applied: {len(analyses)} analyses")
             
-        logger.info(f"✅ Retrieved {len(result.get('analyses', []))} analyses")
+            # Debug: Show first few results
+            for i, analysis in enumerate(analyses[:3]):
+                logger.debug(f"  {i+1}. {analysis['token_symbol']} - {_format_analysis_date(analysis['timestamp'])}")
+        
+        result["analyses"] = analyses  # Update with sorted analyses
+            
+        logger.info(f"✅ Retrieved {len(analyses)} analyses (most recent first)")
         
         return {
             **result,
@@ -568,7 +585,7 @@ async def get_all_analyses_api(
 
 async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: dict = None) -> dict:
     """
-    Get paginated analyses with filtering - integrates with existing ChromaDB
+    Get paginated analyses with filtering - integrates with existing ChromaDB - FIXED for most recent first
     """
     try:
         from app.utils.chroma_client import get_chroma_client
@@ -581,9 +598,9 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
         # Calculate offset
         offset = (page - 1) * per_page
         
-        # Build search parameters
+        # Build search parameters - GET MORE results for proper sorting
         search_params = {
-            "limit": per_page + offset,  # Get more to handle offset
+            "limit": 500,  # 🆕 Get many more results to ensure proper sorting
         }
         
         # For ChromaDB, we need to handle filtering differently
@@ -611,7 +628,7 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
                 search_query = filters["search"]
                 all_results = await analysis_storage.search_analyses(
                     query=search_query,
-                    limit=1000  # Get more results for filtering
+                    limit=1000  # Get even more results for filtering
                 )
             else:
                 all_results = await analysis_storage.search_analyses(
@@ -678,21 +695,34 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
                 }
             }
         
-        # Sort results by date (most recent first)
+        # Sort results by date (most recent first) BEFORE pagination
         results.sort(key=lambda x: x.get("metadata", {}).get("timestamp_unix", 0), reverse=True)
         logger.debug(f"Results sorted by date (most recent first)")
         
         # Get total count for pagination
         total_items = len(results)  # Total filtered results
         
-        # Apply pagination to results (slice the results we got)
+        # Apply pagination to sorted results (slice the results we got)
         paginated_results = results[offset:offset + per_page] if len(results) > offset else []
         logger.debug(f"After pagination: {len(paginated_results)} results for page {page}")
+        
+        # Log first few results to verify sorting
+        if paginated_results:
+            logger.debug(f"📊 Page {page} most recent analyses:")
+            for i, result in enumerate(paginated_results[:3]):
+                metadata = result.get("metadata", {})
+                timestamp = metadata.get("timestamp_unix", 0)
+                token_symbol = metadata.get("token_symbol", "Unknown")
+                logger.debug(f"  {i+1}. {token_symbol} - {_format_analysis_date(timestamp)} (ts: {timestamp})")
         
         # Process results for frontend display
         analyses = []
         for result in paginated_results:
             metadata = result.get("metadata", {})
+            
+            # Skip if no valid timestamp
+            if not metadata.get("timestamp_unix"):
+                continue
             
             # Determine status
             status = "completed"
@@ -705,6 +735,7 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
             
             analysis = {
                 "id": metadata.get("analysis_id", "unknown"),
+                "analysis_id": metadata.get("analysis_id", "unknown"),  # Add both for compatibility
                 "token_address": metadata.get("token_address", ""),
                 "token_name": metadata.get("token_name", "Unknown Token"),
                 "token_symbol": metadata.get("token_symbol", "N/A"),
@@ -748,7 +779,7 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
 
 
 async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
-    """Get recent analyses from ChromaDB for dashboard display"""
+    """Get recent analyses from ChromaDB for dashboard display - FIXED to get most recent"""
     try:
         from app.utils.chroma_client import get_chroma_client
         
@@ -761,21 +792,28 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
                 "analyses": []
             }
         
-        # Search for recent analyses (ordered by recency)
+        # Search for recent analyses - GET MORE than we need to sort properly
         results = await analysis_storage.search_analyses(
             query="recent token analysis",
-            limit=limit,
+            limit=50,  # Get more results to ensure proper sorting
             filters={}
         )
         
         # Get collection stats for total count
-        stats = await chroma_client.get_collection_stats()
-        total_count = stats.get("total_documents", 0)
+        try:
+            stats = await chroma_client.get_collection_stats()
+            total_count = stats.get("total_documents", 0)
+        except Exception:
+            total_count = len(results) if results else 0
         
         # Transform results for dashboard display
         dashboard_analyses = []
         for result in results:
             metadata = result.get("metadata", {})
+            
+            # Skip entries without valid timestamps
+            if not metadata.get("timestamp_unix"):
+                continue
             
             # Determine status based on analysis result
             status = "completed"  # Default to completed
@@ -791,7 +829,7 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
             analysis_item = {
                 "id": metadata.get("analysis_id", "unknown"),
                 "token_symbol": metadata.get("token_symbol", "N/A"),
-                "token_name": _extract_token_name_from_content(result.get("content", "")),
+                "token_name": metadata.get("token_name", "Unknown Token"),
                 "mint": metadata.get("token_address"),
                 "status": status,
                 "security_status": metadata.get("security_status", "unknown"),
@@ -811,10 +849,13 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
             
             dashboard_analyses.append(analysis_item)
         
-        # Sort by timestamp (most recent first)
-        dashboard_analyses.sort(key=lambda x: x["timestamp"], reverse=True)
+        dashboard_analyses.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
         
-        logger.debug(f"📊 Retrieved {len(dashboard_analyses)} recent analyses from ChromaDB")
+        dashboard_analyses = dashboard_analyses[:limit]
+        
+        logger.debug(f"📊 Retrieved {len(dashboard_analyses)} most recent analyses from ChromaDB")
+        if dashboard_analyses:
+            logger.debug(f"📊 Most recent analysis: {dashboard_analyses[0]['token_symbol']} at {_format_relative_time(dashboard_analyses[0]['timestamp'])}")
         
         return {
             "chromadb_available": True,
@@ -830,20 +871,6 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
             "analyses": [],
             "error": str(e)
         }
-
-
-def _extract_token_name_from_content(content: str) -> str:
-    """Extract token name from analysis content string"""
-    try:
-        # Look for "Token: TokenName (SYMBOL)" pattern
-        import re
-        match = re.search(r'Token: ([^(]+)', content)
-        if match:
-            return match.group(1).strip()
-        return "Unknown Token"
-    except Exception:
-        return "Unknown Token"
-
 
 def _format_relative_time(timestamp_unix: int) -> str:
     """Format unix timestamp as relative time"""

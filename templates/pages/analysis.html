@@ -286,74 +286,198 @@
               <span
                 class="px-2 py-1 rounded-full text-xs font-medium"
                 :class="{
-              'bg-green-100 text-green-800': getSecurityStatus() === 'safe',
-              'bg-red-100 text-red-800': getSecurityStatus() === 'unsafe',
-              'bg-yellow-100 text-yellow-800': getSecurityStatus() === 'warning'
-            }"
+                  'bg-green-100 text-green-800': getSecurityStatus() === 'safe',
+                  'bg-red-100 text-red-800': getSecurityStatus() === 'unsafe',
+                  'bg-yellow-100 text-yellow-800': getSecurityStatus() === 'warning'
+                }"
                 x-text="getSecurityStatusText()"
               ></span>
             </div>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <!-- Enhanced Grid - Now supports up to 8 metrics with icons -->
+          <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
             <!-- Token Info -->
             <div class="text-center">
               <div
-                class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3"
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getTokenName() !== 'Unknown Token' ? 'bg-blue-100' : 'bg-gray-100'"
               >
-                <i class="fas fa-coins text-blue-600 text-2xl"></i>
+                <i
+                  class="fas fa-coins text-lg"
+                  :class="getTokenName() !== 'Unknown Token' ? 'text-blue-600' : 'text-gray-400'"
+                ></i>
               </div>
               <h4
-                class="font-semibold text-gray-900"
+                class="font-semibold text-sm"
+                :class="getTokenName() !== 'Unknown Token' ? 'text-gray-900' : 'text-gray-500'"
                 x-text="getTokenName()"
               ></h4>
-              <p class="text-sm text-gray-500" x-text="getTokenSymbol()"></p>
+              <p
+                class="text-xs"
+                :class="getTokenSymbol() !== 'N/A' ? 'text-gray-500' : 'text-gray-400'"
+                x-text="getTokenSymbol()"
+              ></p>
             </div>
 
             <!-- Price Data -->
-            <div class="text-center" x-show="getPriceData().value">
+            <div class="text-center">
               <div
-                class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3"
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getPriceData().value ? 'bg-green-100' : 'bg-gray-100'"
               >
-                <i class="fas fa-dollar-sign text-green-600 text-2xl"></i>
+                <i
+                  class="fas fa-dollar-sign text-lg"
+                  :class="getPriceData().value ? 'text-green-600' : 'text-gray-400'"
+                ></i>
               </div>
               <h4
-                class="font-semibold text-gray-900"
-                x-text="formatCurrency(getPriceData().value)"
+                class="font-semibold text-sm"
+                :class="getPriceData().value ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getPriceData().value ? formatCurrency(getPriceData().value) : 'N/A'"
               ></h4>
               <p
-                class="text-sm"
-                :class="getPriceChangeClass(getPriceData().price_change_24h)"
-                x-text="formatPercent(getPriceData().price_change_24h)"
+                class="text-xs"
+                :class="getPriceData().price_change_24h !== undefined ? getPriceChangeClass(getPriceData().price_change_24h) : 'text-gray-400'"
+                x-text="getPriceData().price_change_24h !== undefined ? formatPercent(getPriceData().price_change_24h) : 'No Change'"
               ></p>
             </div>
 
             <!-- Market Cap -->
-            <div class="text-center" x-show="getPriceData().market_cap">
+            <div class="text-center">
               <div
-                class="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3"
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getPriceData().market_cap ? 'bg-purple-100' : 'bg-gray-100'"
               >
-                <i class="fas fa-chart-pie text-purple-600 text-2xl"></i>
+                <i
+                  class="fas fa-chart-pie text-lg"
+                  :class="getPriceData().market_cap ? 'text-purple-600' : 'text-gray-400'"
+                ></i>
               </div>
               <h4
-                class="font-semibold text-gray-900"
-                x-text="formatNumber(getPriceData().market_cap)"
+                class="font-semibold text-sm"
+                :class="getPriceData().market_cap ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getPriceData().market_cap ? formatNumber(getPriceData().market_cap) : 'N/A'"
               ></h4>
-              <p class="text-sm text-gray-500">Market Cap</p>
+              <p class="text-xs text-gray-500">Market Cap</p>
             </div>
 
             <!-- Analysis Score -->
-            <div class="text-center" x-show="getAnalysisScore() !== null">
+            <div class="text-center">
               <div
-                class="w-16 h-16 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3"
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getAnalysisScore() !== null ? 'bg-yellow-100' : 'bg-gray-100'"
               >
-                <i class="fas fa-star text-yellow-600 text-2xl"></i>
+                <i
+                  class="fas fa-star text-lg"
+                  :class="getAnalysisScore() !== null ? 'text-yellow-600' : 'text-gray-400'"
+                ></i>
               </div>
               <h4
-                class="font-semibold text-gray-900"
-                x-text="getAnalysisScore() ? getAnalysisScore() + '%' : 'N/A'"
+                class="font-semibold text-sm"
+                :class="getAnalysisScore() !== null ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getAnalysisScore() !== null ? getAnalysisScore() + '%' : 'N/A'"
               ></h4>
-              <p class="text-sm text-gray-500">Analysis Score</p>
+              <p class="text-xs text-gray-500">AI Score</p>
+            </div>
+
+            <!-- Volume Data -->
+            <div class="text-center">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getVolumeData().value ? 'bg-indigo-100' : 'bg-gray-100'"
+              >
+                <i
+                  class="fas fa-chart-bar text-lg"
+                  :class="getVolumeData().value ? 'text-indigo-600' : 'text-gray-400'"
+                ></i>
+              </div>
+              <h4
+                class="font-semibold text-sm"
+                :class="getVolumeData().value ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getVolumeData().display"
+              ></h4>
+              <p class="text-xs text-gray-500">24h Volume</p>
+            </div>
+
+            <!-- Volatility -->
+            <div class="text-center">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getVolatilityData().available ? 'bg-orange-100' : 'bg-gray-100'"
+              >
+                <i
+                  class="fas fa-wave-square text-lg"
+                  :class="getVolatilityData().available ? 'text-orange-600' : 'text-gray-400'"
+                ></i>
+              </div>
+              <h4
+                class="font-semibold text-sm"
+                :class="getVolatilityData().available ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getVolatilityData().display"
+              ></h4>
+              <p
+                class="text-xs"
+                :class="getVolatilityData().riskClass"
+                x-text="getVolatilityData().riskText"
+              ></p>
+            </div>
+
+            <!-- Whales -->
+            <div class="text-center">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getWhaleData().available ? 'bg-teal-100' : 'bg-gray-100'"
+              >
+                <i
+                  class="fas fa-users text-lg"
+                  :class="getWhaleData().available ? 'text-teal-600' : 'text-gray-400'"
+                ></i>
+              </div>
+              <h4
+                class="font-semibold text-sm"
+                :class="getWhaleData().available ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getWhaleData().display"
+              ></h4>
+              <p
+                class="text-xs"
+                :class="getWhaleData().riskClass"
+                x-text="getWhaleData().controlText"
+              ></p>
+            </div>
+
+            <!-- Snipers -->
+            <div class="text-center">
+              <div
+                class="w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-2"
+                :class="getSniperData().available ? 'bg-red-100' : 'bg-gray-100'"
+              >
+                <i
+                  class="fas fa-crosshairs text-lg"
+                  :class="getSniperData().available ? 'text-red-600' : 'text-gray-400'"
+                ></i>
+              </div>
+              <h4
+                class="font-semibold text-sm"
+                :class="getSniperData().available ? 'text-gray-900' : 'text-gray-500'"
+                x-text="getSniperData().display"
+              ></h4>
+              <p
+                class="text-xs"
+                :class="getSniperData().riskClass"
+                x-text="getSniperData().riskText"
+              ></p>
+            </div>
+          </div>
+
+          <!-- Enhanced Data Quality Indicator -->
+          <div class="mt-4 pt-4 border-t border-gray-200 text-center">
+            <div class="flex items-center justify-center space-x-2">
+              <div class="flex space-x-1" x-html="getDataQualityDots()"></div>
+              <span
+                class="text-xs text-gray-500"
+                x-text="getDataQualityText()"
+              ></span>
             </div>
           </div>
         </div>
@@ -908,7 +1032,226 @@
                   liquidity: birdeyePrice.liquidity,
                 };
               }
+
+              // Fallback to DexScreener data
+              if (dexScreenerData) {
+                return {
+                  value: dexScreenerData.priceUsd,
+                  price_change_24h: dexScreenerData.priceChange?.h24,
+                  volume_24h: dexScreenerData.volume?.h24,
+                  market_cap: dexScreenerData.marketCap,
+                  liquidity: dexScreenerData.liquidity?.usd,
+                };
+              }
+
               return {};
+            },
+
+            getVolumeData() {
+              const priceData = this.getPriceData();
+              if (priceData.volume_24h) {
+                return {
+                  value: priceData.volume_24h,
+                  display: this.formatNumber(priceData.volume_24h),
+                  available: true,
+                };
+              }
+              return {
+                value: null,
+                display: "N/A",
+                available: false,
+              };
+            },
+
+            // Get volatility data
+            getVolatilityData() {
+              const analysis = this.getAnalysisResults();
+              if (!analysis)
+                return {
+                  available: false,
+                  display: "N/A",
+                  riskClass: "text-gray-400",
+                  riskText: "No Data",
+                };
+
+              const volatility =
+                analysis.volatility ||
+                this.results?.overall_analysis?.volatility;
+              if (volatility && volatility.recent_volatility_percent !== null) {
+                const vol = volatility.recent_volatility_percent;
+                let riskClass, riskText;
+
+                if (vol <= 10) {
+                  riskClass = "text-green-600";
+                  riskText = "Low Vol";
+                } else if (vol <= 25) {
+                  riskClass = "text-yellow-600";
+                  riskText = "Med Vol";
+                } else {
+                  riskClass = "text-red-600";
+                  riskText = "High Vol";
+                }
+
+                return {
+                  available: true,
+                  display: vol.toFixed(1) + "%",
+                  riskClass: riskClass,
+                  riskText: riskText,
+                };
+              }
+
+              return {
+                available: false,
+                display: "N/A",
+                riskClass: "text-gray-400",
+                riskText: "No Data",
+              };
+            },
+
+            // Get whale data
+            getWhaleData() {
+              const analysis = this.getAnalysisResults();
+              if (!analysis)
+                return {
+                  available: false,
+                  display: "N/A",
+                  riskClass: "text-gray-400",
+                  controlText: "No Data",
+                };
+
+              const whaleAnalysis =
+                analysis.whale_analysis ||
+                this.results?.overall_analysis?.whale_analysis;
+              if (whaleAnalysis && whaleAnalysis.whale_count !== undefined) {
+                const whaleCount = whaleAnalysis.whale_count;
+                const whaleControl = whaleAnalysis.whale_control_percent || 0;
+
+                let riskClass, controlText;
+
+                if (whaleCount === 0) {
+                  riskClass = "text-green-600";
+                  controlText = "Perfect";
+                } else if (whaleControl <= 25) {
+                  riskClass = "text-green-600";
+                  controlText = whaleControl.toFixed(0) + "% Control";
+                } else if (whaleControl <= 50) {
+                  riskClass = "text-yellow-600";
+                  controlText = whaleControl.toFixed(0) + "% Control";
+                } else {
+                  riskClass = "text-red-600";
+                  controlText = whaleControl.toFixed(0) + "% Control";
+                }
+
+                return {
+                  available: true,
+                  display:
+                    whaleCount === 0 ? "No Whales" : whaleCount + " Whales",
+                  riskClass: riskClass,
+                  controlText: controlText,
+                };
+              }
+
+              return {
+                available: false,
+                display: "N/A",
+                riskClass: "text-gray-400",
+                controlText: "No Data",
+              };
+            },
+
+            // Get sniper data
+            getSniperData() {
+              const analysis = this.getAnalysisResults();
+              if (!analysis)
+                return {
+                  available: false,
+                  display: "N/A",
+                  riskClass: "text-gray-400",
+                  riskText: "No Data",
+                };
+
+              const sniperDetection =
+                analysis.sniper_detection ||
+                this.results?.overall_analysis?.sniper_detection;
+              if (
+                sniperDetection &&
+                sniperDetection.sniper_risk !== undefined
+              ) {
+                const sniperRisk = sniperDetection.sniper_risk;
+                const patternDetected = sniperDetection.pattern_detected;
+
+                let riskClass, riskText, display;
+
+                if (sniperRisk === "low" || !patternDetected) {
+                  riskClass = "text-green-600";
+                  riskText = "Clean";
+                  display = "No Bots";
+                } else if (sniperRisk === "medium") {
+                  riskClass = "text-yellow-600";
+                  riskText = "Moderate";
+                  display = "Some Bots";
+                } else {
+                  riskClass = "text-red-600";
+                  riskText = "High Risk";
+                  display = "Bot Alert";
+                }
+
+                return {
+                  available: true,
+                  display: display,
+                  riskClass: riskClass,
+                  riskText: riskText,
+                };
+              }
+
+              return {
+                available: false,
+                display: "N/A",
+                riskClass: "text-gray-400",
+                riskText: "No Data",
+              };
+            },
+
+            // Get data quality indicators
+            getDataQualityDots() {
+              const metrics = [
+                this.getTokenName() !== "Unknown Token",
+                this.getPriceData().value !== undefined,
+                this.getPriceData().market_cap !== undefined,
+                this.getAnalysisScore() !== null,
+                this.getVolumeData().available,
+                this.getVolatilityData().available,
+                this.getWhaleData().available,
+                this.getSniperData().available,
+              ];
+
+              return metrics
+                .map(
+                  (available) =>
+                    `<div class="w-2 h-2 rounded-full ${
+                      available ? "bg-green-500" : "bg-gray-300"
+                    }"></div>`
+                )
+                .join("");
+            },
+
+            // Get data quality text
+            getDataQualityText() {
+              const metrics = [
+                this.getTokenName() !== "Unknown Token",
+                this.getPriceData().value !== undefined,
+                this.getPriceData().market_cap !== undefined,
+                this.getAnalysisScore() !== null,
+                this.getVolumeData().available,
+                this.getVolatilityData().available,
+                this.getWhaleData().available,
+                this.getSniperData().available,
+              ];
+
+              const available = metrics.filter((m) => m).length;
+              const total = metrics.length;
+
+              return `Data Quality: ${available}/${total} metrics`;
             },
 
             // Security Analysis Functions
