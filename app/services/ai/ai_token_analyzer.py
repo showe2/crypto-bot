@@ -5,11 +5,12 @@ from typing import Dict, Any, Optional, List, Tuple
 from loguru import logger
 from datetime import datetime, timedelta
 
-from app.utils.redis_client import get_redis_client
+from app.core.config import get_settings
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
 from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisRequest
 
+settings = get_settings()
 
 class EnhancedTokenAnalyzer:
     """Enhanced token analyzer with proper security stopping and AI integration"""
@@ -18,12 +19,7 @@ class EnhancedTokenAnalyzer:
         """Initialize enhanced analyzer"""
         self.cache = cache_manager
         self.cache_namespace = "enhanced_token_analysis"
-        self.cache_ttl = {
-            "webhook": 7200,  # 2 hours for webhook requests
-            "api_request": 3600,  # 1 hour for API requests
-            "frontend_quick": 1800,  # 30 minutes for frontend quick
-            "frontend_deep": 7200   # 2 hours for frontend deep
-        }
+        self.cache_ttl = settings.REPORT_TTL_SECONDS
         self.services = {
             "helius": True,
             "birdeye": True,
@@ -186,19 +182,18 @@ class EnhancedTokenAnalyzer:
         
         # Cache the result
         try:
-            ttl = self.cache_ttl.get(source_event, 7200)
             await self.cache.set(
                 key=cache_key,
                 value=analysis_response,
-                ttl=ttl,
+                ttl=self.cache_ttl,
                 namespace=self.cache_namespace
             )
 
             full_cache_key = f"{self.cache_namespace}:{cache_key}"
             analysis_response["docx_cache_key"] = full_cache_key
-            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=self.cache_ttl)).isoformat()
 
-            logger.info(f"💾 Cached deep analysis for {token_address} with TTL {ttl}s")
+            logger.info(f"💾 Cached deep analysis for {token_address} with TTL {self.cache_ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache deep analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
@@ -330,8 +325,6 @@ class EnhancedTokenAnalyzer:
         traditional_analysis = await token_analyzer._generate_comprehensive_analysis(
             service_responses, security_data, token_address
         )
-
-        print(traditional_analysis)
         
         # If no AI analysis available, return traditional analysis
         if not ai_analysis or not isinstance(ai_analysis, dict):

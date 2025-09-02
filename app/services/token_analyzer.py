@@ -6,12 +6,13 @@ from loguru import logger
 from datetime import datetime, timedelta
 
 from app.services.service_manager import api_manager
-from app.utils.redis_client import get_redis_client
+from app.core.config import get_settings
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
 
 import inspect
 
+settings = get_settings()
 
 class TokenAnalyzer:
     """Token analyzer with security-first approach"""
@@ -20,12 +21,7 @@ class TokenAnalyzer:
         """Initialize analyzer with cache manager"""
         self.cache = cache_manager
         self.cache_namespace = "token_analysis"
-        self.cache_ttl = {
-            "webhook": 7200,  # 2 hours for webhook requests
-            "api_request": 3600,  # 1 hour for API requests
-            "frontend_quick": 1800,  # 30 minutes for frontend
-            "frontend_deep": 7200   # 2 hours for frontend deep
-        }
+        self.cache_ttl = settings.REPORT_TTL_SECONDS
         self.services = {
             "helius": True,
             "birdeye": True,
@@ -134,19 +130,18 @@ class TokenAnalyzer:
         
         # Cache the result with proper TTL
         try:
-            ttl = self.cache_ttl.get(source_event, 7200)  # default 2 hours
             await self.cache.set(
                 key=cache_key,
                 value=analysis_response,
-                ttl=ttl,
+                ttl=self.cache_ttl,
                 namespace=self.cache_namespace
             )
 
             full_cache_key = f"{self.cache_namespace}:{cache_key}"
             analysis_response["docx_cache_key"] = full_cache_key
-            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=ttl)).isoformat()
+            analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=self.cache_ttl)).isoformat()
 
-            logger.info(f"Cached analysis for {token_address} with TTL {ttl}s")
+            logger.info(f"Cached analysis for {token_address} with TTL {self.cache_ttl}s")
         except Exception as e:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")

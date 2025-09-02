@@ -127,7 +127,8 @@ class Settings(BaseSettings):
     CACHE_TTL_SHORT: int = 300
     CACHE_TTL_MEDIUM: int = 1800
     CACHE_TTL_LONG: int = 7200
-
+    REPORT_TTL_SECONDS: int = 7200
+    
     # ==============================================
     # MONITORING
     # ==============================================

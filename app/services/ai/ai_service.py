@@ -927,7 +927,7 @@ async def analyze_token_with_ai(request: AIAnalysisRequest) -> Optional[AIAnalys
         return None
     
 async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
-    """Generate DOCX report from cached analysis data - FIXED"""
+    """Generate DOCX report from cached analysis data"""
     try:
         logger.info(f"📄 Generating DOCX from cache key: {cache_key}")
         

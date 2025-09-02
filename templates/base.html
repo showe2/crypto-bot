@@ -896,37 +896,53 @@
               await this.downloadDocxReport();
             } catch (error) {
               console.error("Export failed:", error);
-
-              // Enhanced error handling with specific messages
-              let errorMessage = "Failed to export analysis";
-              let errorTitle = "Export Failed";
-
-              if (error.message.includes("expired")) {
-                errorTitle = "Report Expired";
-                errorMessage =
-                  "Analysis report has expired. Please run a new analysis to generate a fresh report.";
-              } else if (
-                error.message.includes("404") ||
-                error.message.includes("not found")
-              ) {
-                errorTitle = "Report Not Found";
-                errorMessage =
-                  "Report data not found. This may happen for older analyses.";
-              } else if (
-                error.message.includes("network") ||
-                error.message.includes("fetch")
-              ) {
-                errorTitle = "Network Error";
-                errorMessage =
-                  "Failed to download report due to network issues. Please try again.";
-              } else if (error.message) {
-                errorMessage = error.message;
-              }
-
-              this.showNotification("error", errorTitle, errorMessage);
+              this.handleExportError(error);
             } finally {
               this.isExporting = false;
             }
+          },
+
+          handleExportError(error) {
+            let errorMessage = "Failed to export analysis";
+            let errorTitle = "Export Failed";
+
+            if (
+              error.message.includes("expired") ||
+              error.message.includes("404")
+            ) {
+              errorTitle = "Analysis Refreshed";
+              errorMessage =
+                "Running fresh analysis to generate your report. This may take a moment...";
+
+              // Try again after a short delay for fresh analysis
+              setTimeout(() => {
+                this.showNotification(
+                  "info",
+                  "Retrying...",
+                  "Attempting to generate report from fresh analysis"
+                );
+                this.exportPopupAnalysis();
+              }, 2000);
+              return;
+            } else if (
+              error.message.includes("network") ||
+              error.message.includes("fetch")
+            ) {
+              errorTitle = "Network Error";
+              errorMessage =
+                "Failed to download report due to network issues. Please try again.";
+            } else if (
+              error.message.includes("server") ||
+              error.message.includes("500")
+            ) {
+              errorTitle = "Server Error";
+              errorMessage =
+                "Report generation failed on server. Please try again in a moment.";
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+
+            this.showNotification("error", errorTitle, errorMessage);
           },
 
           async downloadDocxReport() {
@@ -938,60 +954,42 @@
               );
 
               const cacheKey = this.getCacheKey();
-
               if (!cacheKey) {
                 throw new Error("Unable to generate report cache key");
               }
 
-              console.log(
-                "📄 Attempting DOCX download with cache key:",
-                cacheKey
+              // Detect analysis type from popup data
+              const source = this.popupAnalysis.source_event;
+
+              let response = await fetch(
+                `/document/${encodeURIComponent(cacheKey)}?source=${source}`
               );
 
-              const response = await fetch(
-                `/document/${encodeURIComponent(cacheKey)}`
-              );
-
-              // Enhanced response handling
-              if (!response.ok) {
-                if (response.status === 404) {
-                  throw new Error(
-                    "Report data has expired or not found (DOCX reports are available for 2 hours after analysis)"
-                  );
-                } else if (response.status === 500) {
-                  throw new Error(
-                    "Server error while generating report. Please try again in a moment."
-                  );
-                } else if (response.status === 403) {
-                  throw new Error("Access denied to report data");
-                } else {
-                  const errorText = await response
-                    .text()
-                    .catch(() => "Unknown error");
-                  throw new Error(
-                    `Report generation failed (${response.status}): ${errorText}`
-                  );
-                }
+              // If cache miss (404), backend runs fresh analysis automatically
+              if (response.status === 404) {
+                this.showNotification(
+                  "info",
+                  "Running Fresh Analysis",
+                  "Cache expired, analyzing token again..."
+                );
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+                response = await fetch(
+                  `/document/${encodeURIComponent(cacheKey)}?source=${source}`
+                );
               }
 
-              // Validate response content
-              const contentType = response.headers.get("content-type");
-              if (
-                !contentType ||
-                !contentType.includes(
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                )
-              ) {
-                console.warn("Unexpected content type:", contentType);
+              if (!response.ok) {
+                throw new Error(
+                  `Report generation failed (${response.status})`
+                );
               }
 
               const blob = await response.blob();
-
               if (blob.size === 0) {
                 throw new Error("Generated report is empty");
               }
 
-              // Enhanced file download
+              // Download file
               const url = window.URL.createObjectURL(blob);
               const a = document.createElement("a");
               a.href = url;
@@ -1013,18 +1011,14 @@
               document.body.removeChild(a);
               window.URL.revokeObjectURL(url);
 
-              console.log("✅ DOCX download completed successfully");
-
               this.showNotification(
                 "success",
                 "Download Complete",
-                `Professional analysis report for ${tokenSymbol} downloaded successfully`
+                `Report for ${tokenSymbol} downloaded successfully`
               );
             } catch (error) {
               console.error("DOCX download failed:", error);
-
-              // Fallback with enhanced messaging
-              this.showNotification("warning", `DOCX Download Failed:${error}`);
+              throw error;
             }
           },
         };

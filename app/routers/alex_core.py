@@ -339,44 +339,49 @@ async def quick_analysis_endpoint(
 @router.get("/document/{cache_key:path}")
 async def download_analysis_document(
     cache_key: str,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    source: Optional[str] = Query(None)
 ):
-    """Download DOCX report for cached analysis - FIXED"""
+    """Download DOCX report - runs fresh analysis if cache miss"""
     
     try:
         logger.info(f"📄 DOCX download request for cache key: {cache_key}")
         
-        # Generate DOCX
+        # Try cache first
         docx_content = await generate_analysis_docx_from_cache(cache_key)
         
         if not docx_content:
-            logger.warning(f"❌ No DOCX content found for cache key: {cache_key}")
-            raise HTTPException(
-                status_code=404, 
-                detail="Analysis data not found or expired (available for 2 hours only)"
-            )
-        
-        # Extract token info from cache key for filename
-        try:
-            # Extract token address from key: "namespace:type:TOKEN_ADDRESS"
-            if ":" in cache_key:
-                parts = cache_key.split(":")
-                if len(parts) >= 3:
-                    token_part = parts[-1][:8]  # Last part (token), first 8 chars
-                elif len(parts) >= 2:
-                    token_part = parts[-1][:8]  # Last part, first 8 chars
-                else:
-                    token_part = "unknown"
+            logger.info("❌ Cache miss, running fresh analysis...")
+            
+            # Extract token address and type
+            token_address, analysis_type = _extract_token_info_from_cache_key(cache_key)
+            source_event = source if source is not None else f"api_{analysis_type}"
+
+            if not token_address:
+                raise HTTPException(status_code=404, detail="Invalid cache key")
+            
+            logger.info(f"🔄 Running fresh {analysis_type} analysis for {token_address}")
+            
+            # Run fresh analysis
+            if analysis_type == "deep":
+                analysis_result = await analyze_token_deep_comprehensive(token_address, source_event)
             else:
-                token_part = cache_key[:8]  # First 8 chars of key
-        except Exception:
-            token_part = "unknown"
+                analysis_result = await token_analyzer.analyze_token_comprehensive(token_address, source_event)
+            
+            if not analysis_result or analysis_result.get("status") == "error":
+                raise HTTPException(status_code=500, detail="Fresh analysis failed")
+            
+            # Generate DOCX directly from fresh data
+            docx_content = await _generate_docx_from_fresh_data(analysis_result)
+            
+            if not docx_content:
+                raise HTTPException(status_code=500, detail="DOCX generation failed")
         
+        # Get filename
+        token_address, _ = _extract_token_info_from_cache_key(cache_key)
+        token_part = token_address[:8] if token_address else "unknown"
         filename = f"token_analysis_{token_part}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
         
-        logger.info(f"✅ DOCX ready for download, filename: {filename}")
-        
-        # Return as downloadable file
         return StreamingResponse(
             io.BytesIO(docx_content),
             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -388,6 +393,63 @@ async def download_analysis_document(
     except Exception as e:
         logger.error(f"❌ Document download failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate document: {str(e)}")
+    
+def _extract_token_info_from_cache_key(cache_key: str) -> tuple:
+    """Extract token address and analysis type from cache key"""
+    try:
+        logger.debug(f"Extracting token info from cache key: {cache_key}")
+        
+        # Split cache key
+        parts = cache_key.split(":")
+        
+        if len(parts) < 2:
+            logger.warning(f"Invalid cache key format: {cache_key}")
+            return None, "quick"
+        
+        # Extract token address (should be the last part)
+        token_address = parts[-1]
+        
+        # Determine analysis type from namespace
+        if "enhanced_token_analysis" in cache_key or "deep_analysis" in cache_key:
+            analysis_type = "deep"
+        else:
+            analysis_type = "quick"
+        
+        logger.debug(f"Extracted: token={token_address}, type={analysis_type}")
+        
+        # Validate token address format (basic Solana address validation)
+        if not token_address or len(token_address) < 32 or len(token_address) > 44:
+            logger.warning(f"Invalid token address format: {token_address}")
+            return None, analysis_type
+        
+        return token_address, analysis_type
+        
+    except Exception as e:
+        logger.error(f"Error extracting token info from cache key: {e}")
+        return None, "quick"
+    
+async def _generate_docx_from_fresh_data(analysis_result: Dict[str, Any]) -> Optional[bytes]:
+    """Generate DOCX directly from fresh analysis data"""
+    
+    try:
+        logger.info("📄 Generating DOCX from fresh analysis data")
+        
+        # Use the existing DOCX service
+        from app.services.ai.docx_service import docx_service
+        
+        # Generate DOCX directly from analysis data
+        docx_bytes = await docx_service.generate_analysis_docx_from_data(analysis_result)
+        
+        if docx_bytes:
+            logger.info(f"✅ DOCX generated successfully ({len(docx_bytes)} bytes)")
+            return docx_bytes
+        else:
+            logger.error("❌ DOCX service returned no content")
+            return None
+            
+    except Exception as e:
+        logger.error(f"❌ Error generating DOCX from fresh data: {str(e)}")
+        return None
 
 # ==============================================
 # API ENDPOINTS FOR FRONTEND

@@ -18,26 +18,8 @@ class DocxReportService:
     """Simple DOCX report generator for token analysis"""
     
     async def generate_analysis_docx_from_data(self, analysis_data: Dict[str, Any]) -> Optional[bytes]:
-        """Generate DOCX report from analysis data directly - WITH DEBUGGING"""
+        """Generate DOCX report from analysis data directly"""
 
-        logger.info(f"=== ANALYSIS DATA STRUCTURE DEBUG ===")
-        logger.info(f"Overall analysis keys: {list(analysis_data.get('overall_analysis', {}).keys())}")
-        logger.info(f"Service responses keys: {list(analysis_data.get('service_responses', {}).keys())}")
-
-        # Check for duplicate content in the data
-        positive_signals = analysis_data.get("overall_analysis", {}).get("positive_signals", [])
-        risk_factors = analysis_data.get("overall_analysis", {}).get("risk_factors", [])
-
-        logger.info(f"Positive signals count: {len(positive_signals)}")
-        logger.info(f"Risk factors count: {len(risk_factors)}")
-
-        # Check for duplicates within the lists
-        if len(positive_signals) != len(set(positive_signals)):
-            logger.warning("DUPLICATE positive signals detected in analysis data!")
-            
-        if len(risk_factors) != len(set(risk_factors)):
-            logger.warning("DUPLICATE risk factors detected in analysis data!")
-        
         if not DOCX_AVAILABLE:
             raise RuntimeError("python-docx not installed")
         
@@ -48,21 +30,9 @@ class DocxReportService:
             
             # Create FRESH document - this is the key
             doc = Document()
-            logger.info("Fresh Document() created")
-            
-            # Check document initial state
-            logger.info(f"Initial paragraphs: {len(doc.paragraphs)}")
-            logger.info(f"Initial tables: {len(doc.tables)}")
-            
-            # CRITICAL: Check if this DocxReportService instance is being reused
-            logger.info(f"DocxReportService instance id: {id(self)}")
             
             # Build report
             self._build_report(doc, analysis_data)
-            
-            # Check final document state  
-            logger.info(f"Final paragraphs: {len(doc.paragraphs)}")
-            logger.info(f"Final tables: {len(doc.tables)}")
             
             # Convert to bytes
             temp_path = None
@@ -131,8 +101,6 @@ class DocxReportService:
             
             logger.info("Adding LP analysis section...")
             self._add_lp_analysis_safe(doc, analysis_data)
-            
-            logger.info("=== DOCX SECTION GENERATION COMPLETE ===")
             
         except Exception as e:
             logger.error(f"Error building enhanced DOCX report: {e}")

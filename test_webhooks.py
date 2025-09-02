@@ -10,7 +10,7 @@ import asyncio
 import aiohttp
 
 # Configuration
-BASE_URL = "https://3e0cdc01dc32.ngrok-free.app"  # Local testing
+BASE_URL = "https://8ba4a18b1894.ngrok-free.app"  # Local testing
 # BASE_URL = "https://your-ngrok-url.ngrok-free.app"  # For Helius testing
 
 async def test_webhook_speed(session, endpoint: str, payload: dict):
