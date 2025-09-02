@@ -821,7 +821,7 @@
               <div class="text-sm text-gray-500">Analysis ID</div>
               <div
                 class="font-mono text-sm"
-                x-text="(results && results.analysis_id) || 'N/A'"
+                x-text="(results && (results.analysis_id.slice(0, 35)+'...')) || 'N/A'"
               ></div>
             </div>
             <div>
@@ -1545,11 +1545,11 @@
             },
 
             async downloadDocxReport() {
-              if (!this.results || !this.results.docx_cache_key) {
+              if (!this.results) {
                 this.showNotification(
                   "error",
                   "Report Unavailable",
-                  "Report data has expired or is not available"
+                  "Report data is not available"
                 );
                 return;
               }
@@ -1562,10 +1562,11 @@
                 );
 
                 // Use the cache key directly without modification
-                const cacheKey = this.results.docx_cache_key;
+                const cacheKey = this.results.analysis_id;
+                const source = `api_${this.results.analysis_type}`;
 
                 const response = await fetch(
-                  `/document/${encodeURIComponent(cacheKey)}`
+                  `/document/${encodeURIComponent(cacheKey)}?source=${source}`
                 );
 
                 if (!response.ok) {

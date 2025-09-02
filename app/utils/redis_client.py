@@ -178,33 +178,29 @@ class RedisClient:
         if not self._connected:
             await self.connect()
             
-        # Convert value to string
-        str_value = str(value)
-        
         # Try Redis first
         if self.client:
             try:
-                result = await self.client.set(key, str_value, ex=ex, px=px, nx=nx, xx=xx)
+                result = await self.client.set(key, value, ex=ex, px=px, nx=nx, xx=xx)
                 return bool(result)
             except Exception as e:
                 logger.debug(f"Redis SET failed for key '{key}': {str(e)}")
         
         # Fallback to memory
-        # Handle conditions
-        if nx and key in self._memory_store:  # Set only if not exists
+        if nx and key in self._memory_store:
             return False
-        if xx and key not in self._memory_store:  # Set only if exists
+        if xx and key not in self._memory_store:
             return False
             
-        self._memory_store[key] = str_value
+        self._memory_store[key] = value  # Store serialized value as-is
         
         # Handle expiration
-        if ex:  # Seconds
+        if ex:
             self._memory_expiry[key] = time.time() + ex
-        elif px:  # Milliseconds
+        elif px:
             self._memory_expiry[key] = time.time() + (px / 1000)
         else:
-            self._memory_expiry.pop(key, None)  # No expiration
+            self._memory_expiry.pop(key, None)
             
         return True
     
@@ -586,7 +582,7 @@ async def check_redis_health() -> Dict[str, Any]:
             await client.connect()
         
         # Test basic operations
-        test_key = f"health_check_{int(time.time())}"
+        test_key = f"redis_health_{int(time.time() * 1000)}"
         test_value = "health_test_value"
         
         # Test SET/GET/DELETE

@@ -354,8 +354,14 @@ async def download_analysis_document(
             logger.info("❌ Cache miss, running fresh analysis...")
             
             # Extract token address and type
-            token_address, analysis_type = _extract_token_info_from_cache_key(cache_key)
-            source_event = source if source is not None else f"api_{analysis_type}"
+            token_address = _extract_token_info_from_cache_key(cache_key)
+
+            analysis_type = "deep"
+            source_event = "api_deep"
+
+            if source is not None and "quick" in source:
+                analysis_type = "quick"
+                source_event = source
 
             if not token_address:
                 raise HTTPException(status_code=404, detail="Invalid cache key")
@@ -378,7 +384,7 @@ async def download_analysis_document(
                 raise HTTPException(status_code=500, detail="DOCX generation failed")
         
         # Get filename
-        token_address, _ = _extract_token_info_from_cache_key(cache_key)
+        token_address = _extract_token_info_from_cache_key(cache_key)
         token_part = token_address[:8] if token_address else "unknown"
         filename = f"token_analysis_{token_part}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
         
@@ -394,39 +400,33 @@ async def download_analysis_document(
         logger.error(f"❌ Document download failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to generate document: {str(e)}")
     
-def _extract_token_info_from_cache_key(cache_key: str) -> tuple:
+def _extract_token_info_from_cache_key(cache_key: str) -> str:
     """Extract token address and analysis type from cache key"""
     try:
         logger.debug(f"Extracting token info from cache key: {cache_key}")
         
         # Split cache key
-        parts = cache_key.split(":")
+        parts = cache_key.split("_")
         
         if len(parts) < 2:
             logger.warning(f"Invalid cache key format: {cache_key}")
-            return None, "quick"
+            return None
         
         # Extract token address (should be the last part)
         token_address = parts[-1]
         
-        # Determine analysis type from namespace
-        if "enhanced_token_analysis" in cache_key or "deep_analysis" in cache_key:
-            analysis_type = "deep"
-        else:
-            analysis_type = "quick"
-        
-        logger.debug(f"Extracted: token={token_address}, type={analysis_type}")
+        logger.debug(f"Extracted: token={token_address}")
         
         # Validate token address format (basic Solana address validation)
         if not token_address or len(token_address) < 32 or len(token_address) > 44:
             logger.warning(f"Invalid token address format: {token_address}")
-            return None, analysis_type
+            return None
         
-        return token_address, analysis_type
+        return token_address
         
     except Exception as e:
         logger.error(f"Error extracting token info from cache key: {e}")
-        return None, "quick"
+        return None
     
 async def _generate_docx_from_fresh_data(analysis_result: Dict[str, Any]) -> Optional[bytes]:
     """Generate DOCX directly from fresh analysis data"""

@@ -933,23 +933,9 @@ async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
         
         from app.utils.cache import cache_manager
         
-        # Parse the cache key to extract namespace and key
-        if ":" in cache_key:
-            parts = cache_key.split(":", 1)  # Split on first colon only
-            namespace = parts[0] if len(parts) == 2 else "enhanced_token_analysis"
-            redis_key = parts[1] if len(parts) == 2 else cache_key
-        else:
-            namespace = "enhanced_token_analysis"
-            redis_key = cache_key
-        
-        logger.info(f"📄 Looking up: namespace='{namespace}', key='{redis_key}'")
-        
         # Try to get cached data
         try:
-            cached_data = await cache_manager.get(
-                key=redis_key,
-                namespace=namespace
-            )
+            cached_data = await cache_manager.get(key=cache_key)
             if cached_data:
                 logger.info(f"✅ Found data in cache manager")
             else:

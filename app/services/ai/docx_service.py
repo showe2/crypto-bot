@@ -58,8 +58,6 @@ class DocxReportService:
         """Build the enhanced DOCX report structure with AI analysis"""
 
         try:
-            logger.info("=== DOCX SECTION GENERATION START ===")
-
             # Extract token info with fallbacks
             token_symbol = self._get_token_symbol(analysis_data)
             token_name = self._get_token_name(analysis_data)
@@ -81,25 +79,18 @@ class DocxReportService:
             p.add_run(f'{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
             
             # AI VERDICT SECTION
-            logger.info("Adding AI verdict section...")
             self._add_ai_verdict_section(doc, analysis_data)
             
-            logger.info("Adding enhanced scoring table...")
             self._add_enhanced_scoring_table(doc, analysis_data)
             
-            logger.info("Adding pros/cons section...")
             self._add_pros_cons_section(doc, analysis_data)
             
-            logger.info("Adding AI reasoning section...")
             self._add_ai_reasoning_section(doc, analysis_data)
             
-            logger.info("Adding market data section...")
             self._add_market_data_safe(doc, analysis_data)
             
-            logger.info("Adding security analysis section...")
             self._add_security_analysis_safe(doc, analysis_data)
             
-            logger.info("Adding LP analysis section...")
             self._add_lp_analysis_safe(doc, analysis_data)
             
         except Exception as e:

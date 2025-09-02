@@ -1371,15 +1371,8 @@
         throw new Error("Analysis data not found");
       }
 
-      // Build cache key
       const source = analysis.source_event;
-      const namespace =
-        source === "api_quick"
-          ? "token_analysis:analysis"
-          : "enhanced_token_analysis:deep_analysis";
-      const cacheKey = `${namespace}:${
-        analysis.mint || analysis.token_address
-      }`;
+      const cacheKey = analysis.id;
 
       let response = await fetch(
         `/document/${encodeURIComponent(cacheKey)}?source=${source}`
@@ -1391,7 +1384,9 @@
           '<i class="fas fa-cogs fa-spin mr-2"></i>Running Fresh Analysis...';
         await new Promise((resolve) => setTimeout(resolve, 5000));
         response = await fetch(
-          `/document/${encodeURIComponent(cacheKey)}?source=${source}`
+          `/document/${encodeURIComponent(
+            cacheKey
+          )}?analysis_type=${analysisType}`
         );
       }
 

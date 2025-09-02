@@ -20,7 +20,6 @@ class TokenAnalyzer:
     def __init__(self):
         """Initialize analyzer with cache manager"""
         self.cache = cache_manager
-        self.cache_namespace = "token_analysis"
         self.cache_ttl = settings.REPORT_TTL_SECONDS
         self.services = {
             "helius": True,
@@ -36,7 +35,7 @@ class TokenAnalyzer:
     async def analyze_token_comprehensive(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
         """Comprehensive token analysis with security-first approach"""
         start_time = time.time()
-        analysis_id = f"analysis_{int(time.time())}_{token_address[:8]}"
+        analysis_id = f"analysis_{int(time.time())}_{token_address}"
         
         # Initialize response structure
         analysis_response = {
@@ -60,13 +59,8 @@ class TokenAnalyzer:
             }
         }
         
-        # Check cache first with proper namespace
-        cache_key = f"analysis:{token_address}"
         try:
-            cached_result = await self.cache.get(
-                key=cache_key, 
-                namespace=self.cache_namespace
-            )
+            cached_result = await self.cache.get(key=analysis_id)
             if cached_result:
                 logger.info(f"Found cached analysis for {token_address}")
                 return cached_result
@@ -131,14 +125,12 @@ class TokenAnalyzer:
         # Cache the result with proper TTL
         try:
             await self.cache.set(
-                key=cache_key,
+                key=analysis_id,
                 value=analysis_response,
-                ttl=self.cache_ttl,
-                namespace=self.cache_namespace
+                ttl=self.cache_ttl
             )
 
-            full_cache_key = f"{self.cache_namespace}:{cache_key}"
-            analysis_response["docx_cache_key"] = full_cache_key
+            analysis_response["docx_cache_key"] = analysis_id
             analysis_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=self.cache_ttl)).isoformat()
 
             logger.info(f"Cached analysis for {token_address} with TTL {self.cache_ttl}s")

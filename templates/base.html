@@ -868,18 +868,6 @@
             }
           },
 
-          getCacheKey() {
-            if (!this.popupAnalysis) return;
-
-            const source = this.popupAnalysis.source_event;
-            const namespace =
-              source === "api_quick"
-                ? "token_analysis:analysis"
-                : "enhanced_token_analysis:deep_analysis";
-
-            return `${namespace}:${this.popupAnalysis.mint}`;
-          },
-
           async exportPopupAnalysis() {
             if (!this.popupAnalysis) {
               this.showNotification(
@@ -953,16 +941,11 @@
                 "Creating professional DOCX document..."
               );
 
-              const cacheKey = this.getCacheKey();
-              if (!cacheKey) {
-                throw new Error("Unable to generate report cache key");
-              }
-
-              // Detect analysis type from popup data
+              const analysisId = this.popupAnalysis.id;
               const source = this.popupAnalysis.source_event;
 
               let response = await fetch(
-                `/document/${encodeURIComponent(cacheKey)}?source=${source}`
+                `/document/${encodeURIComponent(analysisId)}?source=${source}`
               );
 
               // If cache miss (404), backend runs fresh analysis automatically
@@ -974,7 +957,7 @@
                 );
                 await new Promise((resolve) => setTimeout(resolve, 5000));
                 response = await fetch(
-                  `/document/${encodeURIComponent(cacheKey)}?source=${source}`
+                  `/document/${encodeURIComponent(analysisId)}?source=${source}`
                 );
               }
 
