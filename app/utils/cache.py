@@ -151,7 +151,6 @@ class CacheManager:
             if deleted:
                 self._stats["deletes"] += 1
             
-            logger.debug(f"DELETE operation result for {key}: {deleted}")
             return deleted
             
         except Exception as e:

@@ -181,84 +181,120 @@ class AnalysisStorageService:
         return sources
 
     def _generate_searchable_content(self, doc_data: Dict[str, Any]) -> str:
-        """Generate searchable content for vector search with AI support"""
-        
-        # Build searchable content
-        content_parts = []
-        
-        # Token information
-        if doc_data.get("token_name") != "Unknown Token":
-            content_parts.append(f"Token: {doc_data['token_name']} ({doc_data['token_symbol']})")
-        
-        # Analysis type and AI enhancement
-        analysis_type = doc_data.get("analysis_type", "quick")
-        if doc_data.get("has_ai_analysis"):
-            content_parts.append(f"AI-Enhanced {analysis_type} analysis using Llama 3.0")
-        else:
-            content_parts.append(f"Traditional {analysis_type} analysis")
-        
-        # Analysis results
-        content_parts.append(f"Security status: {doc_data['security_status']}")
-        content_parts.append(f"Risk level: {doc_data['risk_level']}")
-        content_parts.append(f"Recommendation: {doc_data['recommendation']}")
-        content_parts.append(f"Overall score: {doc_data['overall_score']}")
-        
-        # AI-specific information
-        if doc_data.get("has_ai_analysis"):
-            ai_score = doc_data.get("ai_score", 0)
-            ai_recommendation = doc_data.get("ai_recommendation", "unknown")
-            content_parts.append(f"AI analysis score: {ai_score}")
-            content_parts.append(f"AI recommendation: {ai_recommendation}")
+        """Generate comprehensive searchable content for vector search"""
+        try:
+            content_parts = []
             
-            # AI stop flags
-            ai_stop_flags_count = doc_data.get("ai_stop_flags_count", 0)
-            if ai_stop_flags_count > 0:
-                content_parts.append(f"AI identified {ai_stop_flags_count} stop flags")
-        
-        # Security details
-        if doc_data['critical_issues_count'] > 0:
-            content_parts.append(f"Has {doc_data['critical_issues_count']} critical security issues")
-        if doc_data['warnings_count'] > 0:
-            content_parts.append(f"Has {doc_data['warnings_count']} security warnings")
-        
-        # Price information
-        if doc_data.get('price_usd', 0) > 0:
-            content_parts.append(f"Price: ${doc_data['price_usd']:.8f}")
-            if doc_data.get('price_change_24h', 0) != 0:
-                change_direction = "increased" if doc_data['price_change_24h'] > 0 else "decreased"
-                content_parts.append(f"Price {change_direction} {abs(doc_data['price_change_24h']):.2f}% in 24h")
-        
-        # Market data
-        if doc_data.get('volume_24h', 0) > 0:
-            if doc_data['volume_24h'] >= 1000000:
-                content_parts.append(f"High trading volume: ${doc_data['volume_24h']:,.0f}")
-            elif doc_data['volume_24h'] >= 10000:
-                content_parts.append(f"Moderate trading volume: ${doc_data['volume_24h']:,.0f}")
+            # Token information
+            token_info = doc_data.get("token_info", {})
+            if token_info.get("name") != "Unknown Token":
+                content_parts.append(f"Token: {token_info['name']} ({token_info['symbol']})")
+            
+            # Analysis type and AI enhancement
+            analysis_type = doc_data.get("analysis_type", "quick")
+            ai_analysis = doc_data.get("ai_analysis")
+            if ai_analysis and ai_analysis.get("available"):
+                content_parts.append(f"AI-Enhanced {analysis_type} analysis using {ai_analysis.get('model_used', 'Llama 3.0')}")
             else:
-                content_parts.append(f"Low trading volume: ${doc_data['volume_24h']:,.0f}")
-        
-        # Data sources
-        if doc_data.get('data_sources'):
-            content_parts.append(f"Data from: {', '.join(doc_data['data_sources'])}")
-        
-        # Analysis source and performance
-        content_parts.append(f"Analysis source: {doc_data['source_event']}")
-        
-        processing_time = doc_data.get('processing_time', 0)
-        ai_processing_time = doc_data.get('ai_processing_time', 0)
-        if ai_processing_time > 0:
-            content_parts.append(f"Processing time: {processing_time:.2f}s total ({ai_processing_time:.2f}s AI)")
-        else:
-            content_parts.append(f"Processing time: {processing_time:.2f}s")
-        
-        # Timestamp
-        dt = datetime.fromtimestamp(doc_data['timestamp_unix'])
-        content_parts.append(f"Analyzed on: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        return ". ".join(content_parts) + "."
+                content_parts.append(f"Traditional {analysis_type} analysis")
+            
+            # Analysis results
+            analysis_results = doc_data.get("analysis_results", {})
+            security_analysis = doc_data.get("security_analysis", {})
+            content_parts.append(f"Security status: {security_analysis.get('security_summary', 'unknown')}")
+            content_parts.append(f"Risk level: {analysis_results.get('risk_level', 'unknown')}")
+            content_parts.append(f"Recommendation: {analysis_results.get('recommendation', 'HOLD')}")
+            content_parts.append(f"Overall score: {analysis_results.get('overall_score', 0)}")
+            
+            # AI-specific information
+            if ai_analysis and ai_analysis.get("available"):
+                content_parts.append(f"AI analysis score: {ai_analysis.get('ai_score', 0)}")
+                content_parts.append(f"AI recommendation: {ai_analysis.get('recommendation', 'unknown')}")
+                
+                # AI insights
+                key_insights = ai_analysis.get("key_insights", [])
+                if key_insights:
+                    content_parts.append(f"AI insights: {'; '.join(key_insights[:3])}")
+                
+                # AI stop flags
+                stop_flags = ai_analysis.get("stop_flags", [])
+                if stop_flags:
+                    content_parts.append(f"AI identified {len(stop_flags)} stop flags")
+            
+            # Market metrics
+            metrics = doc_data.get("metrics", {})
+            if metrics.get("price_usd"):
+                content_parts.append(f"Price: ${metrics['price_usd']:.8f}")
+            if metrics.get("market_cap"):
+                content_parts.append(f"Market cap: ${metrics['market_cap']:,.0f}")
+            if metrics.get("volume_24h"):
+                volume_desc = "high" if metrics["volume_24h"] >= 100000 else "moderate" if metrics["volume_24h"] >= 10000 else "low"
+                content_parts.append(f"{volume_desc} trading volume: ${metrics['volume_24h']:,.0f}")
+            if metrics.get("liquidity"):
+                liq_desc = "excellent" if metrics["liquidity"] >= 500000 else "good" if metrics["liquidity"] >= 100000 else "moderate"
+                content_parts.append(f"{liq_desc} liquidity: ${metrics['liquidity']:,.0f}")
+            
+            # Enhanced metrics
+            whale_analysis = metrics.get("whale_analysis", {})
+            if whale_analysis.get("whale_count") is not None:
+                whale_count = whale_analysis["whale_count"]
+                if whale_count == 0:
+                    content_parts.append("Perfect token distribution - no whales")
+                else:
+                    control_pct = whale_analysis.get("whale_control_percent", 0)
+                    content_parts.append(f"Whale analysis: {whale_count} whales control {control_pct}%")
+            
+            volatility = metrics.get("volatility", {})
+            if volatility.get("recent_volatility_percent") is not None:
+                vol_pct = volatility["recent_volatility_percent"]
+                vol_desc = "low" if vol_pct <= 15 else "moderate" if vol_pct <= 30 else "high"
+                content_parts.append(f"{vol_desc} volatility: {vol_pct}%")
+            
+            sniper_detection = metrics.get("sniper_detection", {})
+            if sniper_detection.get("pattern_detected"):
+                content_parts.append(f"Sniper patterns detected: {sniper_detection.get('similar_holders', 0)} similar holders")
+            
+            # Security details
+            critical_count = len(security_analysis.get("critical_issues", []))
+            warning_count = len(security_analysis.get("warnings", []))
+            if critical_count > 0:
+                content_parts.append(f"Has {critical_count} critical security issues")
+            if warning_count > 0:
+                content_parts.append(f"Has {warning_count} security warnings")
+            
+            # Analysis summary and reasoning (ALWAYS AVAILABLE)
+            summary = analysis_results.get("summary", "")
+            if summary:
+                content_parts.append(f"Summary: {summary}")
+            
+            reasoning = analysis_results.get("reasoning", "")
+            if reasoning and len(reasoning) > 20:
+                content_parts.append(f"Analysis reasoning: {reasoning[:200]}...")
+            
+            # Data sources
+            data_sources_count = doc_data.get("metadata", {}).get("data_sources_count", 0)
+            content_parts.append(f"Data from {data_sources_count} sources")
+            
+            # Analysis performance
+            processing_time = doc_data.get("metadata", {}).get("processing_time_seconds", 0)
+            ai_processing_time = doc_data.get("metadata", {}).get("ai_processing_time", 0)
+            if ai_processing_time > 0:
+                content_parts.append(f"Processing time: {processing_time:.2f}s total ({ai_processing_time:.2f}s AI)")
+            else:
+                content_parts.append(f"Processing time: {processing_time:.2f}s")
+            
+            # Timestamp
+            dt = datetime.fromtimestamp(doc_data['timestamp_unix'])
+            content_parts.append(f"Analyzed on: {dt.strftime('%Y-%m-%d %H:%M:%S')}")
+            
+            return ". ".join(content_parts) + "."
+            
+        except Exception as e:
+            logger.warning(f"Error generating comprehensive searchable content: {e}")
+            return f"Token analysis for {doc_data.get('token_address', 'unknown')} completed."
         
     def _extract_analysis_data(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract key data from analysis result for storage with AI support"""
+        """Extract comprehensive data from analysis result for enhanced storage"""
         try:
             # Parse timestamp
             timestamp = analysis_result.get("timestamp")
@@ -269,143 +305,708 @@ class AnalysisStorageService:
                 dt = datetime.utcnow()
                 timestamp_unix = int(dt.timestamp())
             
-            # Extract token information
-            token_name = self._extract_token_name(analysis_result)
-            token_symbol = self._extract_token_symbol(analysis_result)
+            # === BASIC INFO ===
+            analysis_type = analysis_result.get("analysis_type", "quick")
+            is_deep_analysis = analysis_type == "deep"
             
-            # Extract price data
-            price_data = self._extract_price_data(analysis_result)
+            # === TOKEN INFO ===
+            token_info = self._extract_token_info(analysis_result)
             
-            # Extract security analysis
-            security_analysis = analysis_result.get("security_analysis", {})
-            security_status = "unknown"
-            if analysis_result.get("metadata", {}).get("analysis_stopped_at_security"):
-                security_status = "failed"
-            elif security_analysis.get("overall_safe"):
-                critical_issues = len(security_analysis.get("critical_issues", []))
-                warnings = len(security_analysis.get("warnings", []))
-                if critical_issues == 0:
-                    security_status = "passed" if warnings == 0 else "warning"
-                else:
-                    security_status = "failed"
+            # === COMPREHENSIVE METRICS (merged market_data + enhanced_metrics) ===
+            metrics = self._extract_comprehensive_metrics(analysis_result)
             
-            # Extract overall analysis
-            overall_analysis = analysis_result.get("overall_analysis", {})
+            # === SECURITY ANALYSIS ===
+            security_analysis_enhanced = self._extract_comprehensive_security(analysis_result)
             
-            # NEW: Extract AI analysis data
-            ai_analysis = analysis_result.get("ai_analysis", {})
-            has_ai_analysis = bool(ai_analysis)
+            # === AI ANALYSIS (null for quick analysis) ===
+            ai_analysis = None
+            if is_deep_analysis:
+                ai_analysis = self._extract_ai_analysis(analysis_result)
             
-            # Compile extracted data
-            doc_data = {
-                # Identity
+            # === ANALYSIS RESULTS (always available with summary/reasoning) ===
+            analysis_results = self._extract_analysis_results(analysis_result, is_deep_analysis)
+            
+            # === METADATA ===
+            metadata_enhanced = self._extract_analysis_metadata(analysis_result)
+            
+            # Compile comprehensive data structure
+            comprehensive_data = {
+                # === EXISTING FIELDS (keep for compatibility) ===
                 "analysis_id": analysis_result.get("analysis_id"),
                 "token_address": analysis_result.get("token_address"),
                 "timestamp": timestamp or dt.isoformat(),
                 "timestamp_unix": timestamp_unix,
                 "source_event": analysis_result.get("source_event", "unknown"),
-                "analysis_type": analysis_result.get("analysis_type", "quick"),
+                "analysis_type": analysis_type,
                 
-                # Core Results - safe extraction with defaults
-                "security_status": security_status,
-                "analysis_stopped_at_security": analysis_result.get("metadata", {}).get("analysis_stopped_at_security", False),
-                "overall_score": float(overall_analysis.get("score", 0)),
-                "risk_level": overall_analysis.get("risk_level", "unknown"),
-                "recommendation": ai_analysis.get("recommendation", "unknown") if has_ai_analysis else overall_analysis.get("recommendation", "unknown"),
-                "confidence_score": float(overall_analysis.get("confidence_score", 0)),
+                # === LEGACY FIELDS (for backward compatibility) ===
+                "token_name": token_info.get("name", "Unknown Token"),
+                "token_symbol": token_info.get("symbol", "N/A"),
+                "overall_score": float(analysis_results.get("overall_score", 0)),
+                "risk_level": analysis_results.get("risk_level", "unknown"),
+                "recommendation": analysis_results.get("recommendation", "HOLD"),
+                "confidence_score": float(analysis_results.get("confidence_score", 0)),
+                "security_status": "safe" if security_analysis_enhanced.get("overall_safe") else "unsafe",
+                "critical_issues_count": len(security_analysis_enhanced.get("critical_issues", [])),
+                "warnings_count": len(security_analysis_enhanced.get("warnings", [])),
+                "processing_time": float(metadata_enhanced.get("processing_time_seconds", 0.0)),
                 
-                # NEW: AI Analysis Results
-                "has_ai_analysis": has_ai_analysis,
-                "ai_score": float(ai_analysis.get("ai_score", 0)) if has_ai_analysis else 0,
-                "ai_risk_assessment": ai_analysis.get("risk_assessment", "unknown") if has_ai_analysis else "unknown",
-                "ai_recommendation": ai_analysis.get("recommendation", "unknown") if has_ai_analysis else "unknown",
-                "ai_confidence": float(ai_analysis.get("confidence", 0)) if has_ai_analysis else 0,
-                "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if has_ai_analysis else 0,
-                "ai_enhanced": overall_analysis.get("ai_enhanced", False),
-                "traditional_score": float(overall_analysis.get("traditional_score", overall_analysis.get("score", 0))),
+                # === NEW COMPREHENSIVE STRUCTURE ===
+                "token_info": token_info,
+                "metrics": metrics,  # Merged market_data + enhanced_metrics
+                "security_analysis": security_analysis_enhanced,
+                "ai_analysis": ai_analysis,  # null for quick analysis
+                "analysis_results": analysis_results,  # Always has summary/reasoning
+                "metadata": metadata_enhanced,
                 
-                # Token Info
-                "token_name": token_name,
-                "token_symbol": token_symbol,
-                
-                # Price Data (at time of analysis) - already safe from _extract_price_data
-                "price_usd": price_data.get("current_price", 0.0),
-                "price_change_24h": price_data.get("price_change_24h", 0.0),
-                "volume_24h": price_data.get("volume_24h", 0.0),
-                "market_cap": price_data.get("market_cap", 0.0),
-                "liquidity": price_data.get("liquidity", 0.0),
-                
-                # Security Summary
-                "security_score": self._calculate_security_score(security_analysis),
-                "critical_issues_count": len(security_analysis.get("critical_issues", [])),
-                "warnings_count": len(security_analysis.get("warnings", [])),
-                "security_sources": self._get_security_sources(security_analysis),
-                
-                # Analysis Metadata - safe extraction
+                # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
+                "price_usd": metrics.get("price_usd", 0.0),
+                "price_change_24h": metrics.get("price_change_24h", 0.0),
+                "volume_24h": metrics.get("volume_24h", 0.0),
+                "market_cap": metrics.get("market_cap", 0.0),
+                "liquidity": metrics.get("liquidity", 0.0),
+                "security_score": security_analysis_enhanced.get("security_score", 0),
                 "data_sources": analysis_result.get("data_sources", []),
-                "services_attempted": int(analysis_result.get("metadata", {}).get("services_attempted", 0)),
-                "services_successful": int(analysis_result.get("metadata", {}).get("services_successful", 0)),
-                "processing_time": float(analysis_result.get("metadata", {}).get("processing_time_seconds", 0.0)),
-                "ai_processing_time": float(ai_analysis.get("processing_time", 0.0)) if has_ai_analysis else 0.0,
+                "services_attempted": metadata_enhanced.get("services_attempted", 0),
+                "services_successful": metadata_enhanced.get("services_successful", 0),
+                "analysis_stopped_at_security": metadata_enhanced.get("analysis_stopped_at_security", False),
+                "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
+                "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis else 0,
+                "ai_recommendation": ai_analysis.get("recommendation") if ai_analysis else None,
+                "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if ai_analysis else 0,
                 
-                # Store full result for complex queries
+                # === FULL RESULT (for complex queries) ===
                 "full_analysis_json": json.dumps(analysis_result, default=str)
             }
             
-            return doc_data
+            return comprehensive_data
             
         except Exception as e:
-            logger.error(f"Error extracting analysis data: {str(e)}")
+            logger.error(f"Error extracting comprehensive analysis data: {str(e)}")
             return None
     
-    def _generate_metadata(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate metadata for filtering and exact searches"""
+    def _extract_token_info(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract comprehensive token metadata"""
+        try:
+            service_responses = analysis_result.get("service_responses", {})
+            
+            # Use existing methods but enhance with more fields
+            token_name = self._extract_token_name(analysis_result)
+            token_symbol = self._extract_token_symbol(analysis_result)
+            
+            # Extract total supply
+            total_supply = None
+            helius_supply = service_responses.get("helius", {}).get("supply", {})
+            if helius_supply and helius_supply.get("ui_amount"):
+                try:
+                    total_supply = float(helius_supply["ui_amount"])
+                except (ValueError, TypeError):
+                    pass
+            
+            # Extract dev holdings
+            dev_holdings_percent = None
+            rugcheck_data = service_responses.get("rugcheck", {})
+            if rugcheck_data and rugcheck_data.get("creator_analysis") and total_supply:
+                try:
+                    creator_balance = float(rugcheck_data["creator_analysis"].get("creator_balance") or 0)
+                    if creator_balance > 0:
+                        dev_holdings_percent = (creator_balance / total_supply) * 100
+                except (ValueError, TypeError):
+                    pass
+            
+            # Extract holder count
+            holder_count = None
+            goplus_data = service_responses.get("goplus", {})
+            if goplus_data:
+                holder_fields = ["holder_count", "holders_count", "holderCount", "totalHolders"]
+                for field in holder_fields:
+                    raw_count = goplus_data.get(field)
+                    if raw_count is not None:
+                        try:
+                            if isinstance(raw_count, str):
+                                clean = raw_count.replace(",", "").replace(" ", "").lower()
+                                if "k" in clean:
+                                    number_part = clean.replace("k", "")
+                                    holder_count = int(float(number_part) * 1000)
+                                else:
+                                    holder_count = int(clean) if clean.isdigit() else None
+                            elif isinstance(raw_count, (int, float)):
+                                holder_count = int(raw_count)
+                            
+                            if holder_count is not None and holder_count > 0:
+                                break
+                        except Exception:
+                            continue
+            
+            return {
+                "name": token_name,
+                "symbol": token_symbol,
+                "total_supply": total_supply,
+                "dev_holdings_percent": dev_holdings_percent,
+                "holder_count": holder_count,
+                "metadata_completeness": bool(token_name != "Unknown Token" and token_symbol != "N/A")
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting enhanced token info: {e}")
+            return {
+                "name": "Unknown Token",
+                "symbol": "N/A",
+                "total_supply": None,
+                "dev_holdings_percent": None,
+                "holder_count": None,
+                "metadata_completeness": False
+            }
         
-        dt = datetime.fromtimestamp(doc_data['timestamp_unix'])
+    
+    def _extract_comprehensive_metrics(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract comprehensive market and enhanced metrics"""
+        try:
+            service_responses = analysis_result.get("service_responses", {})
+            overall_analysis = analysis_result.get("overall_analysis", {})
+            
+            # === MARKET FUNDAMENTALS ===
+            # Use existing price data extraction but enhance it
+            price_data = self._extract_price_data(analysis_result)
+            
+            # Calculate volume/liquidity ratio
+            volume_liquidity_ratio = None
+            if price_data.get("volume_24h") and price_data.get("liquidity"):
+                if price_data["volume_24h"] > 0 and price_data["liquidity"] > 0:
+                    volume_liquidity_ratio = (price_data["volume_24h"] / price_data["liquidity"]) * 100
+            
+            # Data completeness
+            market_metrics = [
+                price_data.get("current_price"),
+                price_data.get("price_change_24h"), 
+                price_data.get("volume_24h"),
+                price_data.get("market_cap"),
+                price_data.get("liquidity")
+            ]
+            data_completeness_percent = (sum(1 for m in market_metrics if m is not None) / len(market_metrics)) * 100
+            
+            # === ENHANCED METRICS ===
+            volatility_data = self._extract_volatility_data(overall_analysis)
+            whale_data = self._extract_whale_data(overall_analysis)
+            sniper_data = self._extract_sniper_data(overall_analysis)
+            
+            return {
+                # Market fundamentals
+                "price_usd": price_data.get("current_price"),
+                "price_change_24h": price_data.get("price_change_24h"),
+                "volume_24h": price_data.get("volume_24h"),
+                "market_cap": price_data.get("market_cap"),
+                "liquidity": price_data.get("liquidity"),
+                "volume_liquidity_ratio": volume_liquidity_ratio,
+                "data_completeness_percent": round(data_completeness_percent, 1),
+                
+                # Enhanced metrics
+                "volatility": volatility_data,
+                "whale_analysis": whale_data,
+                "sniper_detection": sniper_data
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting comprehensive metrics: {e}")
+            return self._get_empty_metrics()
+        
+    def _extract_volatility_data(self, overall_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract volatility analysis data"""
+        volatility_analysis = overall_analysis.get("volatility", {})
+        if volatility_analysis:
+            return {
+                "recent_volatility_percent": volatility_analysis.get("recent_volatility_percent"),
+                "volatility_risk": volatility_analysis.get("volatility_risk", "unknown"),
+                "trades_analyzed": volatility_analysis.get("trades_analyzed", 0)
+            }
+        return {
+            "recent_volatility_percent": None,
+            "volatility_risk": "unknown",
+            "trades_analyzed": 0
+        }
+
+    def _extract_whale_data(self, overall_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract whale analysis data"""
+        whale_analysis = overall_analysis.get("whale_analysis", {})
+        if whale_analysis:
+            return {
+                "whale_count": whale_analysis.get("whale_count", 0),
+                "whale_control_percent": whale_analysis.get("whale_control_percent", 0.0),
+                "top_whale_percent": whale_analysis.get("top_whale_percent", 0.0),
+                "whale_risk_level": whale_analysis.get("whale_risk_level", "unknown"),
+                "distribution_quality": self._assess_distribution_quality(whale_analysis)
+            }
+        return {
+            "whale_count": 0,
+            "whale_control_percent": 0.0,
+            "top_whale_percent": 0.0,
+            "whale_risk_level": "unknown",
+            "distribution_quality": "unknown"
+        }
+
+    def _extract_sniper_data(self, overall_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract sniper detection data"""
+        sniper_detection = overall_analysis.get("sniper_detection", {})
+        if sniper_detection:
+            return {
+                "similar_holders": sniper_detection.get("similar_holders", 0),
+                "pattern_detected": sniper_detection.get("pattern_detected", False),
+                "sniper_risk": sniper_detection.get("sniper_risk", "unknown"),
+                "bot_likelihood": self._assess_bot_likelihood(sniper_detection)
+            }
+        return {
+            "similar_holders": 0,
+            "pattern_detected": False,
+            "sniper_risk": "unknown",
+            "bot_likelihood": "unknown"
+        }
+
+    def _generate_metadata(self, doc_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive metadata for filtering and exact searches"""
+        try:
+            dt = datetime.fromtimestamp(doc_data['timestamp_unix'])
+            token_info = doc_data.get("token_info", {})
+            metrics = doc_data.get("metrics", {})
+            security_analysis = doc_data.get("security_analysis", {})
+            ai_analysis = doc_data.get("ai_analysis")
+            analysis_results = doc_data.get("analysis_results", {})
+            metadata = doc_data.get("metadata", {})
+            
+            return {
+                # === CORE IDENTIFIERS ===
+                "doc_type": "token_analysis",
+                "analysis_id": doc_data.get("analysis_id") or "unknown",
+                "token_address": doc_data.get("token_address") or "unknown",
+                "token_name": token_info.get("name") or "unknown",
+                "token_symbol": token_info.get("symbol") or "unknown",
+                
+                # === ANALYSIS RESULTS ===
+                "security_status": "safe" if security_analysis.get("overall_safe") else "unsafe",
+                "risk_level": analysis_results.get("risk_level") or "unknown",
+                "recommendation": analysis_results.get("recommendation") or "HOLD",
+                "analysis_stopped_at_security": bool(metadata.get("analysis_stopped_at_security", False)),
+                "analysis_type": doc_data.get("analysis_type") or "quick",
+                
+                # === SCORES ===
+                "overall_score": float(analysis_results.get("overall_score") or 0),
+                "security_score": int(security_analysis.get("security_score") or 0),
+                "confidence_score": float(analysis_results.get("confidence_score") or 0),
+                "ai_score": float(ai_analysis.get("ai_score") or 0) if ai_analysis else 0.0,
+                
+                # === MARKET DATA RANGES ===
+                "price_range": self._get_price_range(metrics.get("price_usd")),
+                "volume_range": self._get_volume_range(metrics.get("volume_24h")),
+                "market_cap_range": self._get_market_cap_range(metrics.get("market_cap")),
+                "liquidity_range": self._get_liquidity_range(metrics.get("liquidity")),
+                
+                # === RISK METRICS ===
+                "volatility_risk": metrics.get("volatility", {}).get("volatility_risk") or "unknown",
+                "whale_risk": metrics.get("whale_analysis", {}).get("whale_risk_level") or "unknown",
+                "sniper_risk": metrics.get("sniper_detection", {}).get("sniper_risk") or "unknown",
+                "whale_count": int(metrics.get("whale_analysis", {}).get("whale_count") or 0),
+                "whale_control_percent": float(metrics.get("whale_analysis", {}).get("whale_control_percent") or 0),
+                
+                # === SECURITY FLAGS ===
+                "critical_issues_count": len(security_analysis.get("critical_issues") or []),
+                "warnings_count": len(security_analysis.get("warnings") or []),
+                "mint_authority_active": bool(security_analysis.get("authority_risks", {}).get("mint_authority_active", False)),
+                "freeze_authority_active": bool(security_analysis.get("authority_risks", {}).get("freeze_authority_active", False)),
+                "lp_status": security_analysis.get("lp_security", {}).get("status") or "unknown",
+                
+                # === AI ANALYSIS FLAGS ===
+                "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
+                "ai_risk_assessment": ai_analysis.get("risk_assessment") or "unknown" if ai_analysis else "unknown",
+                "ai_stop_flags_count": len(ai_analysis.get("stop_flags") or []) if ai_analysis else 0,
+                
+                # === TOKEN METADATA ===
+                "holder_count": int(token_info.get("holder_count") or 0),
+                "dev_holdings_percent": float(token_info.get("dev_holdings_percent") or 0),
+                "total_supply": float(token_info.get("total_supply") or 0),
+                
+                # === TIME-BASED FILTERING ===
+                "analysis_date": dt.strftime("%Y-%m-%d"),
+                "analysis_year": str(dt.year),
+                "analysis_month": dt.strftime("%Y-%m"),
+                "timestamp_unix": int(doc_data["timestamp_unix"]),
+                
+                # === SOURCE AND PERFORMANCE ===
+                "source_event": doc_data.get("source_event") or "unknown",
+                "processing_time": float(metadata.get("processing_time_seconds") or 0),
+                "ai_processing_time": float(metadata.get("ai_processing_time") or 0),
+                "services_successful": int(metadata.get("services_successful") or 0),
+                "data_completeness": float(metrics.get("data_completeness_percent") or 0),
+                
+                # === SECURITY SOURCES ===
+                "has_goplus": "goplus" in (security_analysis.get("security_sources") or []),
+                "has_rugcheck": "rugcheck" in (security_analysis.get("security_sources") or []),
+                "has_solsniffer": "solsniffer" in (security_analysis.get("security_sources") or [])
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error generating metadata: {e}")
+            return {
+                "doc_type": "token_analysis", 
+                "error": "metadata_extraction_failed",
+                "token_address": doc_data.get("token_address") or "unknown",
+                "analysis_type": doc_data.get("analysis_type") or "quick",
+                "timestamp_unix": int(doc_data.get("timestamp_unix") or 0)
+            }
+    
+    def _extract_comprehensive_security(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract comprehensive security analysis"""
+        try:
+            security_analysis = analysis_result.get("security_analysis", {})
+            service_responses = analysis_result.get("service_responses", {})
+            
+            # Basic security status
+            overall_safe = security_analysis.get("overall_safe", False)
+            critical_issues = security_analysis.get("critical_issues", [])
+            warnings = security_analysis.get("warnings", [])
+            
+            # Calculate security score (enhanced version)
+            security_score = self._calculate_comprehensive_security_score(security_analysis, analysis_result)
+            
+            # Authority risks from GOplus
+            authority_risks = self._extract_authority_risks(service_responses.get("goplus", {}))
+            
+            # LP security analysis
+            lp_security = self._extract_lp_security(service_responses.get("rugcheck", {}))
+            
+            # Security sources (reuse existing method)
+            security_sources = self._get_security_sources(security_analysis)
+            
+            # Security summary
+            security_summary = self._generate_security_summary(overall_safe, critical_issues, warnings)
+            
+            return {
+                "overall_safe": overall_safe,
+                "security_score": security_score,
+                "critical_issues": critical_issues,
+                "warnings": warnings,
+                "authority_risks": authority_risks,
+                "lp_security": lp_security,
+                "security_sources": security_sources,
+                "security_summary": security_summary
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting comprehensive security analysis: {e}")
+            return self._get_empty_security()
+        
+    def _extract_authority_risks(self, goplus_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract authority risks from GOplus data"""
+        mintable = goplus_data.get("mintable", {})
+        freezable = goplus_data.get("freezable", {})
+        balance_mutable = goplus_data.get("balance_mutable_authority", {})
         
         return {
-            # Core identifiers
-            "doc_type": "token_analysis",
-            "analysis_id": doc_data["analysis_id"],
-            "token_address": doc_data["token_address"],
-            "token_symbol": doc_data["token_symbol"],
-            
-            # Analysis results (for filtering)
-            "security_status": doc_data["security_status"],
-            "risk_level": doc_data["risk_level"],
-            "recommendation": doc_data["recommendation"],
-            "analysis_stopped_at_security": doc_data["analysis_stopped_at_security"],
-            
-            # Scores (for range queries)
-            "overall_score": float(doc_data["overall_score"]),
-            "security_score": float(doc_data["security_score"]),
-            "confidence_score": float(doc_data["confidence_score"]),
-            
-            # Counts
-            "critical_issues_count": int(doc_data["critical_issues_count"]),
-            "warnings_count": int(doc_data["warnings_count"]),
-            
-            # Time-based filtering
-            "analysis_date": dt.strftime("%Y-%m-%d"),
-            "analysis_year": str(dt.year),
-            "analysis_month": dt.strftime("%Y-%m"),
-            "timestamp_unix": int(doc_data["timestamp_unix"]),
-            
-            # Source and performance
-            "source_event": doc_data["source_event"],
-            "processing_time": float(doc_data["processing_time"]),
-            "services_successful": int(doc_data["services_successful"]),
-            
-            # Market data ranges (for filtering)
-            "price_range": self._get_price_range(doc_data.get("price_usd", 0)),
-            "volume_range": self._get_volume_range(doc_data.get("volume_24h", 0)),
-            
-            # Security sources
-            "has_goplus": "goplus" in doc_data.get("security_sources", []),
-            "has_rugcheck": "rugcheck" in doc_data.get("security_sources", []),
-            "has_solsniffer": "solsniffer" in doc_data.get("security_sources", [])
+            "mint_authority_active": isinstance(mintable, dict) and mintable.get("status") == "1",
+            "freeze_authority_active": isinstance(freezable, dict) and freezable.get("status") == "1",
+            "balance_mutable": isinstance(balance_mutable, dict) and balance_mutable.get("status") == "1"
         }
-    
+
+    def _extract_lp_security(self, rugcheck_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract LP security analysis from RugCheck data"""
+        try:
+            # Check for locked liquidity
+            lockers_data = rugcheck_data.get("lockers_data", {})
+            locked_value_usd = 0.0
+            lp_status = "unknown"
+            confidence = 0
+            evidence = []
+            
+            if lockers_data and lockers_data.get("lockers"):
+                lockers = lockers_data.get("lockers", {})
+                if isinstance(lockers, dict):
+                    for locker_id, locker_info in lockers.items():
+                        if isinstance(locker_info, dict):
+                            usd_locked = locker_info.get("usdcLocked", 0)
+                            if isinstance(usd_locked, (int, float)) and usd_locked > 0:
+                                locked_value_usd += usd_locked
+                    
+                    if locked_value_usd > 1000:
+                        lp_status = "locked"
+                        confidence = 90
+                        evidence.append(f"${locked_value_usd:,.0f} locked in Raydium lockers")
+            
+            # Check for burn patterns if not locked
+            if lp_status == "unknown":
+                markets = rugcheck_data.get("market_analysis", {}).get("markets", [])
+                for market in markets:
+                    if isinstance(market, dict) and market.get("lp"):
+                        holders = market["lp"].get("holders", [])
+                        for holder in holders:
+                            if isinstance(holder, dict):
+                                owner = str(holder.get("owner", ""))
+                                pct = holder.get("pct", 0)
+                                
+                                burn_patterns = ["111111", "dead", "burn", "lock"]
+                                if any(pattern in owner.lower() for pattern in burn_patterns) and pct > 50:
+                                    lp_status = "burned"
+                                    confidence = 85
+                                    evidence.append(f"{pct:.1f}% in burn address")
+                                    break
+            
+            return {
+                "status": lp_status,
+                "confidence": confidence,
+                "evidence": evidence,
+                "locked_value_usd": locked_value_usd
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting LP security: {e}")
+            return {
+                "status": "unknown",
+                "confidence": 0,
+                "evidence": [],
+                "locked_value_usd": 0.0
+            }
+
+    def _calculate_comprehensive_security_score(self, security_analysis: Dict[str, Any], analysis_result: Dict[str, Any]) -> int:
+        """Calculate comprehensive security score"""
+        try:
+            # Start with base score
+            score = 100
+            
+            # Critical penalty for stopped analysis
+            if analysis_result.get("metadata", {}).get("analysis_stopped_at_security"):
+                return max(5, 20 - len(security_analysis.get("critical_issues") or []) * 5)
+            
+            # Deduct for critical issues
+            critical_count = len(security_analysis.get("critical_issues") or [])
+            score -= critical_count * 30
+            
+            # Deduct for warnings (graduated)
+            warning_count = len(security_analysis.get("warnings") or [])
+            for i in range(warning_count):
+                score -= (10 + i * 5)  # 10, 15, 20, 25...
+            
+            # Bonus for multiple security sources
+            sources_count = len(self._get_security_sources(security_analysis))
+            if sources_count >= 2:
+                score += 5
+            
+            return max(0, min(100, score))
+            
+        except Exception:
+            return 50
+
+    def _generate_security_summary(self, overall_safe: bool, critical_issues: List[str], warnings: List[str]) -> str:
+        """Generate brief security summary"""
+        if not overall_safe:
+            critical_count = len(critical_issues)
+            if critical_count > 0:
+                return f"UNSAFE: {critical_count} critical security issue{'s' if critical_count > 1 else ''} detected"
+            else:
+                return "UNSAFE: Security verification failed"
+        
+        warning_count = len(warnings)
+        if warning_count == 0:
+            return "SECURE: All security checks passed"
+        else:
+            return f"SECURE with {warning_count} warning{'s' if warning_count > 1 else ''}"
+        
+    def _extract_ai_analysis(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract AI analysis data"""
+        try:
+            ai_analysis = analysis_result.get("ai_analysis")
+            if not ai_analysis:
+                return None
+            
+            return {
+                "available": True,
+                "ai_score": float(ai_analysis.get("ai_score") or 0),
+                "risk_assessment": ai_analysis.get("risk_assessment") or "unknown",
+                "recommendation": ai_analysis.get("recommendation") or "HOLD",
+                "confidence": float(ai_analysis.get("confidence") or 0),
+                "key_insights": ai_analysis.get("key_insights") or [],
+                "risk_factors": ai_analysis.get("risk_factors") or [],
+                "stop_flags": ai_analysis.get("stop_flags") or [],
+                "market_risk_breakdown": ai_analysis.get("market_metrics") or {},
+                "reasoning": ai_analysis.get("llama_reasoning") or "",
+                "model_used": ai_analysis.get("model_used") or "llama-3.3-70b-versatile",
+                "processing_time": float(ai_analysis.get("processing_time") or 0)
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting AI analysis: {e}")
+            return None
+
+    def _extract_analysis_results(self, analysis_result: Dict[str, Any], is_deep_analysis: bool) -> Dict[str, Any]:
+        """Extract analysis results"""
+        try:
+            overall_analysis = analysis_result.get("overall_analysis", {})
+            ai_analysis = analysis_result.get("ai_analysis", {}) if is_deep_analysis else {}
+            
+            # Basic results
+            overall_score = float(overall_analysis.get("score") or 0)
+            traditional_score = float(overall_analysis.get("traditional_score") or overall_score)
+            risk_level = overall_analysis.get("risk_level") or "unknown"
+            recommendation = overall_analysis.get("recommendation") or "HOLD"
+            confidence_score = float(overall_analysis.get("confidence_score") or 0)
+            
+            # Signals and factors
+            positive_signals = overall_analysis.get("positive_signals") or []
+            risk_factors = overall_analysis.get("risk_factors") or []
+            
+            # Verdict
+            verdict = overall_analysis.get("verdict", {})
+            if not verdict:
+                verdict = {"decision": "WATCH", "reasoning": f"Score-based assessment ({overall_score}/100)"}
+            
+            # Summary and reasoning (ALWAYS AVAILABLE)
+            summary = overall_analysis.get("summary")
+            if not summary:
+                summary = f"Analysis completed: {overall_score}/100 score from {len(analysis_result.get('service_responses', {}))} sources"
+            
+            # Reasoning: AI-enhanced for deep, traditional for quick
+            reasoning = overall_analysis.get("reasoning")
+            if not reasoning:
+                if is_deep_analysis and ai_analysis.get("llama_reasoning"):
+                    reasoning = ai_analysis["llama_reasoning"]
+                else:
+                    reasoning = self._generate_traditional_reasoning(overall_analysis, analysis_result)
+            
+            # Score breakdown
+            score_breakdown = overall_analysis.get("score_breakdown", {
+                "security_weight": 0.6,
+                "market_weight": 0.4,
+                "ai_weight": 0.0 if not is_deep_analysis else 0.4,
+                "enhancement_applied": is_deep_analysis
+            })
+            
+            return {
+                "overall_score": overall_score,
+                "traditional_score": traditional_score,
+                "risk_level": risk_level,
+                "recommendation": recommendation,
+                "confidence_score": confidence_score,
+                "positive_signals": positive_signals,
+                "risk_factors": risk_factors,
+                "verdict": verdict,
+                "summary": summary,
+                "reasoning": reasoning,
+                "score_breakdown": score_breakdown
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting analysis results: {e}")
+            return self._get_empty_analysis_results()
+        
+    def _extract_analysis_metadata(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract enhanced analysis metadata"""
+        try:
+            metadata = analysis_result.get("metadata", {})
+            ai_analysis = analysis_result.get("ai_analysis", {})
+            
+            return {
+                "processing_time_seconds": float(metadata.get("processing_time_seconds") or 0),
+                "ai_processing_time": float(ai_analysis.get("processing_time") or 0),
+                "data_sources_count": len(analysis_result.get("data_sources") or []),
+                "services_attempted": int(metadata.get("services_attempted") or 0),
+                "services_successful": int(metadata.get("services_successful") or 0),
+                "security_check_passed": bool(metadata.get("security_check_passed", False)),
+                "analysis_stopped_at_security": bool(metadata.get("analysis_stopped_at_security", False)),
+                "ai_analysis_completed": bool(metadata.get("ai_analysis_completed", False)),
+                "cache_available": bool(analysis_result.get("docx_cache_key"))
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting analysis metadata: {e}")
+            return {
+                "processing_time_seconds": 0.0,
+                "ai_processing_time": 0.0,
+                "data_sources_count": 0,
+                "services_attempted": 0,
+                "services_successful": 0,
+                "security_check_passed": False,
+                "analysis_stopped_at_security": False,
+                "ai_analysis_completed": False,
+                "cache_available": False
+            }
+        
+    def _generate_traditional_reasoning(self, overall_analysis: Dict[str, Any], analysis_result: Dict[str, Any]) -> str:
+        """Generate traditional reasoning for quick analysis"""
+        try:
+            reasoning_parts = []
+            
+            # Score component
+            score = overall_analysis.get("score", 0)
+            reasoning_parts.append(f"Analysis score: {score}/100")
+            
+            # Security status
+            security_safe = analysis_result.get("security_analysis", {}).get("overall_safe", False)
+            if security_safe:
+                reasoning_parts.append("Security verification passed")
+            else:
+                reasoning_parts.append("Security concerns identified")
+            
+            # Key metrics
+            whale_analysis = overall_analysis.get("whale_analysis", {})
+            if whale_analysis.get("whale_count") == 0:
+                reasoning_parts.append("Perfect token distribution")
+            elif whale_analysis.get("whale_control_percent", 0) > 50:
+                reasoning_parts.append("High whale concentration risk")
+            
+            # Data quality
+            sources_count = len(analysis_result.get("data_sources", []))
+            reasoning_parts.append(f"Analysis based on {sources_count} data sources")
+            
+            return ". ".join(reasoning_parts[:4]) + "."
+            
+        except Exception as e:
+            logger.warning(f"Error generating traditional reasoning: {e}")
+            return "Traditional analysis completed with available market data."
+        
+    def _safe_float(self, value, default=None):
+        """Safely convert value to float"""
+        try:
+            if value is None:
+                return default
+            return float(value)
+        except (ValueError, TypeError):
+            return default
+        
+    def _safe_metadata_value(self, value, default_type="str"):
+        """Ensure metadata values are ChromaDB-compatible (no None values)"""
+        if value is None:
+            if default_type == "str":
+                return "unknown"
+            elif default_type == "int":
+                return 0
+            elif default_type == "float":
+                return 0.0
+            elif default_type == "bool":
+                return False
+        return value
+
+    def _assess_distribution_quality(self, whale_analysis: Dict[str, Any]) -> str:
+        """Assess token distribution quality"""
+        whale_count = whale_analysis.get("whale_count", 0)
+        whale_control = whale_analysis.get("whale_control_percent", 0)
+        
+        if whale_count == 0:
+            return "excellent"
+        elif whale_control <= 20:
+            return "good"
+        elif whale_control <= 50:
+            return "moderate"
+        else:
+            return "poor"
+
+    def _assess_bot_likelihood(self, sniper_detection: Dict[str, Any]) -> str:
+        """Assess bot activity likelihood"""
+        similar_holders = sniper_detection.get("similar_holders", 0)
+        pattern_detected = sniper_detection.get("pattern_detected", False)
+        
+        if not pattern_detected or similar_holders <= 2:
+            return "low"
+        elif similar_holders <= 8:
+            return "moderate"
+        else:
+            return "high"
+
     def _get_price_range(self, price) -> str:
         """Categorize price into ranges for filtering"""
         try:
@@ -415,22 +1016,22 @@ class AnalysisStorageService:
             if price_float <= 0:
                 return "unknown"
             elif price_float < 0.000001:
-                return "micro"  # < $0.000001
+                return "micro"
             elif price_float < 0.0001:
-                return "nano"   # < $0.0001
+                return "nano"
             elif price_float < 0.01:
-                return "small"  # < $0.01
+                return "small"
             elif price_float < 1.0:
-                return "medium" # < $1.00
+                return "medium"
             elif price_float < 100.0:
-                return "large"  # < $100
+                return "large"
             else:
-                return "huge"   # >= $100
+                return "huge"
         except (ValueError, TypeError):
             return "unknown"
-    
+
     def _get_volume_range(self, volume) -> str:
-        """Categorize volume into ranges for filtering"""
+        """Categorize volume into ranges for filtering """
         try:
             if volume is None or volume == 0:
                 return "none"
@@ -438,15 +1039,57 @@ class AnalysisStorageService:
             if volume_float <= 0:
                 return "none"
             elif volume_float < 1000:
-                return "very_low"    # < $1K
+                return "very_low"
             elif volume_float < 10000:
-                return "low"         # < $10K
+                return "low"
             elif volume_float < 100000:
-                return "medium"      # < $100K
+                return "medium"
             elif volume_float < 1000000:
-                return "high"        # < $1M
+                return "high"
             else:
-                return "very_high"   # >= $1M
+                return "very_high"
+        except (ValueError, TypeError):
+            return "none"
+
+    def _get_market_cap_range(self, market_cap) -> str:
+        """Categorize market cap into ranges"""
+        try:
+            if market_cap is None or market_cap == 0:
+                return "unknown"
+            mc_float = float(market_cap)
+            if mc_float <= 0:
+                return "unknown"
+            elif mc_float < 100000:
+                return "micro"  # < $100K
+            elif mc_float < 1000000:
+                return "small"  # < $1M
+            elif mc_float < 10000000:
+                return "medium" # < $10M
+            elif mc_float < 100000000:
+                return "large"  # < $100M
+            else:
+                return "mega"   # >= $100M
+        except (ValueError, TypeError):
+            return "unknown"
+
+    def _get_liquidity_range(self, liquidity) -> str:
+        """Categorize liquidity into ranges"""
+        try:
+            if liquidity is None or liquidity == 0:
+                return "none"
+            liq_float = float(liquidity)
+            if liq_float <= 0:
+                return "none"
+            elif liq_float < 10000:
+                return "very_low"   # < $10K
+            elif liq_float < 50000:
+                return "low"        # < $50K
+            elif liq_float < 100000:
+                return "medium"     # < $100K
+            elif liq_float < 500000:
+                return "high"       # < $500K
+            else:
+                return "very_high"  # >= $500K
         except (ValueError, TypeError):
             return "none"
     
@@ -727,6 +1370,79 @@ class AnalysisStorageService:
         except Exception as e:
             logger.warning(f"Error formatting timestamp {timestamp}: {str(e)}")
             return "Unknown"
+        
+    def _get_empty_metrics(self) -> Dict[str, Any]:
+        """Return empty metrics structure"""
+        return {
+            "price_usd": None,
+            "price_change_24h": None,
+            "volume_24h": None,
+            "market_cap": None,
+            "liquidity": None,
+            "volume_liquidity_ratio": None,
+            "data_completeness_percent": 0.0,
+            "volatility": {
+                "recent_volatility_percent": None,
+                "volatility_risk": "unknown",
+                "trades_analyzed": 0
+            },
+            "whale_analysis": {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "whale_risk_level": "unknown",
+                "distribution_quality": "unknown"
+            },
+            "sniper_detection": {
+                "similar_holders": 0,
+                "pattern_detected": False,
+                "sniper_risk": "unknown",
+                "bot_likelihood": "unknown"
+            }
+        }
+
+    def _get_empty_security(self) -> Dict[str, Any]:
+        """Return empty security structure"""
+        return {
+            "overall_safe": False,
+            "security_score": 0,
+            "critical_issues": [],
+            "warnings": [],
+            "authority_risks": {
+                "mint_authority_active": False,
+                "freeze_authority_active": False,
+                "balance_mutable": False
+            },
+            "lp_security": {
+                "status": "unknown",
+                "confidence": 0,
+                "evidence": [],
+                "locked_value_usd": 0.0
+            },
+            "security_sources": [],
+            "security_summary": "Security analysis unavailable"
+        }
+
+    def _get_empty_analysis_results(self) -> Dict[str, Any]:
+        """Return empty analysis results structure"""
+        return {
+            "overall_score": 0.0,
+            "traditional_score": 0.0,
+            "risk_level": "unknown",
+            "recommendation": "HOLD",
+            "confidence_score": 0.0,
+            "positive_signals": [],
+            "risk_factors": [],
+            "verdict": {"decision": "WATCH", "reasoning": "Analysis data unavailable"},
+            "summary": "Analysis completed with limited data",
+            "reasoning": "Traditional analysis completed with available data.",
+            "score_breakdown": {
+                "security_weight": 0.6,
+                "market_weight": 0.4,
+                "ai_weight": 0.0,
+                "enhancement_applied": False
+            }
+        }
 
 
 # Global instance
