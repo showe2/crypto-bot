@@ -21,6 +21,7 @@ from app.routers import webhooks
 from app.routers import alex_ingest  # Add this import
 from app.utils.health import health_check_all_services
 from app.routers.api_router import router as api_router
+from app.routers.analysis_runs import router as analysis_runs_router
 from app.services.service_manager import initialize_api_services, cleanup_api_services
 
 # Global settings
@@ -298,7 +299,8 @@ app.include_router(
     tags=["webhooks"]
 )
 
-app.include_router(alex_ingest.router)  # Add this line
+app.include_router(alex_ingest.router)
+app.include_router(analysis_runs_router, prefix="/api", tags=["Analysis Profiles"])
 
 # Health check endpoints (keep original simple ones)
 @app.get("/health", summary="System health check")
