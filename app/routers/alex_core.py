@@ -7,6 +7,7 @@ from loguru import logger
 from datetime import datetime
 import time
 import io
+import json
 
 from app.core.config import get_settings
 from app.core.dependencies import rate_limit_per_ip
@@ -794,25 +795,74 @@ async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: di
                 status = "critical_issues"
             elif metadata.get("warnings_count", 0) > 0:
                 status = "warnings"
+
+            try:
+                critical_issues_list = json.loads(metadata.get("critical_issues_list", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                critical_issues_list = []
+
+            try:
+                warnings_list = json.loads(metadata.get("warnings_list", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                warnings_list = []
+
+            if metadata.get("warnings_count", 0) > 0 and metadata.get("critical_issues_count", 0) == 0:
+                security_status = "warning" 
+            else:
+                security_status = metadata.get("security_status", "unknown")
             
             analysis = {
+                # Basic identifiers
                 "id": metadata.get("analysis_id", "unknown"),
-                "analysis_id": metadata.get("analysis_id", "unknown"),  # Add both for compatibility
-                "token_address": metadata.get("token_address", ""),
-                "token_name": metadata.get("token_name", "Unknown Token"),
                 "token_symbol": metadata.get("token_symbol", "N/A"),
-                "mint": metadata.get("token_address", ""),
-                "timestamp": metadata.get("timestamp_unix", 0),
+                "token_name": metadata.get("token_name", "Unknown Token"),
+                "token_address": metadata.get("token_address"),
+                "mint": metadata.get("token_address"),  # For backward compatibility
+                "status": status,
+                
+                # Keep NEW schema field names (don't convert)
+                "security_status": security_status,  # Keep as "safe"/"unsafe"/"warning"
+                "critical_issues_count": metadata.get("critical_issues_count", 0),  # Keep new name
+                "warnings_count": metadata.get("warnings_count", 0),  # Keep new name
+                "critical_issues_list": critical_issues_list,
+                "warnings_list": warnings_list,
+                
+                # All the new fields your popup expects
+                "has_ai_analysis": metadata.get("has_ai_analysis", False),
+                "ai_score": metadata.get("ai_score", 0),
+                "ai_recommendation": metadata.get("ai_recommendation"),
+                "ai_risk_assessment": metadata.get("ai_risk_assessment", "unknown"),
+                "ai_stop_flags_count": metadata.get("ai_stop_flags_count", 0),
+                
+                # Market data
+                "price_usd": metadata.get("price_usd"),
+                "price_change_24h": metadata.get("price_change_24h"),
+                "volume_24h": metadata.get("volume_24h"),
+                "market_cap": metadata.get("market_cap"),
+                "liquidity": metadata.get("liquidity"),
+                
+                # Enhanced metrics
+                "whale_count": metadata.get("whale_count", 0),
+                "whale_control_percent": metadata.get("whale_control_percent", 0),
+                "sniper_risk": metadata.get("sniper_risk", "unknown"),
+                "volatility_risk": metadata.get("volatility_risk", "unknown"),
+                
+                # Security details
+                "security_score": metadata.get("security_score", 0),
+                "mint_authority_active": metadata.get("mint_authority_active", False),
+                "freeze_authority_active": metadata.get("freeze_authority_active", False),
+                
+                # Metadata
                 "risk_level": metadata.get("risk_level", "unknown"),
-                "security_status": metadata.get("security_status", "unknown"),
-                "source_event": metadata.get("source_event", "unknown"),
                 "overall_score": metadata.get("overall_score", 0),
-                "critical_issues": metadata.get("critical_issues_count", 0),
-                "warnings": metadata.get("warnings_count", 0),
-                "processing_time": metadata.get("processing_time", 0),
                 "recommendation": metadata.get("recommendation", "HOLD"),
-                "time": _format_analysis_date(metadata.get("timestamp_unix", 0)),  # Use detailed date format
-                "status": status
+                "processing_time": metadata.get("processing_time", 0),
+                "services_successful": metadata.get("services_successful", 0),
+                "data_completeness": metadata.get("data_completeness", 0),
+                "analysis_type": metadata.get("analysis_type", "unknown"),
+                "timestamp": metadata.get("timestamp_unix", 0),
+                "time": _format_relative_time(metadata.get("timestamp_unix", 0)),
+                "source_event": metadata.get("source_event", "unknown")
             }
             analyses.append(analysis)
         
@@ -887,26 +937,74 @@ async def _get_recent_analyses_from_chromadb(limit: int = 10) -> Dict[str, Any]:
                 status = "warnings"
             # Note: "warnings" status is still considered successful for success rate calculation
             
+            try:
+                critical_issues_list = json.loads(metadata.get("critical_issues_list", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                critical_issues_list = []
+
+            try:
+                warnings_list = json.loads(metadata.get("warnings_list", "[]"))
+            except (json.JSONDecodeError, TypeError):
+                warnings_list = []
+
+            if metadata.get("warnings_count", 0) > 0 and metadata.get("critical_issues_count", 0) == 0:
+                security_status = "warning" 
+            else:
+                security_status = metadata.get("security_status", "unknown")
+
             # Format for dashboard display
             analysis_item = {
+                # Basic identifiers
                 "id": metadata.get("analysis_id", "unknown"),
                 "token_symbol": metadata.get("token_symbol", "N/A"),
                 "token_name": metadata.get("token_name", "Unknown Token"),
-                "mint": metadata.get("token_address"),
+                "token_address": metadata.get("token_address"),
+                "mint": metadata.get("token_address"),  # For backward compatibility
                 "status": status,
-                "security_status": metadata.get("security_status", "unknown"),
+                
+                # Keep NEW schema field names (don't convert)
+                "security_status": security_status,  # Keep as "safe"/"unsafe"/"warning"
+                "critical_issues_count": metadata.get("critical_issues_count", 0),  # Keep new name
+                "warnings_count": metadata.get("warnings_count", 0),  # Keep new name
+                "critical_issues_list": critical_issues_list,
+                "warnings_list": warnings_list,
+                
+                # All the new fields your popup expects
+                "has_ai_analysis": metadata.get("has_ai_analysis", False),
+                "ai_score": metadata.get("ai_score", 0),
+                "ai_recommendation": metadata.get("ai_recommendation"),
+                "ai_risk_assessment": metadata.get("ai_risk_assessment", "unknown"),
+                "ai_stop_flags_count": metadata.get("ai_stop_flags_count", 0),
+                
+                # Market data
+                "price_usd": metadata.get("price_usd"),
+                "price_change_24h": metadata.get("price_change_24h"),
+                "volume_24h": metadata.get("volume_24h"),
+                "market_cap": metadata.get("market_cap"),
+                "liquidity": metadata.get("liquidity"),
+                
+                # Enhanced metrics
+                "whale_count": metadata.get("whale_count", 0),
+                "whale_control_percent": metadata.get("whale_control_percent", 0),
+                "sniper_risk": metadata.get("sniper_risk", "unknown"),
+                "volatility_risk": metadata.get("volatility_risk", "unknown"),
+                
+                # Security details
+                "security_score": metadata.get("security_score", 0),
+                "mint_authority_active": metadata.get("mint_authority_active", False),
+                "freeze_authority_active": metadata.get("freeze_authority_active", False),
+                
+                # Metadata
                 "risk_level": metadata.get("risk_level", "unknown"),
                 "overall_score": metadata.get("overall_score", 0),
-                "recommendation": metadata.get("recommendation", "unknown"),
+                "recommendation": metadata.get("recommendation", "HOLD"),
                 "processing_time": metadata.get("processing_time", 0),
+                "services_successful": metadata.get("services_successful", 0),
+                "data_completeness": metadata.get("data_completeness", 0),
+                "analysis_type": metadata.get("analysis_type", "unknown"),
                 "timestamp": metadata.get("timestamp_unix", 0),
                 "time": _format_relative_time(metadata.get("timestamp_unix", 0)),
-                "source_event": metadata.get("source_event", "unknown"),
-                # Additional useful info
-                "price_usd": metadata.get("price_usd", 0),
-                "volume_24h": metadata.get("volume_24h", 0),
-                "critical_issues": metadata.get("critical_issues_count", 0),
-                "warnings": metadata.get("warnings_count", 0)
+                "source_event": metadata.get("source_event", "unknown")
             }
             
             dashboard_analyses.append(analysis_item)

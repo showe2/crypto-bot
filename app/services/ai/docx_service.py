@@ -681,51 +681,8 @@ class DocxReportService:
             
             # Initialize market data dict
             market_data = {}
-            
-            # Check DexScreener first (since your logs show it has the data)
-            dexscreener = service_responses.get("dexscreener", {})
-            if dexscreener and dexscreener.get("pairs", {}).get("pairs"):
-                pairs = dexscreener["pairs"]["pairs"]
-                if isinstance(pairs, list) and len(pairs) > 0:
-                    pair = pairs[0]
-                    
-                    # Market cap from DexScreener
-                    if not market_data.get("market_cap") and pair.get("marketCap"):
-                        try:
-                            market_data["market_cap"] = float(pair["marketCap"])
-                            market_data["market_cap_source"] = "DexScreener"
-                        except (ValueError, TypeError):
-                            pass
-                    
-                    # Volume from DexScreener
-                    if not market_data.get("volume_24h"):
-                        vol_data = pair.get("volume", {})
-                        if vol_data and vol_data.get("h24"):
-                            try:
-                                market_data["volume_24h"] = float(vol_data["h24"])
-                                market_data["volume_source"] = "DexScreener"
-                            except (ValueError, TypeError):
-                                pass
-                    
-                    # Liquidity from DexScreener
-                    if not market_data.get("liquidity"):
-                        liq_data = pair.get("liquidity", {})
-                        if liq_data and liq_data.get("usd"):
-                            try:
-                                market_data["liquidity"] = float(liq_data["usd"])
-                                market_data["liquidity_source"] = "DexScreener"
-                            except (ValueError, TypeError):
-                                pass
-                    
-                    # Price from DexScreener
-                    if not market_data.get("price") and pair.get("priceUsd"):
-                        try:
-                            market_data["price"] = float(pair["priceUsd"])
-                            market_data["price_source"] = "DexScreener"
-                        except (ValueError, TypeError):
-                            pass
-            
-            # Birdeye fallback (if DexScreener didn't have everything)
+
+            # Check Birdeye first
             birdeye = service_responses.get("birdeye", {}).get("price", {})
             if birdeye:
                 # Price from Birdeye
@@ -767,7 +724,7 @@ class DocxReportService:
                         market_data["price_change_source"] = "Birdeye"
                     except (ValueError, TypeError):
                         pass
-            
+
             # SolSniffer fallback
             if not market_data.get("market_cap"):
                 solsniffer = service_responses.get("solsniffer", {})
@@ -781,6 +738,49 @@ class DocxReportService:
                                 break
                             except (ValueError, TypeError):
                                 continue
+            
+            # DexScreener fallback
+            dexscreener = service_responses.get("dexscreener", {})
+            if dexscreener and dexscreener.get("pairs", {}).get("pairs"):
+                pairs = dexscreener["pairs"]["pairs"]
+                if isinstance(pairs, list) and len(pairs) > 0:
+                    pair = pairs[0]
+                    
+                    # Market cap from DexScreener
+                    if not market_data.get("market_cap") and pair.get("marketCap"):
+                        try:
+                            market_data["market_cap"] = float(pair["marketCap"])
+                            market_data["market_cap_source"] = "DexScreener"
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    # Volume from DexScreener
+                    if not market_data.get("volume_24h"):
+                        vol_data = pair.get("volume", {})
+                        if vol_data and vol_data.get("h24"):
+                            try:
+                                market_data["volume_24h"] = float(vol_data["h24"])
+                                market_data["volume_source"] = "DexScreener"
+                            except (ValueError, TypeError):
+                                pass
+                    
+                    # Liquidity from DexScreener
+                    if not market_data.get("liquidity"):
+                        liq_data = pair.get("liquidity", {})
+                        if liq_data and liq_data.get("usd"):
+                            try:
+                                market_data["liquidity"] = float(liq_data["usd"])
+                                market_data["liquidity_source"] = "DexScreener"
+                            except (ValueError, TypeError):
+                                pass
+                    
+                    # Price from DexScreener
+                    if not market_data.get("price") and pair.get("priceUsd"):
+                        try:
+                            market_data["price"] = float(pair["priceUsd"])
+                            market_data["price_source"] = "DexScreener"
+                        except (ValueError, TypeError):
+                            pass
             
             # Create table with extracted data
             if market_data:

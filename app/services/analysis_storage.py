@@ -127,29 +127,84 @@ class AnalysisStorageService:
             
         return "N/A"
     
-    def _extract_price_data(self, analysis_result: Dict[str, Any]) -> Dict[str, float]:
-        """Extract price data from analysis result"""
-        birdeye_price = (analysis_result
-                        .get("service_responses", {})
-                        .get("birdeye", {})
-                        .get("price", {}))
-        
-        # Safe conversion with defaults
-        def safe_float(value, default=0.0):
-            try:
-                if value is None:
-                    return default
-                return float(value)
-            except (ValueError, TypeError):
-                return default
-        
-        return {
-            "current_price": safe_float(birdeye_price.get("value"), 0.0),
-            "price_change_24h": safe_float(birdeye_price.get("price_change_24h"), 0.0),
-            "volume_24h": safe_float(birdeye_price.get("volume_24h"), 0.0),
-            "market_cap": safe_float(birdeye_price.get("market_cap"), 0.0),
-            "liquidity": safe_float(birdeye_price.get("liquidity"), 0.0)
+    def _extract_market_data(self, analysis_result: Dict[str, Any]) -> Dict[str, float]:
+        """Extract market data with fallback for volume and market cap only"""
+        market_data = {
+            "price_usd": 0.0,
+            "price_change_24h": 0.0,
+            "volume_24h": 0.0,
+            "market_cap": 0.0,
+            "liquidity": 0.0
         }
+        
+        try:
+            service_responses = analysis_result.get("service_responses", {})
+            
+            # Primary source: Birdeye
+            birdeye_data = service_responses.get("birdeye", {})
+            
+            if birdeye_data and birdeye_data.get("price"):
+                birdeye_price = birdeye_data["price"]
+                
+                # Direct assignment with None checks (no conversion yet)
+                if birdeye_price.get("value") is not None:
+                    market_data["price_usd"] = birdeye_price["value"]
+                
+                if birdeye_price.get("price_change_24h") is not None:
+                    market_data["price_change_24h"] = birdeye_price["price_change_24h"]
+                
+                if birdeye_price.get("volume_24h") is not None:
+                    market_data["volume_24h"] = birdeye_price["volume_24h"]
+                
+                if birdeye_price.get("market_cap") is not None:
+                    market_data["market_cap"] = birdeye_price["market_cap"]
+                
+                if birdeye_price.get("liquidity") is not None:
+                    market_data["liquidity"] = birdeye_price["liquidity"]
+            
+            # Fallback for volume: DexScreener (only if volume is still 0.0 or None)
+            if market_data["volume_24h"] in (0.0, None):
+                dexscreener_data = service_responses.get("dexscreener", {})
+                if dexscreener_data and dexscreener_data.get("pairs").get("pairs"):
+                    pairs = dexscreener_data["pairs"]["pairs"]
+                    if pairs and len(pairs) > 0:
+                        pair = pairs[0]
+                        volume_24h = pair.get("volume", {}).get("h24")
+                        if volume_24h is not None and volume_24h != 0:
+                            market_data["volume_24h"] = volume_24h
+            
+            # Fallback for market cap: Solsniffer, then DexScreener (only if market_cap is still 0.0 or None)
+            if market_data["market_cap"] in (0.0, None):
+                # Try Solsniffer first
+                solsniffer_mc = service_responses.get("solsniffer", {}).get("marketCap")
+                if solsniffer_mc is not None and solsniffer_mc != 0:
+                    market_data["market_cap"] = solsniffer_mc
+                else:
+                    # Fallback to DexScreener
+                    dexscreener_data = service_responses.get("dexscreener", {})
+                    if dexscreener_data and dexscreener_data.get("pairs").get("pairs"):
+                        pairs = dexscreener_data["pairs"]["pairs"]
+                        if pairs and len(pairs) > 0:
+                            pair = pairs[0]
+                            market_cap = pair.get("marketCap")
+                            if market_cap is not None and market_cap != 0:
+                                market_data["market_cap"] = market_cap
+            
+            # Ensure all values are float at the end
+            for key in market_data:
+                if market_data[key] is None:
+                    market_data[key] = 0.0
+                elif not isinstance(market_data[key], (int, float)):
+                    try:
+                        market_data[key] = float(market_data[key])
+                    except (ValueError, TypeError):
+                        market_data[key] = 0.0
+            
+            return market_data
+            
+        except Exception as e:
+            logger.warning(f"Error extracting market data: {e}")
+            return market_data
     
     def _calculate_security_score(self, security_analysis: Dict[str, Any]) -> int:
         """Calculate a simple security score from security analysis"""
@@ -360,11 +415,11 @@ class AnalysisStorageService:
                 "metadata": metadata_enhanced,
                 
                 # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
-                "price_usd": metrics.get("price_usd", 0.0),
-                "price_change_24h": metrics.get("price_change_24h", 0.0),
-                "volume_24h": metrics.get("volume_24h", 0.0),
-                "market_cap": metrics.get("market_cap", 0.0),
-                "liquidity": metrics.get("liquidity", 0.0),
+                "price_usd": float(metrics.get("price_usd") or 0),
+                "price_change_24h": float(metrics.get("price_change_24h") or 0),
+                "volume_24h": float(metrics.get("volume_24h") or 0),
+                "market_cap": float(metrics.get("market_cap") or 0),
+                "liquidity": float(metrics.get("liquidity") or 0),
                 "security_score": security_analysis_enhanced.get("security_score", 0),
                 "data_sources": analysis_result.get("data_sources", []),
                 "services_attempted": metadata_enhanced.get("services_attempted", 0),
@@ -467,7 +522,7 @@ class AnalysisStorageService:
             
             # === MARKET FUNDAMENTALS ===
             # Use existing price data extraction but enhance it
-            price_data = self._extract_price_data(analysis_result)
+            price_data = self._extract_market_data(analysis_result)
             
             # Calculate volume/liquidity ratio
             volume_liquidity_ratio = None
@@ -477,7 +532,7 @@ class AnalysisStorageService:
             
             # Data completeness
             market_metrics = [
-                price_data.get("current_price"),
+                price_data.get("price_usd"),
                 price_data.get("price_change_24h"), 
                 price_data.get("volume_24h"),
                 price_data.get("market_cap"),
@@ -492,7 +547,7 @@ class AnalysisStorageService:
             
             return {
                 # Market fundamentals
-                "price_usd": price_data.get("current_price"),
+                "price_usd": price_data.get("price_usd"),
                 "price_change_24h": price_data.get("price_change_24h"),
                 "volume_24h": price_data.get("volume_24h"),
                 "market_cap": price_data.get("market_cap"),
@@ -593,11 +648,13 @@ class AnalysisStorageService:
                 "confidence_score": float(analysis_results.get("confidence_score") or 0),
                 "ai_score": float(ai_analysis.get("ai_score") or 0) if ai_analysis else 0.0,
                 
-                # === MARKET DATA RANGES ===
-                "price_range": self._get_price_range(metrics.get("price_usd")),
-                "volume_range": self._get_volume_range(metrics.get("volume_24h")),
-                "market_cap_range": self._get_market_cap_range(metrics.get("market_cap")),
-                "liquidity_range": self._get_liquidity_range(metrics.get("liquidity")),
+                # === MARKET DATA VALUES ===
+                "price_usd": float(metrics.get("price_usd") or 0.0),
+                "price_change_24h": float(metrics.get("price_change_24h") or 0.0),
+                "volume_24h": float(metrics.get("volume_24h") or 0.0),
+                "market_cap": float(metrics.get("market_cap") or 0.0),
+                "liquidity": float(metrics.get("liquidity") or 0.0),
+                "volume_liquidity_ratio": float(metrics.get("volume_liquidity_ratio") or 0.0),
                 
                 # === RISK METRICS ===
                 "volatility_risk": metrics.get("volatility", {}).get("volatility_risk") or "unknown",
@@ -609,6 +666,8 @@ class AnalysisStorageService:
                 # === SECURITY FLAGS ===
                 "critical_issues_count": len(security_analysis.get("critical_issues") or []),
                 "warnings_count": len(security_analysis.get("warnings") or []),
+                "critical_issues_list": json.dumps(security_analysis.get("critical_issues") or []),
+                "warnings_list": json.dumps(security_analysis.get("warnings") or []),
                 "mint_authority_active": bool(security_analysis.get("authority_risks", {}).get("mint_authority_active", False)),
                 "freeze_authority_active": bool(security_analysis.get("authority_risks", {}).get("freeze_authority_active", False)),
                 "lp_status": security_analysis.get("lp_security", {}).get("status") or "unknown",
@@ -958,28 +1017,6 @@ class AnalysisStorageService:
         except Exception as e:
             logger.warning(f"Error generating traditional reasoning: {e}")
             return "Traditional analysis completed with available market data."
-        
-    def _safe_float(self, value, default=None):
-        """Safely convert value to float"""
-        try:
-            if value is None:
-                return default
-            return float(value)
-        except (ValueError, TypeError):
-            return default
-        
-    def _safe_metadata_value(self, value, default_type="str"):
-        """Ensure metadata values are ChromaDB-compatible (no None values)"""
-        if value is None:
-            if default_type == "str":
-                return "unknown"
-            elif default_type == "int":
-                return 0
-            elif default_type == "float":
-                return 0.0
-            elif default_type == "bool":
-                return False
-        return value
 
     def _assess_distribution_quality(self, whale_analysis: Dict[str, Any]) -> str:
         """Assess token distribution quality"""

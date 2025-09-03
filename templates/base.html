@@ -363,7 +363,7 @@
       class="fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4"
     >
       <div
-        class="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto"
+        class="bg-white rounded-xl max-w-5xl w-full max-h-[95vh] overflow-y-auto"
         @click.stop
       >
         <!-- Header -->
@@ -380,6 +380,31 @@
                 class="opacity-90"
                 x-text="popupAnalysis?.token_name || 'Token Analysis Results'"
               ></p>
+              <div class="flex items-center space-x-3 mt-2">
+                <span
+                  class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-white bg-opacity-20"
+                >
+                  <i
+                    class="fas mr-1"
+                    :class="popupAnalysis?.has_ai_analysis ? 'fa-brain' : 'fa-bolt'"
+                  ></i>
+                  <span
+                    x-text="popupAnalysis?.has_ai_analysis ? 'AI-Enhanced' : 'Quick'"
+                  ></span>
+                  Analysis
+                </span>
+                <span class="text-sm opacity-75">
+                  Score:
+                  <span
+                    x-text="Math.round(popupAnalysis?.overall_score || 0)"
+                  ></span
+                  >%
+                  <span
+                    x-show="popupAnalysis?.has_ai_analysis"
+                    x-text="' (AI: ' + Math.round(popupAnalysis?.ai_score || 0) + '%)'"
+                  ></span>
+                </span>
+              </div>
             </div>
             <button
               @click="closeAnalysisPopup()"
@@ -398,30 +423,35 @@
             <div
               class="text-center p-4 rounded-lg border-2"
               :class="{
-               'bg-green-50 border-green-200': popupAnalysis?.security_status === 'passed',
-               'bg-red-50 border-red-200': popupAnalysis?.security_status === 'failed',
-               'bg-yellow-50 border-yellow-200': popupAnalysis?.security_status === 'warning',
-               'bg-gray-50 border-gray-200': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
-             }"
+           'bg-green-50 border-green-200': popupAnalysis?.security_status === 'safe',
+           'bg-red-50 border-red-200': popupAnalysis?.security_status === 'unsafe',
+           'bg-yellow-50 border-yellow-200': popupAnalysis?.security_status === 'warning',
+           'bg-gray-50 border-gray-200': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
+         }"
             >
               <div
                 class="text-2xl mb-2"
                 :class="{
-                 'text-green-600': popupAnalysis?.security_status === 'passed',
-                 'text-red-600': popupAnalysis?.security_status === 'failed',
-                 'text-yellow-600': popupAnalysis?.security_status === 'warning',
-                 'text-gray-600': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
-               }"
+             'text-green-600': popupAnalysis?.security_status === 'safe',
+             'text-red-600': popupAnalysis?.security_status === 'unsafe',
+             'text-yellow-600': popupAnalysis?.security_status === 'warning',
+             'text-gray-600': !popupAnalysis?.security_status || popupAnalysis?.security_status === 'unknown'
+           }"
               >
                 🛡️
               </div>
               <div
                 class="font-bold"
-                x-text="popupAnalysis?.security_status === 'passed' ? 'SECURE' :
-                      popupAnalysis?.security_status === 'failed' ? 'UNSAFE' :
-                      popupAnalysis?.security_status === 'warning' ? 'CAUTION' : 'UNKNOWN'"
+                x-text="popupAnalysis?.security_status === 'safe' ? 'SECURE' :
+                  popupAnalysis?.security_status === 'unsafe' ? 'UNSAFE' :
+                  popupAnalysis?.security_status === 'warning' ? 'CAUTION' : 'UNKNOWN'"
               ></div>
               <div class="text-xs text-gray-500">Security</div>
+              <div
+                x-show="popupAnalysis?.critical_issues_count > 0"
+                class="text-xs text-red-600 mt-1"
+                x-text="popupAnalysis?.critical_issues_count + ' Critical'"
+              ></div>
             </div>
 
             <!-- Score -->
@@ -433,29 +463,29 @@
                 class="font-bold text-blue-900"
                 x-text="popupAnalysis?.overall_score ? Math.round(popupAnalysis.overall_score) + '%' : 'N/A'"
               ></div>
-              <div class="text-xs text-gray-500">Score</div>
+              <div class="text-xs text-gray-500">Overall Score</div>
             </div>
 
             <!-- Risk -->
             <div
               class="text-center p-4 rounded-lg border-2"
               :class="{
-               'bg-green-50 border-green-200': popupAnalysis?.risk_level === 'low',
-               'bg-yellow-50 border-yellow-200': popupAnalysis?.risk_level === 'medium',
-               'bg-orange-50 border-orange-200': popupAnalysis?.risk_level === 'high',
-               'bg-red-50 border-red-200': popupAnalysis?.risk_level === 'critical',
-               'bg-gray-50 border-gray-200': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
-             }"
+           'bg-green-50 border-green-200': popupAnalysis?.risk_level === 'low',
+           'bg-yellow-50 border-yellow-200': popupAnalysis?.risk_level === 'medium',
+           'bg-orange-50 border-orange-200': popupAnalysis?.risk_level === 'high',
+           'bg-red-50 border-red-200': popupAnalysis?.risk_level === 'critical',
+           'bg-gray-50 border-gray-200': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
+         }"
             >
               <div
                 class="text-2xl mb-2"
                 :class="{
-                 'text-green-600': popupAnalysis?.risk_level === 'low',
-                 'text-yellow-600': popupAnalysis?.risk_level === 'medium',
-                 'text-orange-600': popupAnalysis?.risk_level === 'high',
-                 'text-red-600': popupAnalysis?.risk_level === 'critical',
-                 'text-gray-600': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
-               }"
+             'text-green-600': popupAnalysis?.risk_level === 'low',
+             'text-yellow-600': popupAnalysis?.risk_level === 'medium',
+             'text-orange-600': popupAnalysis?.risk_level === 'high',
+             'text-red-600': popupAnalysis?.risk_level === 'critical',
+             'text-gray-600': !popupAnalysis?.risk_level || popupAnalysis?.risk_level === 'unknown'
+           }"
               >
                 ⚠️
               </div>
@@ -475,127 +505,500 @@
                 class="font-bold text-purple-900"
                 x-text="popupAnalysis?.recommendation?.toUpperCase() || 'UNKNOWN'"
               ></div>
-              <div class="text-xs text-gray-500">Action</div>
+              <div class="text-xs text-gray-500">Recommendation</div>
+              <div
+                x-show="popupAnalysis?.ai_recommendation && popupAnalysis?.ai_recommendation !== popupAnalysis?.recommendation"
+                class="text-xs text-purple-600 mt-1"
+                x-text="'AI: ' + (popupAnalysis?.ai_recommendation?.toUpperCase() || '')"
+              ></div>
             </div>
           </div>
 
-          <!-- Security Details -->
+          <!-- Market Metrics Grid -->
           <div class="mb-6">
-            <h3 class="font-bold text-lg mb-3">🔍 Security Details</h3>
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fas fa-chart-line text-blue-600 mr-2"></i>
+              Market Metrics
+            </h3>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3">
+              <!-- Price -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.price_usd ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.price_usd ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-dollar-sign text-sm"
+                    :class="popupAnalysis?.price_usd ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.price_usd ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.price_usd ? '$' + parseFloat(popupAnalysis.price_usd).toFixed(6) : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Price</div>
+              </div>
 
-            <!-- Critical Issues -->
-            <div
-              x-show="(popupAnalysis?.critical_issues || 0) > 0"
-              class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg"
-            >
-              <div class="flex items-center mb-2">
-                <span class="text-red-500 text-xl mr-2">🚨</span>
-                <div class="font-bold text-red-800">
-                  Critical Security Issues
+              <!-- 24h Change -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.price_change_24h !== null && popupAnalysis?.price_change_24h !== undefined ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.price_change_24h !== null && popupAnalysis?.price_change_24h !== undefined ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-chart-line text-sm"
+                    :class="popupAnalysis?.price_change_24h !== null && popupAnalysis?.price_change_24h !== undefined ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.price_change_24h !== null && popupAnalysis?.price_change_24h !== undefined ? (popupAnalysis.price_change_24h >= 0 ? 'text-green-600' : 'text-red-600') : 'text-gray-500'"
+                  x-text="popupAnalysis?.price_change_24h !== null && popupAnalysis?.price_change_24h !== undefined ? (popupAnalysis.price_change_24h >= 0 ? '+' : '') + popupAnalysis.price_change_24h.toFixed(2) + '%' : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">24h Change</div>
+              </div>
+
+              <!-- Volume -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.volume_24h ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.volume_24h ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-chart-bar text-sm"
+                    :class="popupAnalysis?.volume_24h ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.volume_24h ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.volume_24h ? '$' + formatNumber(popupAnalysis.volume_24h) : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">24h Volume</div>
+              </div>
+
+              <!-- Market Cap -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.market_cap ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.market_cap ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-chart-pie text-sm"
+                    :class="popupAnalysis?.market_cap ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.market_cap ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.market_cap ? '$' + formatNumber(popupAnalysis.market_cap) : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Market Cap</div>
+              </div>
+
+              <!-- Liquidity -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.liquidity ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.liquidity ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-water text-sm"
+                    :class="popupAnalysis?.liquidity ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.liquidity ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.liquidity ? '$' + formatNumber(popupAnalysis.liquidity) : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Liquidity</div>
+                <div
+                  x-show="popupAnalysis?.liquidity"
+                  class="text-xs mt-1"
+                  :class="popupAnalysis?.liquidity >= 500000 ? 'text-green-600' : popupAnalysis?.liquidity >= 100000 ? 'text-yellow-600' : 'text-red-600'"
+                  x-text="popupAnalysis?.liquidity >= 500000 ? 'Excellent' : popupAnalysis?.liquidity >= 100000 ? 'Good' : 'Low'"
+                ></div>
+              </div>
+
+              <!-- Whale Analysis -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.whale_count !== undefined ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.whale_count !== undefined ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-users text-sm"
+                    :class="popupAnalysis?.whale_count !== undefined ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.whale_count !== undefined ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.whale_count === 0 ? 'Perfect' : popupAnalysis?.whale_count !== undefined ? popupAnalysis.whale_count + ' (' + (popupAnalysis?.whale_control_percent || 0).toFixed(0) + '%)' : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Distribution</div>
+                <div
+                  x-show="popupAnalysis?.whale_count !== undefined"
+                  class="text-xs mt-1"
+                  :class="popupAnalysis?.whale_count === 0 ? 'text-green-600' : (popupAnalysis?.whale_control_percent || 0) <= 25 ? 'text-yellow-600' : 'text-red-600'"
+                  x-text="popupAnalysis?.whale_count === 0 ? 'No Whales' : (popupAnalysis?.whale_control_percent || 0) <= 25 ? 'Low Risk' : 'High Risk'"
+                ></div>
+              </div>
+
+              <!-- Sniper Detection -->
+              <div
+                class="text-center p-3 rounded-lg border-2"
+                :class="popupAnalysis?.sniper_risk && popupAnalysis?.sniper_risk !== 'unknown' ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200'"
+              >
+                <div
+                  class="w-8 h-8 rounded-full flex items-center justify-center mx-auto mb-2"
+                  :class="popupAnalysis?.sniper_risk && popupAnalysis?.sniper_risk !== 'unknown' ? 'bg-blue-100' : 'bg-gray-100'"
+                >
+                  <i
+                    class="fas fa-crosshairs text-sm"
+                    :class="popupAnalysis?.sniper_risk && popupAnalysis?.sniper_risk !== 'unknown' ? 'text-blue-600' : 'text-gray-400'"
+                  ></i>
+                </div>
+                <div
+                  class="font-semibold text-sm"
+                  :class="popupAnalysis?.sniper_risk && popupAnalysis?.sniper_risk !== 'unknown' ? 'text-gray-900' : 'text-gray-500'"
+                  x-text="popupAnalysis?.sniper_risk === 'low' ? 'Clean' : popupAnalysis?.sniper_risk === 'medium' ? 'Some Bots' : popupAnalysis?.sniper_risk === 'high' ? 'Bot Alert' : 'N/A'"
+                ></div>
+                <div class="text-xs text-gray-500">Bot Detection</div>
+                <div
+                  x-show="popupAnalysis?.sniper_risk && popupAnalysis?.sniper_risk !== 'unknown'"
+                  class="text-xs mt-1"
+                  :class="popupAnalysis?.sniper_risk === 'low' ? 'text-green-600' : popupAnalysis?.sniper_risk === 'medium' ? 'text-yellow-600' : 'text-red-600'"
+                  x-text="popupAnalysis?.sniper_risk === 'low' ? 'No Patterns' : popupAnalysis?.sniper_risk === 'medium' ? 'Moderate' : 'High Risk'"
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Two Column Layout: Security + AI Analysis -->
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <!-- Security Analysis -->
+            <div class="bg-gray-50 rounded-lg p-4">
+              <h3 class="font-bold text-lg mb-3 flex items-center">
+                <i class="fas fa-shield-alt text-green-600 mr-2"></i>
+                Security Analysis
+              </h3>
+
+              <!-- Security Score -->
+              <div class="text-center mb-4">
+                <div
+                  class="text-3xl font-bold"
+                  :class="popupAnalysis?.security_status === 'safe' ? 'text-green-600' : popupAnalysis?.security_status === 'unsafe' ? 'text-red-600' : 'text-yellow-600'"
+                  x-text="popupAnalysis?.security_score || 'N/A'"
+                ></div>
+                <div class="text-sm text-gray-500">Security Score</div>
+                <div class="progress-bar mt-2">
+                  <div
+                    class="progress-bar-fill"
+                    :class="popupAnalysis?.security_status === 'safe' ? 'bg-green-500' : popupAnalysis?.security_status === 'unsafe' ? 'bg-red-500' : 'bg-yellow-500'"
+                    :style="'width: ' + (popupAnalysis?.security_score || 0) + '%'"
+                  ></div>
                 </div>
               </div>
+
+              <!-- Critical Issues -->
               <div
-                class="text-red-700 mb-2"
-                x-text="(popupAnalysis?.critical_issues || 0) + ' critical issue(s) detected'"
-              ></div>
-              <div class="text-sm text-red-600 bg-red-100 p-2 rounded">
-                <strong>⚠️ High Risk:</strong> This token has failed critical
-                security checks. Issues may include active mint authority
-                (unlimited supply), freeze authority (can freeze accounts), or
-                other dangerous permissions that could harm investors.
-              </div>
-            </div>
-
-            <!-- Warnings -->
-            <div
-              x-show="(popupAnalysis?.warnings || 0) > 0"
-              class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg"
-            >
-              <div class="flex items-center mb-2">
-                <span class="text-yellow-500 text-xl mr-2">⚠️</span>
-                <div class="font-bold text-yellow-800">Security Warnings</div>
-              </div>
-              <div
-                class="text-yellow-700 mb-2"
-                x-text="(popupAnalysis?.warnings || 0) + ' warning(s) detected'"
-              ></div>
-              <div class="text-sm text-yellow-700 bg-yellow-100 p-2 rounded">
-                <strong>⚠️ Moderate Risk:</strong> This token has some
-                concerning features that warrant caution. Warnings may include
-                upgradeable transfer fees, closable accounts, low holder count,
-                or other factors that could indicate potential risks. Research
-                thoroughly before trading.
-              </div>
-            </div>
-
-            <!-- All Clear -->
-            <div
-              x-show="(popupAnalysis?.critical_issues || 0) === 0 && (popupAnalysis?.warnings || 0) === 0 && popupAnalysis?.security_status === 'passed'"
-              class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg"
-            >
-              <div class="flex items-center mb-2">
-                <span class="text-green-500 text-xl mr-2">✅</span>
-                <div class="font-bold text-green-800">Security Verified</div>
-              </div>
-              <div class="text-sm text-green-700 bg-green-100 p-2 rounded">
-                <strong>✅ Low Risk:</strong> This token has passed all security
-                checks. No critical issues or warnings detected. The token
-                appears to have safe configurations with minimal dangerous
-                authorities.
-              </div>
-            </div>
-
-            <!-- Analysis Info -->
-            <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-              <div class="flex items-center mb-2">
-                <span class="text-blue-500 text-xl mr-2">ℹ️</span>
-                <div class="font-bold text-blue-800">Analysis Information</div>
-              </div>
-              <div class="text-sm text-blue-700 space-y-1">
-                <div>
-                  <strong>Processed:</strong>
-                  <span x-text="popupAnalysis?.time || 'Unknown'"></span>
+                x-show="(popupAnalysis?.critical_issues_count || 0) > 0"
+                class="bg-red-50 border-l-4 border-red-500 p-4 mb-3 rounded-r-lg"
+              >
+                <div class="flex items-center mb-2">
+                  <span class="text-red-500 text-xl mr-2">🚨</span>
+                  <div class="font-bold text-red-800">
+                    Critical Security Issues
+                  </div>
                 </div>
-                <div>
-                  <strong>Processing Time:</strong>
+                <div
+                  class="text-red-700 mb-2"
+                  x-text="(popupAnalysis?.critical_issues_count || 0) + ' critical issue(s) detected'"
+                ></div>
+
+                <!-- Show specific critical issues -->
+                <div
+                  x-show="popupAnalysis?.critical_issues_list && popupAnalysis.critical_issues_list.length > 0"
+                  class="mb-2"
+                >
+                  <ul class="text-sm text-red-600 space-y-1">
+                    <template
+                      x-for="issue in popupAnalysis?.critical_issues_list || []"
+                      :key="issue"
+                    >
+                      <li class="flex items-start">
+                        <span class="text-red-500 mr-2">•</span>
+                        <span x-text="issue"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- Warnings -->
+              <div
+                x-show="(popupAnalysis?.warnings_count || 0) > 0"
+                class="bg-yellow-50 border-l-4 border-yellow-500 p-4 mb-3 rounded-r-lg"
+              >
+                <div class="flex items-center mb-2">
+                  <span class="text-yellow-500 text-xl mr-2">⚠️</span>
+                  <div class="font-bold text-yellow-800">Security Warnings</div>
+                </div>
+                <div
+                  class="text-yellow-700 mb-2"
+                  x-text="(popupAnalysis?.warnings_count || 0) + ' warning(s) detected'"
+                ></div>
+
+                <!-- Show specific warnings -->
+                <div
+                  x-show="popupAnalysis?.warnings_list && popupAnalysis.warnings_list.length > 0"
+                  class="mb-2"
+                >
+                  <ul class="text-sm text-yellow-700 space-y-1">
+                    <template
+                      x-for="warning in popupAnalysis?.warnings_list || []"
+                      :key="warning"
+                    >
+                      <li class="flex items-start">
+                        <span class="text-yellow-500 mr-2">•</span>
+                        <span x-text="warning"></span>
+                      </li>
+                    </template>
+                  </ul>
+                </div>
+              </div>
+
+              <!-- All Clear -->
+              <div
+                x-show="(popupAnalysis?.critical_issues_count || 0) === 0 && (popupAnalysis?.warnings_count || 0) === 0 && popupAnalysis?.security_status === 'safe'"
+                class="bg-green-50 border-l-4 border-green-500 p-4 mb-3 rounded-r-lg"
+              >
+                <div class="flex items-center mb-1">
+                  <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                  <div class="font-bold text-green-800 text-sm">All Clear</div>
+                </div>
+                <div class="text-green-700 text-xs">
+                  No security issues detected
+                </div>
+              </div>
+
+              <!-- Authority Status -->
+              <div
+                x-show="popupAnalysis?.mint_authority_active || popupAnalysis?.freeze_authority_active"
+                class="bg-orange-50 border border-orange-200 rounded-lg p-3 mt-3"
+              >
+                <div class="font-medium text-orange-800 text-sm mb-2">
+                  Authority Status
+                </div>
+                <div class="space-y-1 text-xs">
+                  <div
+                    :class="popupAnalysis?.mint_authority_active ? 'text-red-700' : 'text-green-700'"
+                  >
+                    <i
+                      :class="popupAnalysis?.mint_authority_active ? 'fas fa-exclamation-triangle' : 'fas fa-check'"
+                      class="mr-1"
+                    ></i>
+                    <span
+                      x-text="popupAnalysis?.mint_authority_active ? 'Mint Authority Active' : 'Mint Authority Disabled'"
+                    ></span>
+                  </div>
+                  <div
+                    :class="popupAnalysis?.freeze_authority_active ? 'text-red-700' : 'text-green-700'"
+                  >
+                    <i
+                      :class="popupAnalysis?.freeze_authority_active ? 'fas fa-exclamation-triangle' : 'fas fa-check'"
+                      class="mr-1"
+                    ></i>
+                    <span
+                      x-text="popupAnalysis?.freeze_authority_active ? 'Freeze Authority Active' : 'Freeze Authority Disabled'"
+                    ></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AI Analysis or Quick Analysis Info -->
+            <div
+              x-show="popupAnalysis?.has_ai_analysis"
+              class="bg-purple-50 rounded-lg p-4"
+            >
+              <h3 class="font-bold text-lg mb-3 flex items-center">
+                <i class="fas fa-brain text-purple-600 mr-2"></i>
+                AI Analysis
+              </h3>
+
+              <!-- AI Score -->
+              <div class="text-center mb-4">
+                <div
+                  class="text-3xl font-bold text-purple-600"
+                  x-text="Math.round(popupAnalysis?.ai_score || 0)"
+                ></div>
+                <div class="text-sm text-gray-500">AI Score</div>
+                <div class="progress-bar mt-2">
+                  <div
+                    class="progress-bar-fill bg-purple-500"
+                    :style="'width: ' + (popupAnalysis?.ai_score || 0) + '%'"
+                  ></div>
+                </div>
+              </div>
+
+              <!-- AI Recommendation -->
+              <div class="bg-white rounded-lg p-3 mb-3">
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-gray-700"
+                    >AI Recommendation:</span
+                  >
                   <span
-                    x-text="(popupAnalysis?.processing_time || 0).toFixed(2) + 's'"
+                    class="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
+                    x-text="popupAnalysis?.ai_recommendation || popupAnalysis?.recommendation || 'HOLD'"
                   ></span>
                 </div>
-                <div>
-                  <strong>Source:</strong>
+              </div>
+
+              <!-- AI Risk Assessment -->
+              <div
+                x-show="popupAnalysis?.ai_risk_assessment && popupAnalysis?.ai_risk_assessment !== 'unknown'"
+                class="bg-white rounded-lg p-3 mb-3"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="text-sm font-medium text-gray-700"
+                    >AI Risk Assessment:</span
+                  >
                   <span
-                    x-text="(popupAnalysis?.source_event || 'unknown').replace('_', ' ')"
+                    class="px-2 py-1 rounded-full text-xs font-medium"
+                    :class="popupAnalysis?.ai_risk_assessment === 'low' ? 'bg-green-100 text-green-800' : popupAnalysis?.ai_risk_assessment === 'medium' ? 'bg-yellow-100 text-yellow-800' : 'bg-red-100 text-red-800'"
+                    x-text="popupAnalysis?.ai_risk_assessment?.toUpperCase() || ''"
                   ></span>
                 </div>
-                <div x-show="popupAnalysis?.id">
-                  <strong>Analysis ID:</strong>
-                  <code
-                    class="text-xs bg-blue-100 px-1 rounded"
-                    x-text="popupAnalysis?.id ? popupAnalysis.id.substring(0, 16) + '...' : 'N/A'"
-                  ></code>
+              </div>
+
+              <!-- AI Stop Flags -->
+              <div
+                x-show="(popupAnalysis?.ai_stop_flags_count || 0) > 0"
+                class="bg-red-50 border border-red-200 rounded-lg p-3"
+              >
+                <div class="font-medium text-red-800 text-sm mb-1">
+                  <i class="fas fa-exclamation-triangle mr-1"></i>
+                  AI Stop Flags
+                </div>
+                <div
+                  class="text-red-700 text-xs"
+                  x-text="(popupAnalysis?.ai_stop_flags_count || 0) + ' risk factor(s) identified by AI'"
+                ></div>
+              </div>
+            </div>
+
+            <!-- Quick Analysis Info -->
+            <div
+              x-show="!popupAnalysis?.has_ai_analysis"
+              class="bg-gray-50 rounded-lg p-4"
+            >
+              <h3 class="font-bold text-lg mb-3 flex items-center">
+                <i class="fas fa-bolt text-blue-600 mr-2"></i>
+                Quick Analysis
+              </h3>
+              <div class="text-center">
+                <div class="text-sm text-gray-600 mb-2">
+                  Traditional Analysis Completed
+                </div>
+                <div
+                  class="text-xs text-gray-500 bg-blue-50 px-3 py-2 rounded-lg"
+                >
+                  For AI-enhanced insights with Llama 3.0, try Deep Analysis
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- Enhanced Analysis Summary -->
+          <div class="bg-gray-50 rounded-lg p-4 mb-6">
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fas fa-chart-line text-gray-600 mr-2"></i>
+              Analysis Summary
+            </h3>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div class="text-center p-3 bg-white rounded-lg">
+                <div
+                  class="text-xl font-bold text-gray-800"
+                  x-text="(popupAnalysis?.processing_time || 0).toFixed(2) + 's'"
+                ></div>
+                <div class="text-xs text-gray-500">Processing Time</div>
+              </div>
+              <div class="text-center p-3 bg-white rounded-lg">
+                <div
+                  class="text-xl font-bold text-gray-800"
+                  x-text="popupAnalysis?.services_successful || 0"
+                ></div>
+                <div class="text-xs text-gray-500">Data Sources</div>
+              </div>
+              <div class="text-center p-3 bg-white rounded-lg">
+                <div
+                  class="text-xl font-bold text-gray-800"
+                  x-text="Math.round(popupAnalysis?.data_completeness || 0) + '%'"
+                ></div>
+                <div class="text-xs text-gray-500">Data Quality</div>
+              </div>
+            </div>
+
+            <!-- Analysis Reasoning -->
+            <div class="bg-white rounded-lg p-4">
+              <div class="font-medium text-gray-900 mb-2 flex items-center">
+                <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+                Analysis Reasoning
+              </div>
+              <div
+                class="text-sm text-gray-700 leading-relaxed"
+                x-text="popupAnalysis?.has_ai_analysis ? 
+            'AI-enhanced analysis scored ' + Math.round(popupAnalysis?.overall_score || 0) + '% based on comprehensive security verification (' + (popupAnalysis?.security_score || 'N/A') + '/100), market metrics analysis, and ' + (popupAnalysis?.whale_count === 0 ? 'perfect token distribution' : 'whale concentration of ' + (popupAnalysis?.whale_control_percent || 0).toFixed(1) + '%') + '. ' + (popupAnalysis?.security_status === 'safe' ? 'All security checks passed successfully.' : popupAnalysis?.security_status === 'unsafe' ? 'Critical security issues detected.' : 'Some security warnings identified.') :
+            'Traditional analysis scored ' + Math.round(popupAnalysis?.overall_score || 0) + '% from ' + (popupAnalysis?.services_successful || 0) + ' data sources. Security verification ' + (popupAnalysis?.security_status === 'safe' ? 'passed' : 'raised concerns') + ' with ' + (popupAnalysis?.critical_issues_count || 0) + ' critical issues and ' + (popupAnalysis?.warnings_count || 0) + ' warnings. Market data shows ' + (popupAnalysis?.price_usd ? 'active trading' : 'limited price discovery') + '.'"
+              ></div>
             </div>
           </div>
 
           <!-- Token Address -->
           <div class="bg-gray-50 rounded-lg p-4 mb-6">
-            <div class="font-bold mb-2">📋 Contract Address</div>
+            <div class="font-bold mb-2 flex items-center">
+              <i class="fas fa-code text-gray-600 mr-2"></i>
+              Contract Address
+            </div>
             <div class="flex items-center justify-between">
               <code
-                class="text-sm bg-white px-2 py-1 rounded break-all"
-                x-text="popupAnalysis?.mint || 'N/A'"
+                class="text-sm bg-white px-3 py-2 rounded-lg break-all font-mono flex-1 mr-3"
+                x-text="popupAnalysis?.mint || popupAnalysis?.token_address || 'N/A'"
               ></code>
               <button
-                x-show="popupAnalysis?.mint"
-                @click="copyToClipboard(popupAnalysis.mint)"
-                class="ml-2 px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                x-show="popupAnalysis?.mint || popupAnalysis?.token_address"
+                @click="copyToClipboard(popupAnalysis?.mint || popupAnalysis?.token_address)"
+                class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 transition-colors"
               >
-                Copy
+                <i class="fas fa-copy mr-1"></i>
+                Copy Address
               </button>
             </div>
           </div>
+
           <!-- Export Section -->
           <div class="bg-gray-50 rounded-lg p-4 mb-6">
             <div class="font-bold mb-3">📄 Export Analysis</div>
@@ -606,8 +1009,8 @@
                 :disabled="isExporting"
                 class="w-full px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center shadow-md hover:shadow-lg transform hover:scale-[1.02] disabled:transform-none disabled:hover:scale-100"
                 :class="isExporting ? 
-        'bg-blue-500 text-white cursor-wait' : 
-        'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white'"
+     'bg-blue-500 text-white cursor-wait' : 
+     'bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white'"
               >
                 <i
                   class="mr-2 text-base"
