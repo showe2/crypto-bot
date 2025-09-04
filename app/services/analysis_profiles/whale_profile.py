@@ -63,8 +63,8 @@ class WhaleAnalysisProfile(BaseAnalysisProfile):
             }
         )
         
-        # Store analysis
-        await self._store_analysis(response)
+        # Store analysis with comprehensive format
+        await self._store_analysis(response, service_data, ai_data)
         
         logger.info(f"✅ Whale analysis completed: {whale_data['whale_count']} whales, {whale_data['concentration_risk']} risk")
         return response

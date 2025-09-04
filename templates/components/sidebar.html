@@ -36,18 +36,74 @@
         Dashboard
       </a>
 
-      <!-- Token Analysis -->
+      <!-- Discovery -->
       <a
         href="/analysis"
         @click="closeSidebar()"
         class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
-        :class="currentPage.startsWith('/analysis') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+        :class="currentPage.startsWith('/run/find_token') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
       >
         <i
-          class="fas fa-search mr-3 w-5 text-center"
-          :class="currentPage.startsWith('/analysis') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+          class="fas fa-compass mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/run/find_token') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
         ></i>
-        Token Analysis
+        Discovery
+      </a>
+
+      <!-- Twitter Analysis -->
+      <a
+        href="/run/twitter"
+        @click="closeSidebar()"
+        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
+        :class="currentPage.startsWith('/run/twitter') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+      >
+        <i
+          class="fab fa-twitter mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/run/twitter') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+        ></i>
+        Twitter
+      </a>
+
+      <!-- Pump Detection -->
+      <a
+        href="/run/pump"
+        @click="closeSidebar()"
+        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
+        :class="currentPage.startsWith('/run/pump') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+      >
+        <i
+          class="fas fa-rocket mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/run/pump') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+        ></i>
+        Pump
+      </a>
+
+      <!-- Whale Analysis -->
+      <a
+        href="/run/whales30d"
+        @click="closeSidebar()"
+        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
+        :class="currentPage.startsWith('/run/whales30d') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+      >
+        <i
+          class="fas fa-users mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/run/whales30d') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+        ></i>
+        Whales
+      </a>
+
+      <!-- New Listings -->
+      <a
+        href="/run/listings"
+        @click="closeSidebar()"
+        class="flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors group"
+        :class="currentPage.startsWith('/run/listings') ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'"
+      >
+        <i
+          class="fas fa-star mr-3 w-5 text-center"
+          :class="currentPage.startsWith('/run/listings') ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'"
+        ></i>
+        Listings
       </a>
 
       <!-- All Analyses -->

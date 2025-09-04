@@ -12,7 +12,7 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
     
     profile_name = "Pump Detection"
     analysis_type = "pump"
-    required_services = ["birdeye", "dexscreener", "goplus", "rugcheck"]
+    required_services = ["dexscreener", "goplus", "rugcheck"]
     ai_focus_areas = ["pump_indicators", "volume_analysis", "momentum_metrics"]
     
     async def analyze(self, token_address: str, filters: Optional[Dict] = None, **kwargs) -> AnalysisRunResponse:
@@ -62,8 +62,8 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
             }
         )
         
-        # Store analysis
-        await self._store_analysis(response)
+        # Store analysis with comprehensive format
+        await self._store_analysis(response, service_data, ai_data)
         
         logger.info(f"✅ Pump analysis completed: {overall_score}% score, pump probability {pump_data.get('pump_probability', 0):.1f}%")
         return response

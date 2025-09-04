@@ -59,8 +59,8 @@ class ListingAnalysisProfile(BaseAnalysisProfile):
             }
         )
         
-        # Store analysis
-        await self._store_analysis(response)
+        # Store analysis with comprehensive format
+        await self._store_analysis(response, service_data, ai_data)
         
         logger.info(f"✅ Listing analysis completed: {listing_data.get('listing_quality', 'unknown')} quality")
         return response

@@ -130,8 +130,6 @@ class EnhancedTokenAnalyzer:
             processing_time = time.time() - start_time
             analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             
-            asyncio.create_task(self._store_analysis_async(analysis_response))
-            
             logger.warning(f"❌ Analysis STOPPED for {token_address} due to security issues in {processing_time:.2f}s")
             return analysis_response
         

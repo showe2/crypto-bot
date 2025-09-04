@@ -59,8 +59,8 @@ class TwitterAnalysisProfile(BaseAnalysisProfile):
             }
         )
         
-        # Store analysis
-        await self._store_analysis(response)
+        # Store analysis with comprehensive format
+        await self._store_analysis(response, service_data, ai_data)
         
         logger.info(f"✅ Twitter analysis completed: {overall_score}% score, {recommendation}")
         return response
