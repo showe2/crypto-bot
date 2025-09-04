@@ -1027,6 +1027,8 @@ def _parse_profile_ai_response(response_text: str, profile_type: str) -> Optiona
         risk_assessment = _extract_risk_from_profile_response(parsed, profile_type)
         recommendation = parsed.get("recommendation", "HOLD")
         
+        real_reasoning = _generate_reasoning(parsed, profile_type)
+        
         return AIAnalysisResponse(
             ai_score=float(ai_score),
             risk_assessment=risk_assessment,
@@ -1036,7 +1038,7 @@ def _parse_profile_ai_response(response_text: str, profile_type: str) -> Optiona
             risk_factors=_extract_risks_from_profile_response(parsed, profile_type),
             stop_flags=[],  # Profiles typically don't have critical stop flags
             market_metrics=parsed,  # Store full profile response
-            llama_reasoning=f"{profile_type.title()} profile analysis completed with specialized focus",
+            llama_reasoning=real_reasoning,  # ← FIXED
             processing_time=1.0
         )
         
@@ -1044,6 +1046,98 @@ def _parse_profile_ai_response(response_text: str, profile_type: str) -> Optiona
         logger.warning(f"Failed to parse {profile_type} AI response: {str(e)}")
         logger.debug(f"Raw response: {response_text[:500]}...")
         return None
+
+def _generate_reasoning(parsed: Dict, profile_type: str) -> str:
+    """Generate actual reasoning based on AI analysis results"""
+    try:
+        reasoning_parts = []
+        
+        if profile_type == "pump":
+            # Extract pump-specific data
+            pump_score = parsed.get("pump_score", 0)
+            pump_type = parsed.get("pump_type", "unknown")
+            sustainability = parsed.get("sustainability", "unknown")
+            age_factor = parsed.get("age_factor", "unknown")
+            buy_pressure = parsed.get("buy_pressure", "unknown")
+            momentum = parsed.get("momentum_strength", "unknown")
+            
+            reasoning_parts.append(f"Pump analysis score: {pump_score}/100")
+            
+            if pump_type != "unknown":
+                reasoning_parts.append(f"Classified as {pump_type} activity")
+            
+            if age_factor == "new_pool":
+                reasoning_parts.append("Very new pool detected - high opportunity but high risk")
+            elif age_factor == "young":
+                reasoning_parts.append("Young token with recent activity")
+            elif age_factor == "established":
+                reasoning_parts.append("Established token showing new pump activity")
+            
+            if buy_pressure == "high":
+                reasoning_parts.append("Strong buy pressure indicates demand")
+            elif buy_pressure == "low":
+                reasoning_parts.append("Weak buy pressure suggests limited interest")
+            
+            if sustainability == "low":
+                reasoning_parts.append("Low sustainability - likely short-term pump")
+            elif sustainability == "high":
+                reasoning_parts.append("High sustainability - potential for continued growth")
+            
+            if momentum == "strong":
+                reasoning_parts.append("Strong momentum detected")
+            elif momentum == "weak":
+                reasoning_parts.append("Weak momentum - limited price action")
+            
+            # Add key insights if available
+            insights = parsed.get("key_insights", [])
+            if insights and len(insights) > 0:
+                reasoning_parts.append(f"Key factor: {insights[0]}")
+        
+        elif profile_type == "twitter":
+            social_score = parsed.get("social_score", 0)
+            viral_potential = parsed.get("viral_potential", "unknown")
+            community_strength = parsed.get("community_strength", "unknown")
+            
+            reasoning_parts.append(f"Social analysis score: {social_score}/100")
+            reasoning_parts.append(f"Viral potential: {viral_potential}")
+            reasoning_parts.append(f"Community strength: {community_strength}")
+        
+        elif profile_type == "whale":
+            whale_risk = parsed.get("whale_risk", 0)
+            distribution_score = parsed.get("distribution_score", 0)
+            movement_risk = parsed.get("movement_risk", "unknown")
+            
+            reasoning_parts.append(f"Whale risk assessment: {whale_risk}/100")
+            reasoning_parts.append(f"Distribution score: {distribution_score}/100")
+            reasoning_parts.append(f"Movement risk: {movement_risk}")
+        
+        elif profile_type == "listing":
+            listing_score = parsed.get("listing_score", 0)
+            opportunity_rating = parsed.get("opportunity_rating", "unknown")
+            growth_potential = parsed.get("growth_potential", "unknown")
+            
+            reasoning_parts.append(f"Listing opportunity score: {listing_score}/100")
+            reasoning_parts.append(f"Opportunity rating: {opportunity_rating}")
+            reasoning_parts.append(f"Growth potential: {growth_potential}")
+        
+        # Add recommendation reasoning
+        recommendation = parsed.get("recommendation", "HOLD")
+        if recommendation == "AVOID":
+            reasoning_parts.append("Recommendation: AVOID due to identified risks")
+        elif recommendation == "BUY":
+            reasoning_parts.append("Recommendation: BUY - opportunity identified")
+        elif recommendation == "CONSIDER":
+            reasoning_parts.append("Recommendation: CONSIDER with caution")
+        
+        # Combine into coherent reasoning
+        if reasoning_parts:
+            return ". ".join(reasoning_parts[:6]) + "."  # Limit to 6 parts
+        else:
+            return f"{profile_type.title()} analysis completed with available data."
+            
+    except Exception as e:
+        logger.warning(f"Error generating reasoning for {profile_type}: {str(e)}")
+        return f"{profile_type.title()} analysis completed with specialized focus."
 
 async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
     """Generate DOCX report from cached analysis data"""

@@ -1,0 +1,492 @@
+{% extends "base.html" %} {% block title %}Pump Analysis - Solana AI{% endblock
+%} {% block content %}
+<div x-data="pumpData()" x-init="initPump()">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-3xl font-bold text-gray-900">
+          <i class="fas fa-chart-line text-green-600 mr-3"></i>
+          Pump Analysis
+        </h1>
+        <p class="text-gray-600 mt-1">
+          Detect new pools, volume spikes, and pump opportunities
+        </p>
+      </div>
+      <div class="flex items-center space-x-3">
+        <button
+          @click="clearResults()"
+          x-show="hasResults"
+          class="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+        >
+          <i class="fas fa-times mr-2"></i>
+          Clear
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pump Analysis Form -->
+  <div class="bg-white rounded-xl shadow-lg p-6 mb-8">
+    <h2 class="text-xl font-semibold text-gray-900 mb-6 flex items-center">
+      <i class="fas fa-search text-blue-600 mr-2"></i>
+      Analyze Token for Pump Signals
+    </h2>
+
+    <div class="grid grid-cols-1 gap-6">
+      <!-- Token Input -->
+      <div>
+        <label class="form-label">Token Mint Address</label>
+        <div class="relative">
+          <input
+            type="text"
+            x-model="form.tokenMint"
+            @keyup.enter="analyzePump()"
+            placeholder="Enter token mint address to check for pump signals..."
+            class="form-input pr-12"
+            :class="{ 'border-red-500': form.tokenMint && !isValidAddress }"
+            :disabled="isAnalyzing"
+          />
+
+          <!-- Paste button -->
+          <button
+            @click="pasteFromClipboard()"
+            class="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            :disabled="isAnalyzing"
+          >
+            <i class="fas fa-clipboard"></i>
+          </button>
+        </div>
+
+        <!-- Validation feedback -->
+        <div
+          x-show="form.tokenMint && !isValidAddress"
+          class="mt-1 text-sm text-red-600"
+        >
+          <i class="fas fa-exclamation-circle mr-1"></i>
+          Please enter a valid Solana token mint address
+        </div>
+
+        <!-- Quick Examples -->
+        <div class="mt-3">
+          <span class="text-sm text-gray-500">Examples:</span>
+          <div class="flex flex-wrap gap-2 mt-1">
+            {% for token in example_tokens %}
+            <button
+              @click="form.tokenMint = '{{ token.mint }}'"
+              class="text-sm text-blue-600 hover:text-blue-800 underline"
+              :disabled="isAnalyzing"
+            >
+              {{ token.name }} ({{ token.symbol }})
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Analyze Button -->
+    <div class="mt-6">
+      <button
+        @click="analyzePump()"
+        :disabled="!isValidAddress || isAnalyzing"
+        class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+      >
+        <span x-show="!isAnalyzing" class="flex items-center justify-center">
+          <i class="fas fa-chart-line mr-2"></i>
+          Analyze Pump Signals
+        </span>
+        <span x-show="isAnalyzing" class="flex items-center justify-center">
+          <div class="loading-spinner mr-2"></div>
+          Analyzing Pump Patterns...
+        </span>
+      </button>
+    </div>
+
+    <!-- Pump Results -->
+    <div x-show="hasResults" x-transition class="mt-8 space-y-6">
+      <!-- Pump Overview -->
+      <div
+        class="bg-gradient-to-r from-green-50 to-blue-50 rounded-xl p-6 border-2 border-green-200"
+      >
+        <h3 class="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <i class="fas fa-tachometer-alt text-green-600 mr-2"></i>
+          Pump Analysis Results
+        </h3>
+
+        <!-- Pump Metrics Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <!-- Pool Age -->
+          <div
+            class="text-center p-4 bg-white rounded-lg border-2 border-blue-200"
+          >
+            <div class="text-2xl mb-2">⏰</div>
+            <div
+              class="font-bold text-blue-900"
+              x-text="getPumpData()?.pool_age_hours ? getPumpData().pool_age_hours.toFixed(1) + 'h' : 'N/A'"
+            ></div>
+            <div class="text-xs text-gray-500">Pool Age</div>
+            <div
+              class="text-xs mt-1"
+              :class="getPumpData()?.new_pool ? 'text-green-600' : 'text-gray-500'"
+              x-text="getPumpData()?.new_pool ? 'New Pool' : 'Established'"
+            ></div>
+          </div>
+
+          <!-- Pump Probability -->
+          <div
+            class="text-center p-4 bg-white rounded-lg border-2 border-green-200"
+          >
+            <div class="text-2xl mb-2">📈</div>
+            <div
+              class="font-bold text-green-900"
+              x-text="getPumpData()?.pump_probability ? getPumpData().pump_probability + '%' : 'N/A'"
+            ></div>
+            <div class="text-xs text-gray-500">Pump Probability</div>
+            <div
+              class="text-xs mt-1"
+              :class="(getPumpData()?.pump_probability || 0) > 60 ? 'text-red-600' : (getPumpData()?.pump_probability || 0) > 30 ? 'text-yellow-600' : 'text-green-600'"
+              x-text="(getPumpData()?.pump_probability || 0) > 60 ? 'High' : (getPumpData()?.pump_probability || 0) > 30 ? 'Medium' : 'Low'"
+            ></div>
+          </div>
+
+          <!-- Buy/Sell Ratio -->
+          <div
+            class="text-center p-4 bg-white rounded-lg border-2 border-purple-200"
+          >
+            <div class="text-2xl mb-2">⚖️</div>
+            <div
+              class="font-bold text-purple-900"
+              x-text="getPumpData()?.buy_sell_ratio ? getPumpData().buy_sell_ratio.toFixed(2) : 'N/A'"
+            ></div>
+            <div class="text-xs text-gray-500">Buy/Sell Ratio</div>
+            <div
+              class="text-xs mt-1"
+              :class="(getPumpData()?.buy_sell_ratio || 1) > 1.5 ? 'text-green-600' : (getPumpData()?.buy_sell_ratio || 1) < 0.8 ? 'text-red-600' : 'text-gray-500'"
+              x-text="(getPumpData()?.buy_sell_ratio || 1) > 1.5 ? 'Buy Pressure' : (getPumpData()?.buy_sell_ratio || 1) < 0.8 ? 'Sell Pressure' : 'Neutral'"
+            ></div>
+          </div>
+
+          <!-- Security Gate -->
+          <div
+            class="text-center p-4 bg-white rounded-lg border-2 border-yellow-200"
+          >
+            <div class="text-2xl mb-2">🛡️</div>
+            <div
+              class="font-bold"
+              :class="getPumpData()?.security_gate_passed ? 'text-green-900' : 'text-red-900'"
+              x-text="getPumpData()?.security_gate_passed ? 'PASSED' : 'FAILED'"
+            ></div>
+            <div class="text-xs text-gray-500">Security Gate</div>
+            <div
+              class="text-xs mt-1"
+              :class="getPumpData()?.security_gate_passed ? 'text-green-600' : 'text-red-600'"
+              x-text="getPumpData()?.security_gate_passed ? 'Safe' : 'Risky'"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Volume and Ranking -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-white p-4 rounded-lg">
+            <h4 class="font-semibold mb-2">Volume Analysis</h4>
+            <div
+              class="text-lg font-bold text-blue-600"
+              x-text="getPumpData()?.volume_recent ? '$' + formatNumber(getPumpData().volume_recent) : 'N/A'"
+            ></div>
+            <div class="text-sm text-gray-500">Recent Volume</div>
+            <div
+              class="text-xs mt-1"
+              x-text="getPumpData()?.volume_spike_percent ? 'Spike: ' + getPumpData().volume_spike_percent + '%' : 'No spike data'"
+            ></div>
+          </div>
+
+          <div class="bg-white p-4 rounded-lg">
+            <h4 class="font-semibold mb-2">Ranking Score</h4>
+            <div
+              class="text-lg font-bold text-green-600"
+              x-text="getPumpData()?.ranking_score ? getPumpData().ranking_score.toFixed(2) : 'N/A'"
+            ></div>
+            <div class="text-sm text-gray-500">Volume×Ratio÷Age</div>
+            <div
+              class="text-xs mt-1"
+              x-text="getPumpData()?.sustainability_score ? 'Sustainability: ' + getPumpData().sustainability_score + '%' : 'No sustainability data'"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Warnings -->
+        <div
+          x-show="getPumpData()?.warnings && getPumpData().warnings.length > 0"
+          class="mt-4"
+        >
+          <h4 class="font-medium text-yellow-800 mb-2">⚠️ Warnings:</h4>
+          <ul class="space-y-1">
+            <template
+              x-for="warning in getPumpData()?.warnings || []"
+              :key="warning"
+            >
+              <li class="text-sm text-yellow-700 flex items-start">
+                <i
+                  class="fas fa-exclamation-triangle text-yellow-500 mr-2 mt-0.5 text-xs"
+                ></i>
+                <span x-text="warning"></span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <!-- AI Analysis Results (if available) -->
+      <div x-show="getAIAnalysis()" class="bg-white rounded-xl shadow-lg p-6">
+        <h3 class="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+          <i class="fas fa-brain text-purple-600 mr-2"></i>
+          AI Pump Analysis
+        </h3>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- AI Insights -->
+          <div>
+            <h4 class="font-medium text-gray-900 mb-2">Key Insights:</h4>
+            <ul class="space-y-1">
+              <template
+                x-for="insight in getAIAnalysis()?.key_insights || []"
+                :key="insight"
+              >
+                <li class="text-sm text-gray-600 flex items-start">
+                  <i
+                    class="fas fa-lightbulb text-blue-500 mr-2 mt-0.5 text-xs"
+                  ></i>
+                  <span x-text="insight"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+
+          <!-- AI Recommendations -->
+          <div>
+            <h4 class="font-medium text-gray-900 mb-2">AI Assessment:</h4>
+            <div class="space-y-2">
+              <div class="flex justify-between">
+                <span class="text-sm text-gray-600">AI Score:</span>
+                <span
+                  class="font-bold"
+                  x-text="getAIAnalysis()?.ai_score ? Math.round(getAIAnalysis().ai_score) + '%' : 'N/A'"
+                ></span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-sm text-gray-600">Recommendation:</span>
+                <span
+                  class="px-2 py-1 rounded text-xs font-medium"
+                  :class="getRecommendationClass(getAIAnalysis()?.recommendation)"
+                  x-text="getAIAnalysis()?.recommendation || 'HOLD'"
+                ></span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-sm text-gray-600">Risk Level:</span>
+                <span
+                  class="px-2 py-1 rounded text-xs font-medium"
+                  :class="getRiskClass(getAIAnalysis()?.risk_assessment)"
+                  x-text="getAIAnalysis()?.risk_assessment?.toUpperCase() || 'UNKNOWN'"
+                ></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auto-Monitoring Section (Placeholder for future "Start" button) -->
+  <div class="bg-gray-50 rounded-xl p-6">
+    <h2 class="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+      <i class="fas fa-radar-chart text-blue-600 mr-2"></i>
+      Auto Pump Detection
+    </h2>
+
+    <div class="text-center py-8">
+      <div class="text-gray-400 mb-4">
+        <i class="fas fa-cog text-4xl"></i>
+      </div>
+      <p class="text-gray-600 mb-4">
+        Automatic pump detection and monitoring will be available here
+      </p>
+      <button
+        disabled
+        class="px-6 py-3 bg-gray-300 text-gray-500 rounded-lg cursor-not-allowed"
+      >
+        <i class="fas fa-play mr-2"></i>
+        Start Auto-Detection (Coming Soon)
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  function pumpData() {
+    return {
+      form: {
+        tokenMint: '{{ selected_token or "" }}',
+      },
+      isAnalyzing: false,
+      hasResults: false,
+      results: null,
+
+      get isValidAddress() {
+        return this.isValidSolanaAddress(this.form.tokenMint);
+      },
+
+      initPump() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get("token");
+        if (token) {
+          this.form.tokenMint = token;
+          if (this.isValidAddress) {
+            setTimeout(() => this.analyzePump(), 1000);
+          }
+        }
+      },
+
+      async analyzePump() {
+        if (!this.isValidAddress) {
+          this.showNotification(
+            "error",
+            "Invalid Address",
+            "Please enter a valid Solana token mint address"
+          );
+          return;
+        }
+
+        this.isAnalyzing = true;
+        this.hasResults = false;
+        this.results = null;
+
+        try {
+          const response = await fetch(`/api/run/pump/`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token_address: this.form.tokenMint }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(
+              errorData.message || errorData.detail || `HTTP ${response.status}`
+            );
+          }
+
+          this.results = await response.json();
+          this.hasResults = true;
+
+          this.showNotification(
+            "success",
+            "Pump Analysis Complete",
+            "Token analyzed for pump signals successfully"
+          );
+        } catch (error) {
+          this.showNotification(
+            "error",
+            "Analysis Failed",
+            error.message || "Failed to analyze token for pump signals"
+          );
+        } finally {
+          this.isAnalyzing = false;
+        }
+      },
+
+      // Get pump-specific data
+      getPumpData() {
+        return this.results?.profile_data?.pump_metrics || null;
+      },
+
+      // Get AI analysis data
+      getAIAnalysis() {
+        return this.results?.profile_data?.ai_analysis || null;
+      },
+
+      // Utility Functions
+      async pasteFromClipboard() {
+        try {
+          const text = await navigator.clipboard.readText();
+          if (this.isValidSolanaAddress(text)) {
+            this.form.tokenMint = text;
+            this.showNotification(
+              "success",
+              "Pasted",
+              "Token address pasted from clipboard"
+            );
+          } else {
+            this.showNotification(
+              "warning",
+              "Invalid Format",
+              "Clipboard content is not a valid Solana address"
+            );
+          }
+        } catch (error) {
+          this.showNotification(
+            "error",
+            "Paste Failed",
+            "Failed to access clipboard"
+          );
+        }
+      },
+
+      clearResults() {
+        this.hasResults = false;
+        this.results = null;
+        this.form.tokenMint = "";
+      },
+
+      formatNumber(num) {
+        if (!num && num !== 0) return "0";
+        if (num >= 1e9) return (num / 1e9).toFixed(1) + "B";
+        if (num >= 1e6) return (num / 1e6).toFixed(1) + "M";
+        if (num >= 1e3) return (num / 1e3).toFixed(1) + "K";
+        return Math.round(num).toString();
+      },
+
+      isValidSolanaAddress(address) {
+        if (!address || typeof address !== "string") return false;
+        if (address.length < 32 || address.length > 44) return false;
+        return /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
+      },
+
+      getRecommendationClass(recommendation) {
+        const classes = {
+          BUY: "bg-green-100 text-green-800",
+          CONSIDER: "bg-blue-100 text-blue-800",
+          HOLD: "bg-yellow-100 text-yellow-800",
+          CAUTION: "bg-orange-100 text-orange-800",
+          AVOID: "bg-red-100 text-red-800",
+        };
+        return classes[recommendation] || "bg-gray-100 text-gray-800";
+      },
+
+      getRiskClass(risk) {
+        const classes = {
+          low: "bg-green-100 text-green-800",
+          medium: "bg-yellow-100 text-yellow-800",
+          high: "bg-red-100 text-red-800",
+          critical: "bg-red-200 text-red-900",
+        };
+        return classes[risk?.toLowerCase()] || "bg-gray-100 text-gray-800";
+      },
+
+      showNotification(type, title, message) {
+        // Try to use parent notification system first (matches base.html)
+        if (this.$parent && this.$parent.showNotification) {
+          this.$parent.showNotification(type, title, message);
+        } else if (window.SolanaAI && window.SolanaAI.notifications) {
+          window.SolanaAI.notifications[type](title, message);
+        } else if (window.showToast) {
+          window.showToast(type, title, message);
+        } else {
+          console.log(`${type.toUpperCase()}: ${title} - ${message}`);
+          alert(`${title}: ${message}`);
+        }
+      },
+    };
+  }
+</script>
+
+{% endblock %}

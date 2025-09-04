@@ -124,6 +124,24 @@ async def analysis_page(request: Request, token: Optional[str] = None):
     return templates.TemplateResponse("pages/analysis.html", context)
 
 
+@router.get("/pump", response_class=HTMLResponse)
+async def pump_page(request: Request, token: str = None):
+    """Pump analysis page"""
+    
+    # Example tokens for the input field
+    example_tokens = [
+        {"name": "Solana", "symbol": "SOL", "mint": "So11111111111111111111111111111111111111112"},
+        {"name": "Bonk", "symbol": "BONK", "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263"},
+        {"name": "Jupiter", "symbol": "JUP", "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"}
+    ]
+    
+    return templates.TemplateResponse("pages/pump.html", {
+        "request": request,
+        "selected_token": token,
+        "example_tokens": example_tokens
+    })
+
+
 @router.get("/analyses", response_class=HTMLResponse, summary="All analyses page")
 async def analyses_page(request: Request):
     """All analyses page with filtering and pagination"""

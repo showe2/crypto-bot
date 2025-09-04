@@ -77,7 +77,7 @@ class BaseAnalysisProfile(ABC):
             elif service_name == "solanafm":
                 tasks[service_name] = self._safe_call(client.get_token_info, token_address)
             elif service_name == "dexscreener":
-                tasks[service_name] = self._safe_call(client.get_token_pairs, token_address, "solana")
+                tasks[service_name] = self._wrap_dexscreener_call(client.get_token_pairs, token_address, "solana")
         
         if not tasks:
             logger.warning(f"No services available for {self.profile_name}")
@@ -105,6 +105,18 @@ class BaseAnalysisProfile(ABC):
         
         return service_data
     
+    async def _wrap_dexscreener_call(self, func, *args, **kwargs):
+        """Wrap DexScreener call to match expected structure"""
+        try:
+            result = await self._safe_call(func, *args, **kwargs)
+            if result is not None:
+                # Wrap in pairs structure to match dex_data["pairs"]["pairs"] access pattern
+                return {"pairs": result}
+            return None
+        except Exception as e:
+            logger.warning(f"DexScreener wrapper failed: {str(e)}")
+            return None
+    
     async def _safe_call(self, func, *args, **kwargs):
         """Execute service call with error handling"""
         try:
@@ -112,13 +124,23 @@ class BaseAnalysisProfile(ABC):
         except Exception as e:
             logger.warning(f"{func.__name__} failed: {str(e)}")
             return None
-    
+
     async def _run_ai_analysis(self, token_address: str, service_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Run AI analysis if available"""
+        """Run AI analysis if available - DEBUG VERSION"""
         try:
+            logger.info(f"🔍 AI Analysis Debug - Step 1: Starting for {self.profile_name}")
+            
             from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisRequest
             
+            logger.info(f"🔍 AI Analysis Debug - Step 2: Imports successful")
+            
+            # Debug service data structure
+            logger.info(f"🔍 AI Analysis Debug - Step 3: Service data keys: {list(service_data.keys())}")
+            for key, value in service_data.items():
+                logger.info(f"🔍 AI Analysis Debug - {key}: {type(value)}")
+            
             # Build AI prompt with safe formatting
+            logger.info(f"🔍 AI Analysis Debug - Step 4: Building AI prompt")
             ai_prompt = await self.build_ai_prompt(token_address, service_data)
             
             # Only proceed if we have a valid prompt
@@ -126,18 +148,30 @@ class BaseAnalysisProfile(ABC):
                 logger.warning(f"Empty AI prompt for {self.profile_name}, skipping AI analysis")
                 return None
             
+            logger.info(f"🔍 AI Analysis Debug - Step 5: AI prompt built successfully ({len(ai_prompt)} chars)")
+            
+            # NORMALIZE SERVICE DATA for AI consumption
+            logger.info(f"🔍 AI Analysis Debug - Step 6: Normalizing service data")
+            normalized_service_data = self._normalize_service_data(service_data)
+            logger.info(f"🔍 AI Analysis Debug - Step 7: Normalized data keys: {list(normalized_service_data.keys())}")
+            
             # Create AI request
+            logger.info(f"🔍 AI Analysis Debug - Step 8: Creating AI request")
             ai_request = AIAnalysisRequest(
                 token_address=token_address,
-                service_responses=service_data,
+                service_responses=normalized_service_data,
                 security_analysis={},
                 analysis_type=self.analysis_type,
                 custom_prompt=ai_prompt,
-                profile_type=self.analysis_type  # Add profile_type
+                profile_type=self.analysis_type
             )
+            
+            logger.info(f"🔍 AI Analysis Debug - Step 9: AI request created, calling analyze_token_with_ai")
             
             # Run AI analysis
             ai_result = await analyze_token_with_ai(ai_request)
+            
+            logger.info(f"🔍 AI Analysis Debug - Step 10: AI analysis completed, result: {ai_result is not None}")
             
             if ai_result:
                 return {
@@ -156,8 +190,38 @@ class BaseAnalysisProfile(ABC):
             return None
             
         except Exception as e:
-            logger.warning(f"AI analysis failed for {self.profile_name}: {str(e)}")
+            logger.error(f"🔍 AI Analysis Debug - ERROR at step: {str(e)}")
+            logger.error(f"🔍 AI Analysis Debug - Error type: {type(e)}")
+            import traceback
+            logger.error(f"🔍 AI Analysis Debug - Traceback: {traceback.format_exc()}")
             return None
+
+    def _normalize_service_data(self, service_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize service data structures for AI consumption"""
+        normalized = {}
+        
+        for service_name, data in service_data.items():
+            if service_name in ["services_attempted", "services_successful", "errors", "token_address", "timestamp"]:
+                continue  # Skip metadata
+            
+            try:
+                # Handle list responses (like Birdeye)
+                if isinstance(data, list) and len(data) > 0:
+                    # Take first item if it's a list
+                    normalized[service_name] = data[0]
+                elif isinstance(data, dict):
+                    # Keep dict as-is
+                    normalized[service_name] = data
+                else:
+                    # Skip other types
+                    logger.debug(f"Skipping {service_name} data type: {type(data)}")
+                    continue
+                    
+            except Exception as e:
+                logger.warning(f"Error normalizing {service_name} data: {e}")
+                continue
+        
+        return normalized
     
     def _extract_token_info(self, service_data: Dict[str, Any]) -> Dict[str, str]:
         """Extract token symbol and name from service data"""
@@ -191,8 +255,8 @@ class BaseAnalysisProfile(ABC):
                     token_name = metadata["name"]
 
         # DexScreener metadata
-        if "dexscreener" in service_data and service_data["dexscreener"]:
-            pairs_data = service_data["dexscreener"]["pairs"][0]
+        if "dexscreener" in service_data and service_data["dexscreener"]["pairs"]:
+            pairs_data = service_data["dexscreener"]["pairs"]["pairs"][0]
 
             base_token = pairs_data.get("baseToken")
             quote_token = pairs_data.get("quoteToken")
