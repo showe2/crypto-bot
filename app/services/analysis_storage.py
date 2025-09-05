@@ -349,7 +349,7 @@ class AnalysisStorageService:
             return f"Token analysis for {doc_data.get('token_address', 'unknown')} completed."
         
     def _extract_analysis_data(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract comprehensive data from analysis result for enhanced storage"""
+        """Extract data from analysis result - handles both security-only and full analysis"""
         try:
             # Parse timestamp
             timestamp = analysis_result.get("timestamp")
@@ -362,84 +362,229 @@ class AnalysisStorageService:
             
             # === BASIC INFO ===
             analysis_type = analysis_result.get("analysis_type", "quick")
+            is_security_only = analysis_type == "security_only"
             is_deep_analysis = analysis_type == "deep"
             
-            # === TOKEN INFO ===
-            token_info = self._extract_token_info(analysis_result)
-            
-            # === COMPREHENSIVE METRICS (merged market_data + enhanced_metrics) ===
-            metrics = self._extract_comprehensive_metrics(analysis_result)
-            
-            # === SECURITY ANALYSIS ===
-            security_analysis_enhanced = self._extract_comprehensive_security(analysis_result)
-            
-            # === AI ANALYSIS (null for quick analysis) ===
-            ai_analysis = None
-            if is_deep_analysis:
-                ai_analysis = self._extract_ai_analysis(analysis_result)
-            
-            # === ANALYSIS RESULTS (always available with summary/reasoning) ===
-            analysis_results = self._extract_analysis_results(analysis_result, is_deep_analysis)
-            
-            # === METADATA ===
-            metadata_enhanced = self._extract_analysis_metadata(analysis_result)
-            
-            # Compile comprehensive data structure
-            comprehensive_data = {
-                # === EXISTING FIELDS (keep for compatibility) ===
-                "analysis_id": analysis_result.get("analysis_id"),
-                "token_address": analysis_result.get("token_address"),
-                "timestamp": timestamp or dt.isoformat(),
-                "timestamp_unix": timestamp_unix,
-                "source_event": analysis_result.get("source_event", "unknown"),
-                "analysis_type": analysis_type,
+            # === CONDITIONAL DATA BASED ON ANALYSIS TYPE ===
+            if is_security_only:
+                # Security-only analysis - simplified schema
+                security_analysis = analysis_result.get("security_analysis", {})
+                service_responses = analysis_result.get("service_responses", {})
+                metadata = analysis_result.get("metadata", {})
                 
-                # === LEGACY FIELDS (for backward compatibility) ===
-                "token_name": token_info.get("name", "Unknown Token"),
-                "token_symbol": token_info.get("symbol", "N/A"),
-                "overall_score": float(analysis_results.get("overall_score", 0)),
-                "risk_level": analysis_results.get("risk_level", "unknown"),
-                "recommendation": analysis_results.get("recommendation", "HOLD"),
-                "confidence_score": float(analysis_results.get("confidence_score", 0)),
-                "security_status": "safe" if security_analysis_enhanced.get("overall_safe") else "unsafe",
-                "critical_issues_count": len(security_analysis_enhanced.get("critical_issues", [])),
-                "warnings_count": len(security_analysis_enhanced.get("warnings", [])),
-                "processing_time": float(metadata_enhanced.get("processing_time_seconds", 0.0)),
+                # Extract token info from security services only
+                token_name = self._extract_token_name_from_security(service_responses)
+                token_symbol = self._extract_token_symbol_from_security(service_responses)
+                metadata_source = self._get_metadata_source_security(service_responses)
                 
-                # === NEW COMPREHENSIVE STRUCTURE ===
-                "token_info": token_info,
-                "metrics": metrics,  # Merged market_data + enhanced_metrics
-                "security_analysis": security_analysis_enhanced,
-                "ai_analysis": ai_analysis,  # null for quick analysis
-                "analysis_results": analysis_results,  # Always has summary/reasoning
-                "metadata": metadata_enhanced,
+                # Build security analysis summary
+                critical_issues = security_analysis.get("critical_issues", [])
+                warnings = security_analysis.get("warnings", [])
+                overall_safe = security_analysis.get("overall_safe", False)
                 
-                # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
-                "price_usd": float(metrics.get("price_usd") or 0),
-                "price_change_24h": float(metrics.get("price_change_24h") or 0),
-                "volume_24h": float(metrics.get("volume_24h") or 0),
-                "market_cap": float(metrics.get("market_cap") or 0),
-                "liquidity": float(metrics.get("liquidity") or 0),
-                "security_score": security_analysis_enhanced.get("security_score", 0),
-                "data_sources": analysis_result.get("data_sources", []),
-                "services_attempted": metadata_enhanced.get("services_attempted", 0),
-                "services_successful": metadata_enhanced.get("services_successful", 0),
-                "analysis_stopped_at_security": metadata_enhanced.get("analysis_stopped_at_security", False),
-                "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
-                "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis else 0,
-                "ai_recommendation": ai_analysis.get("recommendation") if ai_analysis else None,
-                "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if ai_analysis else 0,
+                security_sources = []
+                if "goplus" in service_responses:
+                    security_sources.append("goplus")
+                if "rugcheck" in service_responses:
+                    security_sources.append("rugcheck")
+                if "solsniffer" in service_responses:
+                    security_sources.append("solsniffer")
                 
-                # === FULL RESULT (for complex queries) ===
-                "full_analysis_json": json.dumps(analysis_result, default=str)
-            }
+                # Generate security summary
+                if not overall_safe:
+                    if len(critical_issues) > 0:
+                        security_summary = f"FAILED: {len(critical_issues)} critical security issue{'s' if len(critical_issues) > 1 else ''} detected"
+                    else:
+                        security_summary = "FAILED: Security verification failed"
+                else:
+                    if len(warnings) == 0:
+                        security_summary = "PASSED: All security checks passed"
+                    else:
+                        security_summary = f"PASSED with {len(warnings)} warning{'s' if len(warnings) > 1 else ''}"
+                
+                # Build simplified security-only schema
+                return {
+                    # === CORE IDENTIFIERS ===
+                    "analysis_id": analysis_result.get("analysis_id"),
+                    "token_address": analysis_result.get("token_address"),
+                    "analysis_type": analysis_type,
+                    "timestamp": timestamp or dt.isoformat(),
+                    "timestamp_unix": timestamp_unix,
+                    "source_event": analysis_result.get("source_event", "unknown"),
+                    
+                    # === TOKEN BASIC INFO ===
+                    "token_info": {
+                        "name": token_name,
+                        "symbol": token_symbol,
+                        "metadata_source": metadata_source,
+                    },
+                    
+                    # === SECURITY RESULTS ===
+                    "security_analysis": {
+                        "overall_safe": overall_safe,
+                        "critical_issues": critical_issues,
+                        "critical_issues_count": len(critical_issues),
+                        "warnings": warnings,
+                        "warnings_count": len(warnings),
+                        "security_sources": security_sources,
+                        "security_summary": security_summary
+                    },
+                    
+                    # === PROCESSING METADATA ===
+                    "metadata": {
+                        "processing_time_seconds": float(metadata.get("processing_time_seconds", 0.0)),
+                        "services_successful": int(metadata.get("services_successful", 0)),
+                        "stored_in_db": bool(analysis_result.get("stored_in_db", False)),
+                        "analysis_stopped_at_security": bool(metadata.get("analysis_stopped_at_security", False))
+                    },
+                    
+                    # === LEGACY COMPATIBILITY FIELDS ===
+                    "token_name": token_name,
+                    "token_symbol": token_symbol,
+                    "security_status": "safe" if overall_safe else "unsafe",
+                    "critical_issues_count": len(critical_issues),
+                    "warnings_count": len(warnings),
+                    "processing_time": float(metadata.get("processing_time_seconds", 0.0))
+                }
             
-            return comprehensive_data
-            
+            else:
+                # Parse timestamp
+                timestamp = analysis_result.get("timestamp")
+                if timestamp:
+                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                    timestamp_unix = int(dt.timestamp())
+                else:
+                    dt = datetime.utcnow()
+                    timestamp_unix = int(dt.timestamp())
+                
+                # === BASIC INFO ===
+                analysis_type = analysis_result.get("analysis_type", "quick")
+                is_deep_analysis = analysis_type == "deep"
+                
+                # === TOKEN INFO ===
+                token_info = self._extract_token_info(analysis_result)
+                
+                # === COMPREHENSIVE METRICS (merged market_data + enhanced_metrics) ===
+                metrics = self._extract_comprehensive_metrics(analysis_result)
+                
+                # === SECURITY ANALYSIS ===
+                security_analysis_enhanced = self._extract_comprehensive_security(analysis_result)
+                
+                # === AI ANALYSIS (null for quick analysis) ===
+                ai_analysis = None
+                if is_deep_analysis:
+                    ai_analysis = self._extract_ai_analysis(analysis_result)
+                
+                # === ANALYSIS RESULTS (always available with summary/reasoning) ===
+                analysis_results = self._extract_analysis_results(analysis_result, is_deep_analysis)
+                
+                # === METADATA ===
+                metadata_enhanced = self._extract_analysis_metadata(analysis_result)
+                
+                # Compile comprehensive data structure
+                comprehensive_data = {
+                    # === EXISTING FIELDS (keep for compatibility) ===
+                    "analysis_id": analysis_result.get("analysis_id"),
+                    "token_address": analysis_result.get("token_address"),
+                    "timestamp": timestamp or dt.isoformat(),
+                    "timestamp_unix": timestamp_unix,
+                    "source_event": analysis_result.get("source_event", "unknown"),
+                    "analysis_type": analysis_type,
+                    
+                    # === LEGACY FIELDS (for backward compatibility) ===
+                    "token_name": token_info.get("name", "Unknown Token"),
+                    "token_symbol": token_info.get("symbol", "N/A"),
+                    "overall_score": float(analysis_results.get("overall_score", 0)),
+                    "risk_level": analysis_results.get("risk_level", "unknown"),
+                    "recommendation": analysis_results.get("recommendation", "HOLD"),
+                    "confidence_score": float(analysis_results.get("confidence_score", 0)),
+                    "security_status": "safe" if security_analysis_enhanced.get("overall_safe") else "unsafe",
+                    "critical_issues_count": len(security_analysis_enhanced.get("critical_issues", [])),
+                    "warnings_count": len(security_analysis_enhanced.get("warnings", [])),
+                    "processing_time": float(metadata_enhanced.get("processing_time_seconds", 0.0)),
+                    
+                    # === NEW COMPREHENSIVE STRUCTURE ===
+                    "token_info": token_info,
+                    "metrics": metrics,  # Merged market_data + enhanced_metrics
+                    "security_analysis": security_analysis_enhanced,
+                    "ai_analysis": ai_analysis,  # null for quick analysis
+                    "analysis_results": analysis_results,  # Always has summary/reasoning
+                    "metadata": metadata_enhanced,
+                    
+                    # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
+                    "price_usd": float(metrics.get("price_usd") or 0),
+                    "price_change_24h": float(metrics.get("price_change_24h") or 0),
+                    "volume_24h": float(metrics.get("volume_24h") or 0),
+                    "market_cap": float(metrics.get("market_cap") or 0),
+                    "liquidity": float(metrics.get("liquidity") or 0),
+                    "security_score": security_analysis_enhanced.get("security_score", 0),
+                    "data_sources": analysis_result.get("data_sources", []),
+                    "services_attempted": metadata_enhanced.get("services_attempted", 0),
+                    "services_successful": metadata_enhanced.get("services_successful", 0),
+                    "analysis_stopped_at_security": metadata_enhanced.get("analysis_stopped_at_security", False),
+                    "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
+                    "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis else 0,
+                    "ai_recommendation": ai_analysis.get("recommendation") if ai_analysis else None,
+                    "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if ai_analysis else 0,
+                    
+                    # === FULL RESULT (for complex queries) ===
+                    "full_analysis_json": json.dumps(analysis_result, default=str)
+                }
+                
+                return comprehensive_data
+                
         except Exception as e:
             logger.error(f"Error extracting comprehensive analysis data: {str(e)}")
             return None
     
+    def _extract_token_name_from_security(self, service_responses: Dict[str, Any]) -> str:
+        """Extract token name from security services only"""
+        # Try SolSniffer first
+        solsniffer_data = service_responses.get("solsniffer", {})
+        if solsniffer_data:
+            token_data = solsniffer_data[0] if isinstance(solsniffer_data, list) else solsniffer_data
+            name = token_data.get("tokenName")
+            if name and name.strip():
+                return name.strip()
+        
+        # Try GOplus
+        goplus_data = service_responses.get("goplus", {})
+        if goplus_data and goplus_data.get("metadata"):
+            token_data = goplus_data["metadata"]
+            name = token_data.get("name")
+            if name and name.strip():
+                return name.strip()
+        
+        return "Unknown Token"
+    
+    def _extract_token_symbol_from_security(self, service_responses: Dict[str, Any]) -> str:
+        """Extract token symbol from security services only"""
+        # Try SolSniffer first
+        solsniffer_data = service_responses.get("solsniffer", {})
+        if solsniffer_data:
+            token_data = solsniffer_data[0] if isinstance(solsniffer_data, list) else solsniffer_data
+            symbol = token_data.get("tokenSymbol")
+            if symbol and symbol.strip():
+                return symbol.strip()
+        
+        # Try GOplus
+        goplus_data = service_responses.get("goplus", {})
+        if goplus_data and goplus_data.get("metadata"):
+            token_data = goplus_data["metadata"]
+            symbol = token_data.get("symbol")
+            if symbol and symbol.strip():
+                return symbol.strip()
+        
+        return "Unknown Token"
+
+    def _get_metadata_source_security(self, service_responses: Dict[str, Any]) -> str:
+        """Determine metadata source for security-only analysis"""
+        if "solsniffer" in service_responses:
+            return "solsniffer"
+        elif "goplus" in service_responses:
+            return "goplus"
+        return "unknown"
+
     def _extract_token_info(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
         """Extract comprehensive token metadata"""
         try:

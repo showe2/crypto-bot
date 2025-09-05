@@ -107,13 +107,12 @@ async def handle_mint_webhook(
         
         return JSONResponse({
             "status": "received",
-            "message": "Queued for AI-enhanced deep analysis",
+            "message": "Queued for Security analysis",
             "tokens_detected": tokens_detected,
             "token": token_address[:16] + "..." if token_address else None,
-            "analysis_type": "deep_ai_enhanced",
+            "analysis_type": "security_only",
             "processing_method": "background_queue",  # Indicate single processing path
             "analysis_triggered": tokens_detected > 0,
-            "ai_analysis": True
         })
         
     except Exception as e:
