@@ -1,5 +1,5 @@
 import json
-import asyncio
+import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime
 from loguru import logger
@@ -349,7 +349,7 @@ class AnalysisStorageService:
             return f"Token analysis for {doc_data.get('token_address', 'unknown')} completed."
         
     def _extract_analysis_data(self, analysis_result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Extract data from analysis result - handles both security-only and full analysis"""
+        """Extract comprehensive data from analysis result for enhanced storage"""
         try:
             # Parse timestamp
             timestamp = analysis_result.get("timestamp")
@@ -362,229 +362,84 @@ class AnalysisStorageService:
             
             # === BASIC INFO ===
             analysis_type = analysis_result.get("analysis_type", "quick")
-            is_security_only = analysis_type == "security_only"
             is_deep_analysis = analysis_type == "deep"
             
-            # === CONDITIONAL DATA BASED ON ANALYSIS TYPE ===
-            if is_security_only:
-                # Security-only analysis - simplified schema
-                security_analysis = analysis_result.get("security_analysis", {})
-                service_responses = analysis_result.get("service_responses", {})
-                metadata = analysis_result.get("metadata", {})
-                
-                # Extract token info from security services only
-                token_name = self._extract_token_name_from_security(service_responses)
-                token_symbol = self._extract_token_symbol_from_security(service_responses)
-                metadata_source = self._get_metadata_source_security(service_responses)
-                
-                # Build security analysis summary
-                critical_issues = security_analysis.get("critical_issues", [])
-                warnings = security_analysis.get("warnings", [])
-                overall_safe = security_analysis.get("overall_safe", False)
-                
-                security_sources = []
-                if "goplus" in service_responses:
-                    security_sources.append("goplus")
-                if "rugcheck" in service_responses:
-                    security_sources.append("rugcheck")
-                if "solsniffer" in service_responses:
-                    security_sources.append("solsniffer")
-                
-                # Generate security summary
-                if not overall_safe:
-                    if len(critical_issues) > 0:
-                        security_summary = f"FAILED: {len(critical_issues)} critical security issue{'s' if len(critical_issues) > 1 else ''} detected"
-                    else:
-                        security_summary = "FAILED: Security verification failed"
-                else:
-                    if len(warnings) == 0:
-                        security_summary = "PASSED: All security checks passed"
-                    else:
-                        security_summary = f"PASSED with {len(warnings)} warning{'s' if len(warnings) > 1 else ''}"
-                
-                # Build simplified security-only schema
-                return {
-                    # === CORE IDENTIFIERS ===
-                    "analysis_id": analysis_result.get("analysis_id"),
-                    "token_address": analysis_result.get("token_address"),
-                    "analysis_type": analysis_type,
-                    "timestamp": timestamp or dt.isoformat(),
-                    "timestamp_unix": timestamp_unix,
-                    "source_event": analysis_result.get("source_event", "unknown"),
-                    
-                    # === TOKEN BASIC INFO ===
-                    "token_info": {
-                        "name": token_name,
-                        "symbol": token_symbol,
-                        "metadata_source": metadata_source,
-                    },
-                    
-                    # === SECURITY RESULTS ===
-                    "security_analysis": {
-                        "overall_safe": overall_safe,
-                        "critical_issues": critical_issues,
-                        "critical_issues_count": len(critical_issues),
-                        "warnings": warnings,
-                        "warnings_count": len(warnings),
-                        "security_sources": security_sources,
-                        "security_summary": security_summary
-                    },
-                    
-                    # === PROCESSING METADATA ===
-                    "metadata": {
-                        "processing_time_seconds": float(metadata.get("processing_time_seconds", 0.0)),
-                        "services_successful": int(metadata.get("services_successful", 0)),
-                        "stored_in_db": bool(analysis_result.get("stored_in_db", False)),
-                        "analysis_stopped_at_security": bool(metadata.get("analysis_stopped_at_security", False))
-                    },
-                    
-                    # === LEGACY COMPATIBILITY FIELDS ===
-                    "token_name": token_name,
-                    "token_symbol": token_symbol,
-                    "security_status": "safe" if overall_safe else "unsafe",
-                    "critical_issues_count": len(critical_issues),
-                    "warnings_count": len(warnings),
-                    "processing_time": float(metadata.get("processing_time_seconds", 0.0))
-                }
+            # === TOKEN INFO ===
+            token_info = self._extract_token_info(analysis_result)
             
-            else:
-                # Parse timestamp
-                timestamp = analysis_result.get("timestamp")
-                if timestamp:
-                    dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-                    timestamp_unix = int(dt.timestamp())
-                else:
-                    dt = datetime.utcnow()
-                    timestamp_unix = int(dt.timestamp())
+            # === COMPREHENSIVE METRICS (merged market_data + enhanced_metrics) ===
+            metrics = self._extract_comprehensive_metrics(analysis_result)
+            
+            # === SECURITY ANALYSIS ===
+            security_analysis_enhanced = self._extract_comprehensive_security(analysis_result)
+            
+            # === AI ANALYSIS (null for quick analysis) ===
+            ai_analysis = None
+            if is_deep_analysis:
+                ai_analysis = self._extract_ai_analysis(analysis_result)
+            
+            # === ANALYSIS RESULTS (always available with summary/reasoning) ===
+            analysis_results = self._extract_analysis_results(analysis_result, is_deep_analysis)
+            
+            # === METADATA ===
+            metadata_enhanced = self._extract_analysis_metadata(analysis_result)
+            
+            # Compile comprehensive data structure
+            comprehensive_data = {
+                # === EXISTING FIELDS (keep for compatibility) ===
+                "analysis_id": analysis_result.get("analysis_id"),
+                "token_address": analysis_result.get("token_address"),
+                "timestamp": timestamp or dt.isoformat(),
+                "timestamp_unix": timestamp_unix,
+                "source_event": analysis_result.get("source_event", "unknown"),
+                "analysis_type": analysis_type,
                 
-                # === BASIC INFO ===
-                analysis_type = analysis_result.get("analysis_type", "quick")
-                is_deep_analysis = analysis_type == "deep"
+                # === LEGACY FIELDS (for backward compatibility) ===
+                "token_name": token_info.get("name", "Unknown Token"),
+                "token_symbol": token_info.get("symbol", "N/A"),
+                "overall_score": float(analysis_results.get("overall_score", 0)),
+                "risk_level": analysis_results.get("risk_level", "unknown"),
+                "recommendation": analysis_results.get("recommendation", "HOLD"),
+                "confidence_score": float(analysis_results.get("confidence_score", 0)),
+                "security_status": "safe" if security_analysis_enhanced.get("overall_safe") else "unsafe",
+                "critical_issues_count": len(security_analysis_enhanced.get("critical_issues", [])),
+                "warnings_count": len(security_analysis_enhanced.get("warnings", [])),
+                "processing_time": float(metadata_enhanced.get("processing_time_seconds", 0.0)),
                 
-                # === TOKEN INFO ===
-                token_info = self._extract_token_info(analysis_result)
+                # === NEW COMPREHENSIVE STRUCTURE ===
+                "token_info": token_info,
+                "metrics": metrics,  # Merged market_data + enhanced_metrics
+                "security_analysis": security_analysis_enhanced,
+                "ai_analysis": ai_analysis,  # null for quick analysis
+                "analysis_results": analysis_results,  # Always has summary/reasoning
+                "metadata": metadata_enhanced,
                 
-                # === COMPREHENSIVE METRICS (merged market_data + enhanced_metrics) ===
-                metrics = self._extract_comprehensive_metrics(analysis_result)
+                # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
+                "price_usd": float(metrics.get("price_usd") or 0),
+                "price_change_24h": float(metrics.get("price_change_24h") or 0),
+                "volume_24h": float(metrics.get("volume_24h") or 0),
+                "market_cap": float(metrics.get("market_cap") or 0),
+                "liquidity": float(metrics.get("liquidity") or 0),
+                "security_score": security_analysis_enhanced.get("security_score", 0),
+                "data_sources": analysis_result.get("data_sources", []),
+                "services_attempted": metadata_enhanced.get("services_attempted", 0),
+                "services_successful": metadata_enhanced.get("services_successful", 0),
+                "analysis_stopped_at_security": metadata_enhanced.get("analysis_stopped_at_security", False),
+                "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
+                "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis else 0,
+                "ai_recommendation": ai_analysis.get("recommendation") if ai_analysis else None,
+                "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if ai_analysis else 0,
                 
-                # === SECURITY ANALYSIS ===
-                security_analysis_enhanced = self._extract_comprehensive_security(analysis_result)
-                
-                # === AI ANALYSIS (null for quick analysis) ===
-                ai_analysis = None
-                if is_deep_analysis:
-                    ai_analysis = self._extract_ai_analysis(analysis_result)
-                
-                # === ANALYSIS RESULTS (always available with summary/reasoning) ===
-                analysis_results = self._extract_analysis_results(analysis_result, is_deep_analysis)
-                
-                # === METADATA ===
-                metadata_enhanced = self._extract_analysis_metadata(analysis_result)
-                
-                # Compile comprehensive data structure
-                comprehensive_data = {
-                    # === EXISTING FIELDS (keep for compatibility) ===
-                    "analysis_id": analysis_result.get("analysis_id"),
-                    "token_address": analysis_result.get("token_address"),
-                    "timestamp": timestamp or dt.isoformat(),
-                    "timestamp_unix": timestamp_unix,
-                    "source_event": analysis_result.get("source_event", "unknown"),
-                    "analysis_type": analysis_type,
-                    
-                    # === LEGACY FIELDS (for backward compatibility) ===
-                    "token_name": token_info.get("name", "Unknown Token"),
-                    "token_symbol": token_info.get("symbol", "N/A"),
-                    "overall_score": float(analysis_results.get("overall_score", 0)),
-                    "risk_level": analysis_results.get("risk_level", "unknown"),
-                    "recommendation": analysis_results.get("recommendation", "HOLD"),
-                    "confidence_score": float(analysis_results.get("confidence_score", 0)),
-                    "security_status": "safe" if security_analysis_enhanced.get("overall_safe") else "unsafe",
-                    "critical_issues_count": len(security_analysis_enhanced.get("critical_issues", [])),
-                    "warnings_count": len(security_analysis_enhanced.get("warnings", [])),
-                    "processing_time": float(metadata_enhanced.get("processing_time_seconds", 0.0)),
-                    
-                    # === NEW COMPREHENSIVE STRUCTURE ===
-                    "token_info": token_info,
-                    "metrics": metrics,  # Merged market_data + enhanced_metrics
-                    "security_analysis": security_analysis_enhanced,
-                    "ai_analysis": ai_analysis,  # null for quick analysis
-                    "analysis_results": analysis_results,  # Always has summary/reasoning
-                    "metadata": metadata_enhanced,
-                    
-                    # === ADDITIONAL FIELDS FOR COMPATIBILITY ===
-                    "price_usd": float(metrics.get("price_usd") or 0),
-                    "price_change_24h": float(metrics.get("price_change_24h") or 0),
-                    "volume_24h": float(metrics.get("volume_24h") or 0),
-                    "market_cap": float(metrics.get("market_cap") or 0),
-                    "liquidity": float(metrics.get("liquidity") or 0),
-                    "security_score": security_analysis_enhanced.get("security_score", 0),
-                    "data_sources": analysis_result.get("data_sources", []),
-                    "services_attempted": metadata_enhanced.get("services_attempted", 0),
-                    "services_successful": metadata_enhanced.get("services_successful", 0),
-                    "analysis_stopped_at_security": metadata_enhanced.get("analysis_stopped_at_security", False),
-                    "has_ai_analysis": bool(ai_analysis and ai_analysis.get("available")),
-                    "ai_score": float(ai_analysis.get("ai_score", 0)) if ai_analysis else 0,
-                    "ai_recommendation": ai_analysis.get("recommendation") if ai_analysis else None,
-                    "ai_stop_flags_count": len(ai_analysis.get("stop_flags", [])) if ai_analysis else 0,
-                    
-                    # === FULL RESULT (for complex queries) ===
-                    "full_analysis_json": json.dumps(analysis_result, default=str)
-                }
-                
-                return comprehensive_data
-                
+                # === FULL RESULT (for complex queries) ===
+                "full_analysis_json": json.dumps(analysis_result, default=str)
+            }
+            
+            return comprehensive_data
+            
         except Exception as e:
             logger.error(f"Error extracting comprehensive analysis data: {str(e)}")
             return None
     
-    def _extract_token_name_from_security(self, service_responses: Dict[str, Any]) -> str:
-        """Extract token name from security services only"""
-        # Try SolSniffer first
-        solsniffer_data = service_responses.get("solsniffer", {})
-        if solsniffer_data:
-            token_data = solsniffer_data[0] if isinstance(solsniffer_data, list) else solsniffer_data
-            name = token_data.get("tokenName")
-            if name and name.strip():
-                return name.strip()
-        
-        # Try GOplus
-        goplus_data = service_responses.get("goplus", {})
-        if goplus_data and goplus_data.get("metadata"):
-            token_data = goplus_data["metadata"]
-            name = token_data.get("name")
-            if name and name.strip():
-                return name.strip()
-        
-        return "Unknown Token"
-    
-    def _extract_token_symbol_from_security(self, service_responses: Dict[str, Any]) -> str:
-        """Extract token symbol from security services only"""
-        # Try SolSniffer first
-        solsniffer_data = service_responses.get("solsniffer", {})
-        if solsniffer_data:
-            token_data = solsniffer_data[0] if isinstance(solsniffer_data, list) else solsniffer_data
-            symbol = token_data.get("tokenSymbol")
-            if symbol and symbol.strip():
-                return symbol.strip()
-        
-        # Try GOplus
-        goplus_data = service_responses.get("goplus", {})
-        if goplus_data and goplus_data.get("metadata"):
-            token_data = goplus_data["metadata"]
-            symbol = token_data.get("symbol")
-            if symbol and symbol.strip():
-                return symbol.strip()
-        
-        return "Unknown Token"
-
-    def _get_metadata_source_security(self, service_responses: Dict[str, Any]) -> str:
-        """Determine metadata source for security-only analysis"""
-        if "solsniffer" in service_responses:
-            return "solsniffer"
-        elif "goplus" in service_responses:
-            return "goplus"
-        return "unknown"
-
     def _extract_token_info(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
         """Extract comprehensive token metadata"""
         try:
@@ -772,6 +627,25 @@ class AnalysisStorageService:
             analysis_results = doc_data.get("analysis_results", {})
             metadata = doc_data.get("metadata", {})
             
+            # Initialize profiles field - tracks which analyses have been run
+            profiles = {
+                "pump": False,
+                "twitter": False, 
+                "whale": False,
+                "discovery": False,
+                "listing": False
+            }
+            
+            # Determine which profile this analysis represents
+            analysis_type = doc_data.get("analysis_type", "quick")
+            if analysis_type in ["quick", "deep"]:
+                # These are general analyses, not profile-specific
+                pass
+            else:
+                # This is a profile-specific analysis
+                if analysis_type in profiles:
+                    profiles[analysis_type] = True
+            
             return {
                 # === CORE IDENTIFIERS ===
                 "doc_type": "token_analysis",
@@ -779,6 +653,14 @@ class AnalysisStorageService:
                 "token_address": doc_data.get("token_address") or "unknown",
                 "token_name": token_info.get("name") or "unknown",
                 "token_symbol": token_info.get("symbol") or "unknown",
+                
+                # === PROFILES TRACKING ===
+                "profiles": json.dumps(profiles),
+                "pump_analyzed": profiles["pump"],
+                "twitter_analyzed": profiles["twitter"],
+                "whale_analyzed": profiles["whale"],
+                "discovery_analyzed": profiles["discovery"],
+                "listing_analyzed": profiles["listing"],
                 
                 # === ANALYSIS RESULTS ===
                 "security_status": "safe" if security_analysis.get("overall_safe") else "unsafe",
@@ -853,7 +735,13 @@ class AnalysisStorageService:
                 "error": "metadata_extraction_failed",
                 "token_address": doc_data.get("token_address") or "unknown",
                 "analysis_type": doc_data.get("analysis_type") or "quick",
-                "timestamp_unix": int(doc_data.get("timestamp_unix") or 0)
+                "timestamp_unix": int(doc_data.get("timestamp_unix") or 0),
+                "profiles": json.dumps({"pump": False, "twitter": False, "whale": False, "discovery": False, "listing": False}),
+                "pump_analyzed": False,
+                "twitter_analyzed": False,
+                "whale_analyzed": False,
+                "discovery_analyzed": False,
+                "listing_analyzed": False
             }
     
     def _extract_comprehensive_security(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1522,6 +1410,454 @@ class AnalysisStorageService:
         except Exception as e:
             logger.error(f"Error in paginated query: {str(e)}")
             return None
+
+    async def get_tokens_for_profile_analysis(self, profile_type: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get tokens that haven't been analyzed by specific profile yet"""
+        try:
+            chroma_client = await get_chroma_client()
+            if not chroma_client.is_connected():
+                logger.warning("ChromaDB not available for profile token selection")
+                return []
+
+            # Search for all token analyses and filter in Python
+            results = await chroma_client.search(
+                query="token analysis",
+                n_results=limit * 5,  # Get many more to filter properly
+            )
+
+            # Filter in Python instead of using complex where clauses
+            eligible_tokens = []
+            seen_addresses = set()
+            
+            if results and results.get("documents") and results["documents"][0]:
+                for i, doc in enumerate(results["documents"][0]):
+                    metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
+                    
+                    # Skip if not a token analysis
+                    if metadata.get("doc_type") != "token_analysis":
+                        continue
+                    
+                    # Skip if already analyzed by this profile
+                    if metadata.get(f"{profile_type}_analyzed") == True:
+                        continue
+                    
+                    token_address = metadata.get("token_address")
+                    if not token_address or token_address in seen_addresses:
+                        continue
+                    
+                    # Apply profile-specific filters
+                    if profile_type == "pump":
+                        critical_issues = metadata.get("critical_issues_count", 0)
+                        liquidity = metadata.get("liquidity", 0)
+                        if critical_issues > 0 or liquidity < 2000:
+                            continue
+                    
+                    elif profile_type == "twitter":
+                        market_cap = metadata.get("market_cap", 0)
+                        if market_cap < 100000:
+                            continue
+                    
+                    elif profile_type == "whale":
+                        holder_count = metadata.get("holder_count", 0)
+                        if holder_count < 10:
+                            continue
+                    
+                    eligible_tokens.append({
+                        "token_address": token_address,
+                        "token_name": metadata.get("token_name", "Unknown"),
+                        "token_symbol": metadata.get("token_symbol", "N/A"),
+                        "security_score": metadata.get("security_score", 0),
+                        "last_analysis": metadata.get("timestamp_unix", 0),
+                        "liquidity": metadata.get("liquidity", 0),
+                        "volume_24h": metadata.get("volume_24h", 0),
+                        "market_cap": metadata.get("market_cap", 0),
+                        "profiles_status": self._parse_profiles_status(metadata.get("profiles", "{}"))
+                    })
+                    
+                    seen_addresses.add(token_address)
+                    
+                    if len(eligible_tokens) >= limit:
+                        break
+
+            logger.info(f"Found {len(eligible_tokens)} tokens eligible for {profile_type} analysis (simple method)")
+            return eligible_tokens
+            
+        except Exception as e:
+            logger.error(f"Error getting tokens for {profile_type} analysis (simple): {e}")
+            return []
+
+    def _parse_profiles_status(self, profiles_json: str) -> Dict[str, bool]:
+        """Parse profiles JSON string safely"""
+        try:
+            return json.loads(profiles_json)
+        except (json.JSONDecodeError, TypeError):
+            return {"pump": False, "twitter": False, "whale": False, "discovery": False, "listing": False}
+
+    async def update_token_profile_status(self, token_address: str, profile_type: str, completed: bool = True) -> bool:
+        """Update the profile analysis status for a token"""
+        try:
+            chroma_client = await get_chroma_client()
+            if not chroma_client.is_connected():
+                return False
+
+            # Search for the token's latest analysis
+            results = await chroma_client.search(
+                query=f"token analysis {token_address}",
+                n_results=1,
+                where={
+                    "doc_type": "token_analysis",
+                    "token_address": token_address
+                }
+            )
+            
+            if not results or not results.get("metadatas") or not results["metadatas"][0]:
+                logger.warning(f"No analysis found for token {token_address} to update profile status")
+                return False
+            
+            # Get existing metadata
+            existing_metadata = results["metadatas"][0][0]
+            
+            # Parse and update profiles
+            profiles = self._parse_profiles_status(existing_metadata.get("profiles", "{}"))
+            profiles[profile_type] = completed
+            
+            # Update metadata
+            existing_metadata["profiles"] = json.dumps(profiles)
+            existing_metadata[f"{profile_type}_analyzed"] = completed
+            existing_metadata["last_profile_update"] = int(time.time())
+            
+            # Re-add the document with updated metadata
+            doc_content = results["documents"][0][0] if results.get("documents") else ""
+            doc_id = f"profile_update_{profile_type}_{int(time.time())}_{token_address[:8]}"
+            
+            await chroma_client.add_document(
+                content=doc_content,
+                metadata=existing_metadata,
+                doc_id=doc_id
+            )
+
+            logger.info(f"Updated {profile_type} analysis status for {token_address}: {completed}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating profile status for {token_address}: {e}")
+            return False
+        
+    async def store_analysis_run(self, run_data: Dict[str, Any]) -> bool:
+        """Store analysis run results with reusable structure"""
+        try:
+            chroma_client = await get_chroma_client()
+            if not chroma_client.is_connected():
+                return False
+
+            # Extract run metadata
+            run_id = run_data.get("run_id")
+            profile_type = run_data.get("profile_type")
+            
+            if not run_id or not profile_type:
+                logger.error("Missing run_id or profile_type in run data")
+                return False
+
+            # Generate searchable content
+            tokens_analyzed = len(run_data.get("results", []))
+            success_count = len([r for r in run_data.get("results", []) if r.get("success", True)])
+            
+            content = f"""
+            Analysis Run {run_id} - {profile_type.upper()} Profile
+            
+            Completed: {datetime.fromtimestamp(run_data.get('timestamp', 0)).isoformat()}
+            Profile: {profile_type}
+            Tokens analyzed: {tokens_analyzed}
+            Successful analyses: {success_count}
+            Success rate: {(success_count/tokens_analyzed*100):.1f}% if tokens_analyzed > 0 else 0
+            Processing time: {run_data.get('processing_time', 0)}s
+            
+            Run summary: {run_data.get('summary', 'Analysis run completed')}
+            """
+            
+            # Add profile-specific content
+            if profile_type == "pump":
+                pumps_found = len([r for r in run_data.get("results", []) if r.get("pump_probability", 0) > 50])
+                content += f"\nPumps detected: {pumps_found}"
+                
+                # Add top results
+                top_results = sorted(run_data.get("results", []), 
+                                key=lambda x: x.get("pump_score", 0), reverse=True)[:5]
+                if top_results:
+                    content += "\nTop pump candidates by score:"
+                    for result in top_results:
+                        content += f"\n- {result.get('token_symbol', 'N/A')}: Score {result.get('pump_score', 0):.2f}"
+
+            # Generate metadata
+            metadata = {
+                "doc_type": "analysis_run",
+                "run_id": run_id,
+                "profile_type": profile_type,
+                "timestamp_unix": run_data.get("timestamp", int(time.time())),
+                "tokens_analyzed": tokens_analyzed,
+                "successful_analyses": success_count,
+                "processing_time": run_data.get("processing_time", 0),
+                "filters_applied": json.dumps(run_data.get("filters", {})),
+                "run_status": run_data.get("status", "completed"),
+                "results_count": len(run_data.get("results", [])),
+                "results_json": json.dumps(run_data.get("results", []), default=str)
+            }
+            
+            # Add profile-specific metadata
+            if profile_type == "pump":
+                metadata.update({
+                    "pumps_found": len([r for r in run_data.get("results", []) if r.get("pump_probability", 0) > 50]),
+                    "top_pump_score": max([r.get("pump_score", 0) for r in run_data.get("results", [])], default=0),
+                    "avg_pump_probability": sum([r.get("pump_probability", 0) for r in run_data.get("results", [])]) / max(len(run_data.get("results", [])), 1)
+                })
+            
+            doc_id = f"run_{profile_type}_{run_id}"
+            
+            await chroma_client.add_document(
+                content=content,
+                metadata=metadata,
+                doc_id=doc_id
+            )
+
+            logger.info(f"Stored analysis run: {run_id} ({profile_type})")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error storing analysis run: {e}")
+            return False
+
+    async def get_analysis_run(self, run_id: str, profile_type: str) -> Optional[Dict[str, Any]]:
+        """Get specific analysis run by ID and profile type"""
+        try:
+            chroma_client = await get_chroma_client()
+            if not chroma_client.is_connected():
+                return None
+
+            # Search for the specific run
+            results = await chroma_client.search(
+                query=f"analysis run {run_id} {profile_type}",
+                n_results=5,
+                where={
+                    "doc_type": "analysis_run",
+                    "run_id": run_id,
+                    "profile_type": profile_type
+                }
+            )
+
+            if not results or not results.get("metadatas") or not results["metadatas"][0]:
+                return None
+
+            # Get the run metadata
+            metadata = results["metadatas"][0][0]
+            
+            try:
+                results_data = json.loads(metadata.get("results_json", "[]"))
+                filters_data = json.loads(metadata.get("filters_applied", "{}"))
+            except (json.JSONDecodeError, TypeError):
+                results_data = []
+                filters_data = {}
+
+            return {
+                "run_id": metadata.get("run_id"),
+                "profile_type": metadata.get("profile_type"),
+                "timestamp": metadata.get("timestamp_unix"),
+                "tokens_analyzed": metadata.get("tokens_analyzed", 0),
+                "successful_analyses": metadata.get("successful_analyses", 0),
+                "processing_time": metadata.get("processing_time", 0),
+                "status": metadata.get("run_status", "completed"),
+                "results": results_data,
+                "filters": filters_data,
+                "results_count": metadata.get("results_count", 0)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting analysis run {run_id}: {e}")
+            return None
+
+    async def get_recent_runs(self, 
+                            profile_type: Optional[str] = None,
+                            limit: int = 10) -> List[Dict[str, Any]]:
+        """Get recent analysis runs, optionally filtered by profile type"""
+        try:
+            chroma_client = await get_chroma_client()
+            if not chroma_client.is_connected():
+                return []
+
+            # Build search parameters
+            where_clause = {"doc_type": "analysis_run"}
+            if profile_type:
+                where_clause["profile_type"] = profile_type
+
+            # Search for recent runs
+            results = await chroma_client.search(
+                query="analysis run recent",
+                n_results=limit * 2,  # Get more to sort properly
+                where=where_clause
+            )
+
+            if not results or not results.get("metadatas") or not results["metadatas"][0]:
+                return []
+
+            # Process and sort results
+            runs = []
+            for metadata in results["metadatas"][0]:
+                try:
+                    run_info = {
+                        "run_id": metadata.get("run_id"),
+                        "profile_type": metadata.get("profile_type"),
+                        "timestamp": metadata.get("timestamp_unix", 0),
+                        "tokens_analyzed": metadata.get("tokens_analyzed", 0),
+                        "successful_analyses": metadata.get("successful_analyses", 0),
+                        "processing_time": metadata.get("processing_time", 0),
+                        "status": metadata.get("run_status", "completed"),
+                        "results_count": metadata.get("results_count", 0),
+                        "time_ago": self._format_relative_time(metadata.get("timestamp_unix", 0))
+                    }
+                    
+                    # Add profile-specific summary
+                    if metadata.get("profile_type") == "pump":
+                        run_info["pumps_found"] = metadata.get("pumps_found", 0)
+                        run_info["summary"] = f"{run_info['pumps_found']} pumps found"
+                    elif metadata.get("profile_type") == "twitter":
+                        run_info["summary"] = f"{run_info['successful_analyses']} tokens analyzed"
+                    else:
+                        run_info["summary"] = f"{run_info['successful_analyses']} successful analyses"
+                    
+                    runs.append(run_info)
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing run metadata: {e}")
+                    continue
+
+            # Sort by timestamp (most recent first) and limit
+            runs.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+            return runs[:limit]
+            
+        except Exception as e:
+            logger.error(f"Error getting recent runs: {e}")
+            return []
+
+    async def get_run_results_with_filters(self, 
+                                        run_id: str,
+                                        profile_type: str,
+                                        filters: Optional[Dict[str, Any]] = None,
+                                        limit: int = 20) -> Dict[str, Any]:
+        """Get run results with filtering and pagination"""
+        try:
+            # Get the full run data
+            run_data = await self.get_analysis_run(run_id, profile_type)
+            if not run_data:
+                return {"results": [], "run_info": None, "total_results": 0}
+
+            results = run_data.get("results", [])
+            
+            # Apply filters based on profile type
+            if filters and results:
+                if profile_type == "pump":
+                    results = self._filter_pump_results(results, filters)
+
+            # Sort results based on profile type
+            if profile_type == "pump":
+                results.sort(key=lambda x: x.get("pump_score", 0), reverse=True)
+
+            # Limit results
+            results = results[:limit]
+
+            run_info = {
+                "run_id": run_data["run_id"],
+                "profile_type": run_data["profile_type"],
+                "timestamp": run_data["timestamp"],
+                "tokens_analyzed": run_data["tokens_analyzed"],
+                "processing_time": run_data["processing_time"],
+                "status": run_data["status"]
+            }
+
+            return {
+                "results": results,
+                "run_info": run_info,
+                "total_results": len(results),
+                "filters_applied": filters or {}
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting filtered run results: {e}")
+            return {"results": [], "run_info": None, "total_results": 0}
+
+    def _filter_pump_results(self, results: List[Dict], filters: Dict[str, Any]) -> List[Dict]:
+        """Filter pump analysis results"""
+        filtered = []
+        for result in results:
+            include = True
+            
+            if filters.get("min_age_hours") is not None:
+                if result.get("pool_age_hours", 999) > filters["min_age_hours"]:
+                    include = False
+            
+            if filters.get("min_liquidity") is not None:
+                if result.get("liquidity", 0) < filters["min_liquidity"]:
+                    include = False
+            
+            if filters.get("min_volume_5m") is not None:
+                if result.get("volume_5m", 0) < filters["min_volume_5m"]:
+                    include = False
+            
+            if filters.get("min_buy_sell_ratio") is not None:
+                if result.get("buy_sell_ratio", 0) < filters["min_buy_sell_ratio"]:
+                    include = False
+            
+            if filters.get("min_trades_5m") is not None:
+                if result.get("trade_count_recent", 0) < filters["min_trades_5m"]:
+                    include = False
+            
+            if filters.get("security_gate_only") and not result.get("security_gate_passed"):
+                include = False
+            
+            if include:
+                filtered.append(result)
+        
+        return filtered
+
+    async def mark_tokens_analyzed(self, 
+                                token_addresses: List[str], 
+                                profile_type: str,
+                                run_id: str) -> bool:
+        """Mark tokens as analyzed for a specific profile type"""
+        try:
+            # Update each token's profile status
+            success_count = 0
+            for token_address in token_addresses:
+                if await self.update_token_profile_status(token_address, profile_type, completed=True):
+                    success_count += 1
+            
+            # Also create a batch tracking document
+            chroma_client = await get_chroma_client()
+            if chroma_client.is_connected():
+                content = f"Tokens analyzed in {profile_type} run {run_id}: {len(token_addresses)} tokens"
+                
+                metadata = {
+                    "doc_type": "token_analysis_tracking",
+                    "profile_type": profile_type,
+                    "run_id": run_id,
+                    "timestamp_unix": int(time.time()),
+                    "tokens_analyzed": json.dumps(token_addresses),
+                    "analysis_count": len(token_addresses),
+                    "successful_updates": success_count
+                }
+                
+                doc_id = f"tracking_{profile_type}_{run_id}"
+                
+                await chroma_client.add_document(
+                    content=content,
+                    metadata=metadata,
+                    doc_id=doc_id
+                )
+
+            logger.info(f"Updated profile status for {success_count}/{len(token_addresses)} tokens in {profile_type} run {run_id}")
+            return success_count > 0
+            
+        except Exception as e:
+            logger.error(f"Error marking tokens as analyzed: {e}")
+            return False
 
     def _format_relative_time(self, timestamp):
         """Format timestamp as relative time"""

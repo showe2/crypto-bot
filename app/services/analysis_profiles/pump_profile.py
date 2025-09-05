@@ -20,6 +20,11 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
         """Analyze token for pump/spike patterns"""
         self.start_time = time.time()
         
+        # Check if this is automated scanning request
+        if token_address == "*":
+            logger.info("🔄 Starting automated pump scanning for security-checked tokens")
+            return await self._run_automated_pump_scan(filters, **kwargs)
+        
         logger.info(f"📈 Starting Pump analysis for {token_address}")
         
         # Gather service data
@@ -68,6 +73,294 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
         
         logger.info(f"✅ Pump analysis completed: {overall_score}% score, pump probability {pump_data.get('pump_probability', 0):.1f}%")
         return response
+    
+    def _calculate_pump_score_formula(self, pump_data: Dict[str, Any], market_data: Dict[str, Any]) -> float:
+        """Calculate THE pump score: vol_5m * buy_sell_ratio / age_minutes"""
+        try:
+            # Get the three components of the formula
+            vol_5m = pump_data.get("volume_recent", 0)  # This is our vol_5m
+            buy_sell_ratio = pump_data.get("buy_sell_ratio", 1.0)
+            age_hours = pump_data.get("pool_age_hours", 1.0)
+            
+            # Convert age to minutes, minimum 1 minute to avoid division by zero
+            age_minutes = max(age_hours * 60, 1.0)
+            
+            # Calculate the formula: vol_5m * buy_sell_ratio / age_minutes
+            pump_score = (vol_5m * buy_sell_ratio) / age_minutes
+            
+            return round(pump_score, 4)
+            
+        except Exception as e:
+            logger.warning(f"Error calculating pump score formula: {e}")
+            return 0.0
+
+    def _extract_market_data_for_scan(self, service_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract market data for pump scanning"""
+        market_data = {
+            "liquidity": 0,
+            "price_usd": 0,
+            "volume_24h": 0,
+            "market_cap": 0
+        }
+        
+        try:
+            # Get from Birdeye first
+            birdeye_data = service_data.get("birdeye", {})
+            if birdeye_data and birdeye_data.get("price"):
+                price_data = birdeye_data["price"]
+                market_data.update({
+                    "liquidity": price_data.get("liquidity", 0) or 0,
+                    "price_usd": price_data.get("value", 0) or 0,
+                    "volume_24h": price_data.get("volume_24h", 0) or 0,
+                    "market_cap": price_data.get("market_cap", 0) or 0
+                })
+            
+            # Fallback to DexScreener for missing data
+            if not market_data["liquidity"]:
+                dex_data = service_data.get("dexscreener", {})
+                if dex_data and dex_data.get("pairs", {}).get("pairs"):
+                    pair = dex_data["pairs"]["pairs"][0]
+                    market_data["liquidity"] = pair.get("liquidity", {}).get("usd", 0) or 0
+            
+        except Exception as e:
+            logger.warning(f"Error extracting market data for scan: {e}")
+        
+        return market_data
+
+    def _assess_pump_risk_level(self, pump_data: Dict[str, Any]) -> str:
+        """Assess pump risk level"""
+        try:
+            if not pump_data.get("security_gate_passed"):
+                return "critical"
+            
+            pump_prob = pump_data.get("pump_probability", 0)
+            age_hours = pump_data.get("pool_age_hours", 24)
+            
+            if pump_prob > 80 and age_hours < 1:
+                return "critical"
+            elif pump_prob > 60 or age_hours < 2:
+                return "high"
+            elif pump_prob > 30:
+                return "medium"
+            else:
+                return "low"
+                
+        except Exception:
+            return "unknown"
+
+    def _get_pump_recommendation(self, pump_data: Dict[str, Any], pump_score: float) -> str:
+        """Get pump recommendation based on data"""
+        try:
+            if not pump_data.get("security_gate_passed"):
+                return "AVOID"
+            
+            pump_prob = pump_data.get("pump_probability", 0)
+            sustainability = pump_data.get("sustainability_score", 50)
+            
+            if pump_prob > 70 and sustainability < 30:
+                return "CAUTION"
+            elif pump_prob > 50 and pump_score > 1000:
+                return "CONSIDER"
+            elif pump_prob > 30:
+                return "HOLD"
+            elif pump_score > 500:
+                return "CONSIDER"
+            else:
+                return "HOLD"
+                
+        except Exception:
+            return "HOLD"
+    
+    async def _run_automated_pump_scan(self, filters: Optional[Dict] = None, **kwargs) -> Dict[str, Any]:
+        """Run automated pump scanning on tokens"""
+        # Generate unique run ID with "run_" prefix
+        run_id = f"run_{int(time.time())}_{hash(str(filters)) % 10000}"
+        scan_results = []
+        
+        try:
+            # Get tokens that haven't been pump-analyzed yet
+            from app.services.analysis_storage import analysis_storage
+            eligible_tokens = await analysis_storage.get_tokens_for_profile_analysis("pump", limit=30)
+            
+            if not eligible_tokens:
+                logger.warning("No eligible tokens found for pump scanning")
+                
+                # Store empty run
+                run_data = {
+                    "run_id": run_id,
+                    "profile_type": "pump",
+                    "timestamp": int(time.time()),
+                    "status": "completed",
+                    "tokens_analyzed": 0,
+                    "processing_time": round(time.time() - self.start_time, 2),
+                    "filters": filters or {},
+                    "results": [],
+                    "summary": "No tokens available for pump analysis (all already analyzed or don't meet criteria)"
+                }
+                
+                await analysis_storage.store_analysis_run(run_data)
+                
+                return {
+                    "run_id": run_id,
+                    "status": "completed",
+                    "tokens_scanned": 0,
+                    "pumps_found": 0,
+                    "results": [],
+                    "processing_time": round(time.time() - self.start_time, 2),
+                    "message": "No tokens available for pump analysis"
+                }
+            
+            logger.info(f"🔍 Starting pump scan run {run_id}: {len(eligible_tokens)} tokens")
+            
+            scanned_addresses = []
+            
+            # Analyze each token for pump signals
+            for i, token_data in enumerate(eligible_tokens):
+                token_address = token_data["token_address"]
+                
+                try:
+                    logger.debug(f"Scanning token {i+1}/{len(eligible_tokens)}: {token_data['token_symbol']} ({token_address[:8]}...)")
+                    
+                    # Run pump analysis on this token
+                    service_data = await self._gather_service_data(token_address)
+                    pump_data = self._detect_pump_signals(service_data)
+                    
+                    # Extract market data for ranking
+                    market_data = self._extract_market_data_for_scan(service_data)
+                    
+                    # Calculate THE pump score: vol_5m * buy_sell / age_min
+                    pump_score = self._calculate_pump_score_formula(pump_data, market_data)
+                    
+                    # Build result entry with comprehensive data
+                    result = {
+                        # Basic token info
+                        "token_address": token_address,
+                        "token_name": token_data["token_name"],
+                        "token_symbol": token_data["token_symbol"],
+                        "success": True,
+                        
+                        # THE MAIN PUMP SCORE (vol_5m * buy_sell / age_min) - This is the ranking score
+                        "pump_score": pump_score,
+                        
+                        # Raw pump metrics for display and calculations
+                        "pump_probability": pump_data.get("pump_probability", 0),
+                        "pool_age_hours": pump_data.get("pool_age_hours", 0),
+                        "pool_age_minutes": max(pump_data.get("pool_age_hours", 1) * 60, 1),  # For the formula
+                        "buy_sell_ratio": pump_data.get("buy_sell_ratio", 1.0),
+                        "volume_5m": pump_data.get("volume_recent", 0),  # This is vol_5m for the formula
+                        "volume_recent": pump_data.get("volume_recent", 0),  # Alias for compatibility
+                        "trade_count_recent": pump_data.get("trade_count_recent", 0),
+                        "security_gate_passed": pump_data.get("security_gate_passed", False),
+                        "new_pool": pump_data.get("new_pool", False),
+                        "sustainability_score": pump_data.get("sustainability_score", 50),
+                        "volume_spike_percent": pump_data.get("volume_spike_percent", 0),
+                        
+                        # Market data
+                        "liquidity": market_data.get("liquidity", 0),
+                        "price_usd": market_data.get("price_usd", 0),
+                        "volume_24h": market_data.get("volume_24h", 0),
+                        "market_cap": market_data.get("market_cap", 0),
+                        
+                        # Risk assessment
+                        "risk_level": self._assess_pump_risk_level(pump_data),
+                        "recommendation": self._get_pump_recommendation(pump_data, pump_score),
+                        
+                        # Profile tracking
+                        "profiles_before": token_data.get("profiles_status", {}),
+                        
+                        # Metadata
+                        "analysis_timestamp": int(time.time()),
+                        "warnings": pump_data.get("warnings", []),
+                        "scan_run_id": run_id
+                    }
+                    
+                    scan_results.append(result)
+                    scanned_addresses.append(token_address)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to scan token {token_address}: {e}")
+                    
+                    # Add failed result but still mark as attempted
+                    scan_results.append({
+                        "token_address": token_address,
+                        "token_name": token_data["token_name"],
+                        "token_symbol": token_data["token_symbol"],
+                        "success": False,
+                        "error": str(e),
+                        "pump_score": 0,
+                        "scan_run_id": run_id
+                    })
+                    scanned_addresses.append(token_address)  # Still mark as attempted
+                    continue
+            
+            # Sort results by pump score (vol_5m * buy_sell / age_min)
+            scan_results.sort(key=lambda x: x.get("pump_score", 0), reverse=True)
+            
+            # Count successful analyses and pumps
+            successful_analyses = len([r for r in scan_results if r.get("success", False)])
+            pumps_found = len([r for r in scan_results if r.get("success", False) and r.get("pump_probability", 0) > 50])
+            
+            # Mark tokens as analyzed for pump profile (even failed ones to avoid retrying immediately)
+            if scanned_addresses:
+                await analysis_storage.mark_tokens_analyzed(scanned_addresses, "pump", run_id)
+            
+            # Prepare comprehensive run data
+            run_data = {
+                "run_id": run_id,
+                "profile_type": "pump",
+                "timestamp": int(time.time()),
+                "status": "completed",
+                "tokens_analyzed": len(scan_results),
+                "successful_analyses": successful_analyses,
+                "processing_time": round(time.time() - self.start_time, 2),
+                "filters": filters or {},
+                "results": scan_results,
+                "summary": f"Pump scan completed: {pumps_found} pumps found from {successful_analyses} successful analyses"
+            }
+            
+            # Store run data using reusable storage
+            await analysis_storage.store_analysis_run(run_data)
+            
+            logger.info(f"✅ Pump scan run {run_id} completed: {successful_analyses} tokens analyzed, {pumps_found} pumps detected")
+            
+            return {
+                "run_id": run_id,
+                "status": "completed",
+                "tokens_scanned": successful_analyses,
+                "pumps_found": pumps_found,
+                "results": scan_results[:20],  # Return top 20 results for frontend
+                "processing_time": round(time.time() - self.start_time, 2),
+                "total_results": len(scan_results)
+            }
+            
+        except Exception as e:
+            logger.error(f"Automated pump scan failed: {e}")
+            
+            # Store failed run
+            run_data = {
+                "run_id": run_id,
+                "profile_type": "pump",
+                "timestamp": int(time.time()),
+                "status": "error",
+                "tokens_analyzed": 0,
+                "successful_analyses": 0,
+                "processing_time": round(time.time() - self.start_time, 2),
+                "filters": filters or {},
+                "results": [],
+                "summary": f"Pump scan failed: {str(e)}"
+            }
+            
+            await analysis_storage.store_analysis_run(run_data)
+            
+            return {
+                "run_id": run_id,
+                "status": "error",
+                "error": str(e),
+                "tokens_scanned": 0,
+                "pumps_found": 0,
+                "results": [],
+                "processing_time": round(time.time() - self.start_time, 2)
+            }
     
     def _detect_pump_signals(self, service_data: Dict[str, Any]) -> Dict[str, Any]:
         """Detect pump/spike indicators with age, buy/sell ratio, and ranking"""
