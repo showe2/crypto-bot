@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 from app.core.config import get_settings
 from app.utils.cache import cache_manager
 from app.services.analysis_storage import analysis_storage
-from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisRequest
 
 settings = get_settings()
 
@@ -29,37 +28,7 @@ class EnhancedTokenAnalyzer:
             "solsniffer": True
         }
 
-    async def _cache_analysis_for_docx(self, analysis_response: Dict[str, Any]) -> str:
-        """Cache analysis data for DOCX generation with 2-hour TTL"""
-        try:
-            from app.utils.redis_client import get_redis_client
-            
-            redis_client = await get_redis_client()
-            
-            # Generate cache key
-            token_address = analysis_response.get("token_address", "unknown")
-            timestamp = int(time.time())
-            cache_key = f"analysis_docx:{token_address}:{timestamp}"
-            
-            # Store for 2 hours
-            import json
-            success = await redis_client.set(
-                cache_key, 
-                json.dumps(analysis_response), 
-                ex=7200  # 2 hours
-            )
-            
-            if success:
-                logger.info(f"Cached analysis for DOCX generation: {cache_key}")
-                return cache_key
-            else:
-                logger.warning("Failed to cache analysis for DOCX")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Failed to cache analysis for DOCX: {str(e)}")
-            return None
-        
+
     async def analyze_token_deep(self, token_address: str, source_event: str = "api_request") -> Dict[str, Any]:
         """
         Perform deep token analysis with AI integration - STOPS on security failure
@@ -224,6 +193,8 @@ class EnhancedTokenAnalyzer:
         Run AI analysis - only called if security checks passed
         """
         try:
+            from app.services.ai.ai_service import analyze_token_with_ai, AIAnalysisRequest
+            
             logger.info(f"Starting AI analysis for {token_address}")
             
             # Log data availability for transparency
@@ -584,3 +555,18 @@ async def analyze_token_deep_comprehensive(token_address: str, source_event: str
         Enhanced analysis result with AI insights (only if security passes)
     """
     return await enhanced_token_analyzer.analyze_token_deep(token_address, source_event)
+
+
+async def analyze_token_security_only(token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
+    """
+    Perform security-only token analysis for webhooks
+    
+    Args:
+        token_address: Token mint address
+        source_event: Source of analysis request
+    
+    Returns:
+        Security analysis result (stores to DB if security passes)
+    """
+    from app.services.token_analyzer import analyze_token_security_only
+    return await analyze_token_security_only(token_address, source_event)

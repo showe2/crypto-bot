@@ -16,8 +16,9 @@ class WebhookTaskQueue:
             "total_processed": 0,
             "total_failed": 0,
             "queue_size": 0,
-            "deep_analyses_triggered": 0,
-            "ai_analyses_completed": 0,
+            "security_analyses_triggered": 0,
+            "security_analyses_passed": 0,
+            "security_analyses_failed": 0,
             "duplicates_prevented": 0
         }
         # Deduplication cache: token_address -> last_processed_timestamp
@@ -66,7 +67,7 @@ class WebhookTaskQueue:
             return
         
         self.running = True
-        logger.info(f"Starting {num_workers} webhook workers with AI-enhanced deep analysis")
+        logger.info(f"Starting {num_workers} webhook workers with security-only analysis")
         
         for i in range(num_workers):
             worker = asyncio.create_task(self._worker(f"worker-{i}"))
@@ -108,7 +109,7 @@ class WebhookTaskQueue:
             "priority": priority,
             "timestamp": time.time(),
             "retries": 0,
-            "analysis_type": "deep_ai_enhanced",
+            "analysis_type": "security_only",
             "primary_token": token_address  # Store for processing
         }
         
@@ -164,7 +165,7 @@ class WebhookTaskQueue:
         logger.info(f"Webhook worker {worker_name} stopped")
     
     async def _process_task(self, task: Dict[str, Any], worker_name: str):
-        """Process a single webhook task - analysis handles its own storage"""
+        """Process a single webhook task - security analysis only"""
         start_time = time.time()
         event_type = task["event_type"]
         
@@ -176,17 +177,17 @@ class WebhookTaskQueue:
             tokens_for_analysis = self._extract_tokens_for_analysis(payload, event_type)
             
             if tokens_for_analysis:
-                self.stats["deep_analyses_triggered"] += len(tokens_for_analysis)
-                logger.info(f"Worker {worker_name} triggered analysis for {len(tokens_for_analysis)} tokens from {event_type} event")
+                self.stats["security_analyses_triggered"] += len(tokens_for_analysis)
+                logger.info(f"Worker {worker_name} triggered security analysis for {len(tokens_for_analysis)} tokens from {event_type} event")
                 
-                # Import analysis function only
-                from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
+                # Import security-only analysis function
+                from app.services.token_analyzer import analyze_token_security_only
                 
                 for token_address in tokens_for_analysis:
                     try:
-                        logger.info(f"Starting deep AI analysis for webhook token: {token_address}")
+                        logger.info(f"Starting security-only analysis for webhook token: {token_address}")
                         
-                        analysis_result = await analyze_token_deep_comprehensive(
+                        analysis_result = await analyze_token_security_only(
                             token_address, 
                             f"webhook_{event_type}"
                         )
@@ -203,30 +204,38 @@ class WebhookTaskQueue:
                                 "worker_name": worker_name
                             })
                         
-                        # Check if AI analysis was completed
+                        # Check if security analysis passed and was stored
                         if analysis_result:
-                            if analysis_result.get("ai_analysis") and analysis_result.get("metadata", {}).get("ai_analysis_completed"):
-                                self.stats["ai_analyses_completed"] += 1
-                                logger.info(f"AI-enhanced analysis completed for {token_address}")
+                            security_passed = analysis_result.get("metadata", {}).get("security_check_passed", False)
+                            stored_in_db = analysis_result.get("stored_in_db", False)
+                            
+                            if security_passed and stored_in_db:
+                                self.stats["security_analyses_passed"] += 1
+                                logger.info(f"✅ Security analysis PASSED and stored for {token_address}")
+                            elif security_passed:
+                                self.stats["security_analyses_passed"] += 1
+                                logger.warning(f"⚠️ Security analysis PASSED but storage failed for {token_address}")
                             else:
-                                logger.info(f"Traditional analysis completed for {token_address} (AI not available)")
+                                self.stats["security_analyses_failed"] += 1
+                                logger.warning(f"❌ Security analysis FAILED for {token_address} - not stored")
                         
                     except Exception as analysis_error:
-                        logger.error(f"Deep analysis failed for {token_address}: {str(analysis_error)}")
+                        self.stats["security_analyses_failed"] += 1
+                        logger.error(f"Security analysis failed for {token_address}: {str(analysis_error)}")
                         continue
             
             processing_time = time.time() - start_time
             self.stats["total_processed"] += 1
             
             logger.info(
-                f"Background task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed"
+                f"Webhook task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed"
             )
             
         except Exception as e:
             processing_time = time.time() - start_time
             self.stats["total_failed"] += 1
             
-            logger.error(f"Background task failed: {event_type} - {str(e)}")
+            logger.error(f"Webhook task failed: {event_type} - {str(e)}")
             
             # Retry logic for failed tasks
             if task["retries"] < 2:
@@ -265,15 +274,16 @@ class WebhookTaskQueue:
         return []
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get queue statistics with deduplication metrics"""
+        """Get queue statistics with security analysis metrics"""
         total_events = self.stats["total_processed"] + self.stats["total_failed"]
         success_rate = (
             self.stats["total_processed"] / total_events * 100
             if total_events > 0 else 0
         )
         
-        ai_completion_rate = (
-            self.stats["ai_analyses_completed"] / max(1, self.stats["deep_analyses_triggered"]) * 100
+        total_security_analyses = self.stats["security_analyses_passed"] + self.stats["security_analyses_failed"]
+        security_pass_rate = (
+            self.stats["security_analyses_passed"] / max(1, total_security_analyses) * 100
         )
         
         return {
@@ -283,10 +293,11 @@ class WebhookTaskQueue:
             "total_processed": self.stats["total_processed"],
             "total_failed": self.stats["total_failed"],
             "success_rate": round(success_rate, 2),
-            "analysis_type": "deep_ai_enhanced",
-            "deep_analyses_triggered": self.stats["deep_analyses_triggered"],
-            "ai_analyses_completed": self.stats["ai_analyses_completed"],
-            "ai_completion_rate": round(ai_completion_rate, 2),
+            "analysis_type": "security_only",
+            "security_analyses_triggered": self.stats["security_analyses_triggered"],
+            "security_analyses_passed": self.stats["security_analyses_passed"],
+            "security_analyses_failed": self.stats["security_analyses_failed"],
+            "security_pass_rate": round(security_pass_rate, 2),
             "duplicates_prevented": self.stats["duplicates_prevented"],
             "deduplication_enabled": True,
             "dedup_window_seconds": self._dedup_window

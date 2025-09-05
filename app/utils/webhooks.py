@@ -51,7 +51,7 @@ class WebhookProcessor:
         self.validator = WebhookValidator()
     
     async def process_mint_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Process new token mint events"""
+        """Process new token mint events - queue for security analysis"""
         try:
             logger.info("Processing mint event")
             
@@ -70,6 +70,16 @@ class WebhookProcessor:
             if payload.get("type") in ["HELIUS_STRING_DATA", "HELIUS_ARRAY_DATA"]:
                 mint_data["original_data"] = payload.get("data")
             
+            # Queue for security analysis
+            try:
+                from app.utils.webhook_tasks import queue_webhook_task
+                await queue_webhook_task("mint", payload, priority="normal")
+                logger.info(f"✅ Queued security analysis for mint: {mint_data.get('mint_address')}")
+                analysis_queued = True
+            except Exception as queue_error:
+                logger.error(f"❌ Failed to queue security analysis: {str(queue_error)}")
+                analysis_queued = False
+            
             # Log the event
             logger.info(
                 f"New token mint detected: {mint_data['mint_address']}",
@@ -77,14 +87,16 @@ class WebhookProcessor:
                     "webhook": True,
                     "event_type": "mint",
                     "mint_address": mint_data['mint_address'],
-                    "signature": mint_data['signature']
+                    "signature": mint_data['signature'],
+                    "analysis_queued": analysis_queued
                 }
             )
             
             return {
                 "status": "processed",
                 "event": "mint",
-                "data": mint_data
+                "data": mint_data,
+                "analysis_queued": analysis_queued
             }
             
         except Exception as e:
@@ -92,7 +104,8 @@ class WebhookProcessor:
             return {
                 "status": "error",
                 "event": "mint",
-                "error": str(e)
+                "error": str(e),
+                "analysis_queued": False
             }
 
 class WebhookManager:
@@ -200,22 +213,38 @@ async def get_webhook_stats() -> Dict[str, Any]:
             raise ValueError("WEBHOOK_BASE_URL is required but not configured")
         webhook_urls = create_webhook_urls(base_url)
     
+    # Get task queue stats
+    try:
+        from app.utils.webhook_tasks import get_webhook_queue_stats
+        queue_stats = await get_webhook_queue_stats()
+    except Exception as e:
+        logger.warning(f"Could not get queue stats: {e}")
+        queue_stats = {"error": "Queue stats unavailable"}
+    
     return {
         "base_url": base_url,
         "supported_types": ["mint"],
-        "webhook_urls": webhook_urls
+        "webhook_urls": webhook_urls,
+        "queue_stats": queue_stats
     }
 
 
 # Additional utility functions
 def get_webhook_health() -> Dict[str, Any]:
     """Get webhook system health status"""
+    try:
+        from app.utils.webhook_tasks import is_webhook_system_running
+        queue_running = is_webhook_system_running()
+    except Exception:
+        queue_running = False
+    
     return {
-        "status": "healthy",
+        "status": "healthy" if queue_running else "degraded",
         "components": {
             "validator": "operational",
             "processor": "operational", 
-            "manager": "operational"
+            "manager": "operational",
+            "task_queue": "operational" if queue_running else "stopped"
         },
         "timestamp": time.time()
     }
@@ -231,6 +260,14 @@ async def validate_webhook_config() -> Dict[str, Any]:
         issues.append("BASE_URL is required but not configured")
     elif not (settings.BASE_URL.startswith('http://') or settings.BASE_URL.startswith('https://')):
         issues.append("BASE_URL must start with http:// or https://")
+    
+    # Check if webhook workers are running
+    try:
+        from app.utils.webhook_tasks import is_webhook_system_running
+        if not is_webhook_system_running():
+            warnings.append("Webhook task queue workers are not running")
+    except Exception:
+        warnings.append("Could not check webhook task queue status")
     
     return {
         "valid": len(issues) == 0,

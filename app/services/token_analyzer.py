@@ -159,6 +159,100 @@ class TokenAnalyzer:
             # Don't let ChromaDB errors affect the main analysis flow
             logger.warning(f"ChromaDB storage error: {str(e)}")
 
+
+    async def analyze_token_security_only(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
+        """
+        Security-only analysis for webhooks - runs security checks and stores if passed
+        """
+        start_time = time.time()
+        analysis_id = f"security_{int(time.time())}_{token_address}"
+        
+        # Initialize minimal response structure
+        analysis_response = {
+            "analysis_id": analysis_id,
+            "token_address": token_address,
+            "timestamp": datetime.utcnow().isoformat(),
+            "source_event": source_event,
+            "analysis_type": "security_only",
+            "warnings": [],
+            "errors": [],
+            "data_sources": [],
+            "service_responses": {},
+            "security_analysis": {},
+            "metadata": {
+                "processing_time_seconds": 0,
+                "data_sources_available": 0,
+                "services_attempted": 0,
+                "services_successful": 0,
+                "security_check_passed": False,
+                "analysis_stopped_at_security": False,
+                "ai_analysis_completed": False
+            }
+        }
+        
+        # Run security checks only
+        logger.info(f"🛡️ Running security-only analysis for {token_address}")
+        security_passed, security_data = await self._run_security_checks(token_address, analysis_response)
+        
+        # Store security data
+        analysis_response["security_analysis"] = security_data
+        analysis_response["metadata"]["security_check_passed"] = security_passed
+        
+        # Calculate processing time
+        processing_time = time.time() - start_time
+        analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
+        
+        if not security_passed:
+            logger.warning(f"❌ Security check FAILED for {token_address} - NOT storing")
+            analysis_response["metadata"]["analysis_stopped_at_security"] = True
+            
+            # Generate minimal security-focused analysis for failed case
+            analysis_response["overall_analysis"] = await self._generate_security_focused_analysis(
+                security_data, token_address, False
+            )
+            analysis_response["analysis_summary"] = analysis_response["overall_analysis"]
+            analysis_response["risk_assessment"] = {
+                "risk_category": "critical",
+                "risk_score": 15,
+                "confidence": 95,
+                "reason": "Critical security issues detected"
+            }
+            
+            logger.warning(f"Security analysis completed for {token_address} in {processing_time:.2f}s - FAILED")
+            return analysis_response
+        
+        logger.info(f"✅ Security check PASSED for {token_address} - storing to DB")
+        
+        # Generate minimal analysis for passed security
+        analysis_response["overall_analysis"] = await self._generate_security_focused_analysis(
+            security_data, token_address, True
+        )
+        analysis_response["analysis_summary"] = analysis_response["overall_analysis"]
+        analysis_response["risk_assessment"] = {
+            "risk_category": analysis_response["overall_analysis"]["risk_level"],
+            "risk_score": analysis_response["overall_analysis"]["score"],
+            "confidence": analysis_response["overall_analysis"]["confidence_score"],
+            "ai_enhanced": False
+        }
+        
+        # Store in ChromaDB immediately (blocking for webhooks to ensure storage)
+        try:
+            success = await analysis_storage.store_analysis(analysis_response)
+            if success:
+                logger.info(f"💾 Security analysis stored in ChromaDB: {analysis_id}")
+                analysis_response["stored_in_db"] = True
+            else:
+                logger.warning(f"Failed to store security analysis: {analysis_id}")
+                analysis_response["stored_in_db"] = False
+                analysis_response["warnings"].append("ChromaDB storage failed")
+        except Exception as e:
+            logger.error(f"ChromaDB storage error: {str(e)}")
+            analysis_response["stored_in_db"] = False
+            analysis_response["errors"].append(f"Storage failed: {str(e)}")
+        
+        logger.info(f"✅ Security-only analysis completed for {token_address} in {processing_time:.2f}s - PASSED & STORED")
+        return analysis_response
+
     
     async def _run_security_checks(self, token_address: str, analysis_response: Dict[str, Any]) -> Tuple[bool, Dict[str, Any]]:
         """Run security checks first (GOplus + RugCheck + SolSniffer)"""
@@ -1131,37 +1225,13 @@ async def analyze_token_from_webhook(
     event_type: str = "unknown",
     store_result: bool = True
 ) -> Dict[str, Any]:
-    """Analyze token from webhook with call stack debugging"""
+    """Analyze token from webhook - security checks only"""
     
-    # DEBUG: Log the call stack to see what's calling this function
-    frame = inspect.currentframe()
-    call_stack = []
     try:
-        while frame:
-            call_stack.append({
-                "function": frame.f_code.co_name,
-                "filename": frame.f_code.co_filename.split('/')[-1],
-                "lineno": frame.f_lineno
-            })
-            frame = frame.f_back
-            if len(call_stack) > 10:  # Limit stack depth
-                break
-    except:
-        call_stack = ["Could not get call stack"]
-    
-    logger.info(f"🔍 WEBHOOK ANALYSIS CALL STACK for {token_address}:")
-    for i, frame_info in enumerate(call_stack[:5]):  # Show top 5 frames
-        if isinstance(frame_info, dict):
-            logger.info(f"  {i}: {frame_info['function']}() at {frame_info['filename']}:{frame_info['lineno']}")
-        else:
-            logger.info(f"  {i}: {frame_info}")
-    
-    # Continue with normal analysis...
-    try:
-        from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
-        logger.info(f"🤖 Webhook triggering analysis for {token_address}")
+        logger.info(f"🛡️ Webhook triggering security-only analysis for {token_address}")
         
-        analysis_result = await analyze_token_deep_comprehensive(
+        # Use security-only analysis for webhooks
+        analysis_result = await token_analyzer.analyze_token_security_only(
             token_address=token_address,
             source_event=f"webhook_{event_type}"
         )
@@ -1169,7 +1239,7 @@ async def analyze_token_from_webhook(
         return analysis_result
         
     except Exception as e:
-        logger.error(f"❌ Webhook analysis failed for {token_address}: {str(e)}")
+        logger.error(f"❌ Webhook security analysis failed for {token_address}: {str(e)}")
         raise
 
 
@@ -1183,3 +1253,17 @@ async def analyze_token_on_demand(token_address: str, analysis_type: str = "quic
     else:
         # Keep quick analysis for API calls when explicitly requested
         return await token_analyzer.analyze_token_comprehensive(token_address, "api_quick")
+    
+    
+async def analyze_token_security_only(token_address: str, source_event: str = "webhook") -> Dict[str, Any]:
+    """
+    Main entry point for security-only token analysis
+    
+    Args:
+        token_address: Token mint address
+        source_event: Source of analysis request
+    
+    Returns:
+        Security analysis result (stores to DB if security passes)
+    """
+    return await token_analyzer.analyze_token_security_only(token_address, source_event)
