@@ -70,7 +70,7 @@ async def run_pump_analysis(
             **request.additional_params or {}
         )
         
-        return profile.format_for_frontend(result)
+        return result
         
     except Exception as e:
         logger.error(f"Pump analysis failed: {str(e)}")

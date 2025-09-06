@@ -460,19 +460,6 @@
               <span>5.0</span>
             </div>
           </div>
-
-          <!-- Security Gate -->
-          <div class="flex items-center">
-            <input
-              type="checkbox"
-              x-model="filters.security_gate_only"
-              id="security-gate"
-              class="h-4 w-4 text-blue-600 border-gray-300 rounded"
-            />
-            <label for="security-gate" class="ml-2 text-sm text-gray-700">
-              Security Gate passed only
-            </label>
-          </div>
         </div>
       </div>
     </div>
@@ -732,7 +719,6 @@
         min_volume_5m: 10000,
         min_buy_sell_ratio: 1.5,
         min_trades_5m: 20,
-        security_gate_only: true,
       },
 
       get isValidAddress() {
@@ -765,8 +751,6 @@
             this.filters.min_trades_5m &&
             result.trade_count_recent < this.filters.min_trades_5m
           )
-            return false;
-          if (this.filters.security_gate_only && !result.security_gate_passed)
             return false;
           return true;
         });
@@ -811,6 +795,39 @@
           }
         } catch (error) {
           console.error("Failed to load existing results:", error);
+        }
+      },
+
+      async refreshResults() {
+        try {
+          const response = await fetch("/api/pump/results");
+          if (response.ok) {
+            const data = await response.json();
+            if (data.results && data.results.length > 0) {
+              this.scanResults = data.results;
+              this.hasScanned = true;
+              this.showNotification(
+                "success",
+                "Refreshed",
+                "Results updated from latest scan"
+              );
+            } else {
+              this.showNotification(
+                "info",
+                "No Results",
+                "No recent pump scan results found"
+              );
+            }
+          } else {
+            throw new Error("Failed to fetch results");
+          }
+        } catch (error) {
+          console.error("Failed to refresh results:", error);
+          this.showNotification(
+            "error",
+            "Refresh Failed",
+            "Failed to refresh results"
+          );
         }
       },
 
@@ -864,32 +881,22 @@
 
       // Automated Scanning Methods
       async startAutomatedScan() {
-        if (!this.scanStatus.system_ready) {
-          this.showNotification(
-            "warning",
-            "System Not Ready",
-            this.scanStatus.message
-          );
-          return;
-        }
-
         this.isScanning = true;
 
         try {
-          this.showNotification(
-            "info",
-            "Starting Scan",
-            "Analyzing security-checked tokens for pump signals..."
-          );
+          console.log("🚀 Starting automated scan...");
 
-          const response = await fetch("/api/run/pump/", {
+          const response = await fetch("/api/run/pump", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              token_address: "*", // Special flag for automated scanning
+              token_address: "*",
               json_filters: this.filters,
             }),
           });
+
+          console.log("📡 Response status:", response.status);
+          console.log("📡 Response ok:", response.ok);
 
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
@@ -900,42 +907,22 @@
 
           const scanData = await response.json();
 
-          if (scanData.status === "error") {
-            throw new Error(scanData.error || "Scan failed");
-          }
-
           this.scanResults = scanData.results || [];
           this.hasScanned = true;
-
-          // Update scan status
-          await this.loadScanStatus();
 
           this.showNotification(
             "success",
             "Scan Complete",
             `Found ${scanData.pumps_found || 0} pump opportunities from ${
               scanData.tokens_scanned || 0
-            } tokens (Run: ${scanData.run_id})`
+            } tokens`
           );
         } catch (error) {
-          console.error("Automated scan failed:", error);
-          this.showNotification(
-            "error",
-            "Scan Failed",
-            error.message || "Failed to run automated pump scan"
-          );
+          console.error("❌ Scan failed:", error);
+          this.showNotification("error", "Scan Failed", error.message);
         } finally {
           this.isScanning = false;
         }
-      },
-
-      async refreshResults() {
-        await this.loadExistingResults();
-        this.showNotification(
-          "success",
-          "Refreshed",
-          "Results updated from latest scan"
-        );
       },
 
       async exportResults() {

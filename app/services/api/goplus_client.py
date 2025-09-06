@@ -25,7 +25,7 @@ class GOplusClient:
         
         self.base_url = settings.GOPLUS_BASE_URL
         self.session = None
-        self._rate_limit_delay = 0.3  # 300ms between requests
+        self._rate_limit_delay = 2
         self._last_request_time = 0
         self.timeout = settings.API_TIMEOUT
         

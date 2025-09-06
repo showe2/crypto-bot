@@ -1422,68 +1422,62 @@ class AnalysisStorageService:
             # Search for all token analyses and filter in Python
             results = await chroma_client.search(
                 query="token analysis",
-                n_results=limit * 5,  # Get many more to filter properly
+                n_results=min(50, limit),
             )
+
+            # DEBUG: See what we got
+            logger.info(f"DEBUG: Found {len(results['documents'][0]) if results and results.get('documents') else 0} total documents")
 
             # Filter in Python instead of using complex where clauses
             eligible_tokens = []
             seen_addresses = set()
             
             if results and results.get("documents") and results["documents"][0]:
+                print(results["documents"])
                 for i, doc in enumerate(results["documents"][0]):
                     metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
+                    print(metadata)
+                    
+                    # DEBUG: Log each token
+                    token_address = metadata.get("token_address")
+                    profiles_json = metadata.get("profiles", "{}")
+                    logger.info(f"DEBUG: Token {i}: {token_address}, profiles: {profiles_json}")
                     
                     # Skip if not a token analysis
                     if metadata.get("doc_type") != "token_analysis":
+                        logger.info(f"DEBUG: Skipping {token_address} - not token_analysis")
                         continue
                     
-                    # Skip if already analyzed by this profile
-                    if metadata.get(f"{profile_type}_analyzed") == True:
-                        continue
+                    # Check profiles JSON
+                    try:
+                        profiles = json.loads(profiles_json)
+                        pump_analyzed = profiles.get(profile_type, False)
+                        logger.info(f"DEBUG: {token_address} pump_analyzed: {pump_analyzed}")
+                        if pump_analyzed:
+                            logger.info(f"DEBUG: Skipping {token_address} - already pump analyzed")
+                            continue
+                    except (json.JSONDecodeError, TypeError):
+                        logger.info(f"DEBUG: {token_address} profiles parsing failed, assuming not analyzed")
+                        pass
                     
-                    token_address = metadata.get("token_address")
                     if not token_address or token_address in seen_addresses:
+                        logger.info(f"DEBUG: Skipping {token_address} - no address or duplicate")
                         continue
                     
-                    # Apply profile-specific filters
-                    if profile_type == "pump":
-                        critical_issues = metadata.get("critical_issues_count", 0)
-                        liquidity = metadata.get("liquidity", 0)
-                        if critical_issues > 0 or liquidity < 2000:
-                            continue
-                    
-                    elif profile_type == "twitter":
-                        market_cap = metadata.get("market_cap", 0)
-                        if market_cap < 100000:
-                            continue
-                    
-                    elif profile_type == "whale":
-                        holder_count = metadata.get("holder_count", 0)
-                        if holder_count < 10:
-                            continue
-                    
+                    logger.info(f"DEBUG: {token_address} ELIGIBLE for pump analysis")
                     eligible_tokens.append({
                         "token_address": token_address,
                         "token_name": metadata.get("token_name", "Unknown"),
                         "token_symbol": metadata.get("token_symbol", "N/A"),
-                        "security_score": metadata.get("security_score", 0),
-                        "last_analysis": metadata.get("timestamp_unix", 0),
-                        "liquidity": metadata.get("liquidity", 0),
-                        "volume_24h": metadata.get("volume_24h", 0),
-                        "market_cap": metadata.get("market_cap", 0),
-                        "profiles_status": self._parse_profiles_status(metadata.get("profiles", "{}"))
                     })
                     
                     seen_addresses.add(token_address)
-                    
-                    if len(eligible_tokens) >= limit:
-                        break
 
-            logger.info(f"Found {len(eligible_tokens)} tokens eligible for {profile_type} analysis (simple method)")
+            logger.info(f"DEBUG: Final eligible tokens: {len(eligible_tokens)}")
             return eligible_tokens
             
         except Exception as e:
-            logger.error(f"Error getting tokens for {profile_type} analysis (simple): {e}")
+            logger.error(f"Error getting tokens for {profile_type} analysis: {e}")
             return []
 
     def _parse_profiles_status(self, profiles_json: str) -> Dict[str, bool]:
@@ -1516,6 +1510,7 @@ class AnalysisStorageService:
             
             # Get existing metadata
             existing_metadata = results["metadatas"][0][0]
+            existing_doc_id = existing_metadata.get("doc_id") or f"update_{int(time.time())}_{token_address[:8]}"
             
             # Parse and update profiles
             profiles = self._parse_profiles_status(existing_metadata.get("profiles", "{}"))
@@ -1526,14 +1521,19 @@ class AnalysisStorageService:
             existing_metadata[f"{profile_type}_analyzed"] = completed
             existing_metadata["last_profile_update"] = int(time.time())
             
-            # Re-add the document with updated metadata
+            # DELETE the old document first
+            try:
+                chroma_client._collection.delete(ids=[existing_doc_id])
+            except Exception:
+                pass
+            
+            # Add updated document with same ID
             doc_content = results["documents"][0][0] if results.get("documents") else ""
-            doc_id = f"profile_update_{profile_type}_{int(time.time())}_{token_address[:8]}"
             
             await chroma_client.add_document(
                 content=doc_content,
                 metadata=existing_metadata,
-                doc_id=doc_id
+                doc_id=existing_doc_id
             )
 
             logger.info(f"Updated {profile_type} analysis status for {token_address}: {completed}")

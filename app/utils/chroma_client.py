@@ -294,13 +294,32 @@ class ChromaClient:
             logger.error(f"Error adding document to ChromaDB: {str(e)}")
             raise
     
+    def _build_where_clause(self, filters: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """
+        Build proper ChromaDB where clause with explicit operators
+        """
+        if not filters:
+            return None
+        
+        # If there's only one filter, use simple $eq format
+        if len(filters) == 1:
+            key, value = list(filters.items())[0]
+            return {key: {"$eq": value}}
+        
+        # Multiple filters need to be combined with $and
+        conditions = []
+        for key, value in filters.items():
+            conditions.append({key: {"$eq": value}})
+        
+        return {"$and": conditions}
+
     async def search(
         self,
         query: str,
         n_results: int = 10,
         where: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
-        """Search documents in knowledge base with better error handling"""
+        ) -> Dict[str, Any]:
+        """Search documents in knowledge base with proper where clause handling"""
         if not self.is_connected():
             success = await self.connect()
             if not success:
@@ -310,10 +329,13 @@ class ChromaClient:
             # Validate parameters
             n_results = max(1, min(n_results, 100))  # Clamp between 1 and 100
             
+            # Build proper where clause
+            where_clause = self._build_where_clause(where)
+            
             results = self._collection.query(
                 query_texts=[query],
                 n_results=n_results,
-                where=where,
+                where=where_clause,
                 include=["documents", "metadatas", "distances"]
             )
             
@@ -325,7 +347,7 @@ class ChromaClient:
             if not results.get('distances'):
                 results['distances'] = [[]]
             
-            logger.debug(f"ChromaDB search query: '{query}' returned {len(results['documents'][0])} results")
+            logger.debug(f"ChromaDB search returned {len(results['documents'][0])} results")
             return results
             
         except Exception as e:

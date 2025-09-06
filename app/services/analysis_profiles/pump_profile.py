@@ -174,7 +174,7 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
     async def _run_automated_pump_scan(self, filters: Optional[Dict] = None, **kwargs) -> Dict[str, Any]:
         """Run automated pump scanning on tokens"""
         # Generate unique run ID with "run_" prefix
-        run_id = f"run_{int(time.time())}_{hash(str(filters)) % 10000}"
+        run_id = f"run_{int(time.time())}"
         scan_results = []
         
         try:
@@ -195,6 +195,7 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                     "processing_time": round(time.time() - self.start_time, 2),
                     "filters": filters or {},
                     "results": [],
+                    "token_analyses": [],
                     "summary": "No tokens available for pump analysis (all already analyzed or don't meet criteria)"
                 }
                 
@@ -214,11 +215,32 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
             
             scanned_addresses = []
             
+            # Prepare run data structure
+            run_data = {
+                "run_id": run_id,
+                "profile_type": "pump",
+                "timestamp": int(time.time()),
+                "status": "completed",
+                "tokens_analyzed": 0,
+                "successful_analyses": 0,
+                "processing_time": 0,
+                "filters": filters or {},
+                "results": [],
+                "token_analyses": [],  # Full analysis data for each token
+                "summary": ""
+            }
+            
             # Analyze each token for pump signals
             for i, token_data in enumerate(eligible_tokens):
                 token_address = token_data["token_address"]
                 
                 try:
+                    # ADD PROPER DELAY BETWEEN TOKENS TO AVOID RATE LIMITS
+                    if i > 0:  # Don't delay on first token
+                        delay = 5  # 5 seconds between tokens
+                        logger.info(f"⏳ Rate limiting: waiting {delay}s before analyzing token {i+1}/{len(eligible_tokens)}")
+                        await asyncio.sleep(delay)
+                    
                     logger.debug(f"Scanning token {i+1}/{len(eligible_tokens)}: {token_data['token_symbol']} ({token_address[:8]}...)")
                     
                     # Run pump analysis on this token
@@ -231,7 +253,12 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                     # Calculate THE pump score: vol_5m * buy_sell / age_min
                     pump_score = self._calculate_pump_score_formula(pump_data, market_data)
                     
-                    # Build result entry with comprehensive data
+                    # Calculate analysis results
+                    overall_score = self._calculate_pump_score(service_data, {})
+                    risk_level = self._assess_pump_risk_level(pump_data)
+                    recommendation = self._get_pump_recommendation(pump_data, pump_score)
+                    
+                    # Build result entry for API response
                     result = {
                         # Basic token info
                         "token_address": token_address,
@@ -245,10 +272,10 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                         # Raw pump metrics for display and calculations
                         "pump_probability": pump_data.get("pump_probability", 0),
                         "pool_age_hours": pump_data.get("pool_age_hours", 0),
-                        "pool_age_minutes": max(pump_data.get("pool_age_hours", 1) * 60, 1),  # For the formula
+                        "pool_age_minutes": max(pump_data.get("pool_age_hours", 1) * 60, 1),
                         "buy_sell_ratio": pump_data.get("buy_sell_ratio", 1.0),
-                        "volume_5m": pump_data.get("volume_recent", 0),  # This is vol_5m for the formula
-                        "volume_recent": pump_data.get("volume_recent", 0),  # Alias for compatibility
+                        "volume_5m": pump_data.get("volume_recent", 0),
+                        "volume_recent": pump_data.get("volume_recent", 0),
                         "trade_count_recent": pump_data.get("trade_count_recent", 0),
                         "security_gate_passed": pump_data.get("security_gate_passed", False),
                         "new_pool": pump_data.get("new_pool", False),
@@ -262,8 +289,8 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                         "market_cap": market_data.get("market_cap", 0),
                         
                         # Risk assessment
-                        "risk_level": self._assess_pump_risk_level(pump_data),
-                        "recommendation": self._get_pump_recommendation(pump_data, pump_score),
+                        "risk_level": risk_level,
+                        "recommendation": recommendation,
                         
                         # Profile tracking
                         "profiles_before": token_data.get("profiles_status", {}),
@@ -274,13 +301,44 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                         "scan_run_id": run_id
                     }
                     
+                    # Build full analysis data for storage
+                    full_analysis = {
+                        "token_address": token_address,
+                        "token_name": token_data["token_name"],
+                        "token_symbol": token_data["token_symbol"],
+                        "analysis_timestamp": int(time.time()),
+                        "success": True,
+                        
+                        # Complete pump metrics
+                        "pump_metrics": pump_data,
+                        "market_data": market_data,
+                        "pump_score": pump_score,
+                        
+                        # Service data (filtered)
+                        "service_data": {
+                            "goplus": service_data.get("goplus", {}),
+                            "dexscreener": service_data.get("dexscreener", {}),
+                            "birdeye": service_data.get("birdeye", {})
+                        },
+                        
+                        # Analysis results
+                        "overall_score": overall_score,
+                        "risk_level": risk_level,
+                        "recommendation": recommendation,
+                        
+                        # Additional metadata
+                        "warnings": pump_data.get("warnings", []),
+                        "processing_time": round(time.time() - self.start_time, 2)
+                    }
+                    
                     scan_results.append(result)
+                    run_data["token_analyses"].append(full_analysis)
                     scanned_addresses.append(token_address)
                     
                 except Exception as e:
                     logger.warning(f"Failed to scan token {token_address}: {e}")
                     
-                    # Add failed result but still mark as attempted
+                    # Add failed result for API
                     scan_results.append({
                         "token_address": token_address,
                         "token_name": token_data["token_name"],
@@ -290,7 +348,18 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                         "pump_score": 0,
                         "scan_run_id": run_id
                     })
-                    scanned_addresses.append(token_address)  # Still mark as attempted
+                    
+                    # Add failed analysis for storage
+                    run_data["token_analyses"].append({
+                        "token_address": token_address,
+                        "token_name": token_data["token_name"],
+                        "token_symbol": token_data["token_symbol"],
+                        "analysis_timestamp": int(time.time()),
+                        "success": False,
+                        "error": str(e)
+                    })
+                    
+                    scanned_addresses.append(token_address)
                     continue
             
             # Sort results by pump score (vol_5m * buy_sell / age_min)
@@ -300,25 +369,20 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
             successful_analyses = len([r for r in scan_results if r.get("success", False)])
             pumps_found = len([r for r in scan_results if r.get("success", False) and r.get("pump_probability", 0) > 50])
             
-            # Mark tokens as analyzed for pump profile (even failed ones to avoid retrying immediately)
+            # Mark tokens as analyzed for pump profile
             if scanned_addresses:
                 await analysis_storage.mark_tokens_analyzed(scanned_addresses, "pump", run_id)
             
-            # Prepare comprehensive run data
-            run_data = {
-                "run_id": run_id,
-                "profile_type": "pump",
-                "timestamp": int(time.time()),
-                "status": "completed",
+            # Complete run data
+            run_data.update({
                 "tokens_analyzed": len(scan_results),
                 "successful_analyses": successful_analyses,
                 "processing_time": round(time.time() - self.start_time, 2),
-                "filters": filters or {},
                 "results": scan_results,
                 "summary": f"Pump scan completed: {pumps_found} pumps found from {successful_analyses} successful analyses"
-            }
+            })
             
-            # Store run data using reusable storage
+            # Store run data
             await analysis_storage.store_analysis_run(run_data)
             
             logger.info(f"✅ Pump scan run {run_id} completed: {successful_analyses} tokens analyzed, {pumps_found} pumps detected")
@@ -347,6 +411,7 @@ class PumpAnalysisProfile(BaseAnalysisProfile):
                 "processing_time": round(time.time() - self.start_time, 2),
                 "filters": filters or {},
                 "results": [],
+                "token_analyses": [],
                 "summary": f"Pump scan failed: {str(e)}"
             }
             
