@@ -228,47 +228,58 @@ class BaseAnalysisProfile(ABC):
         token_symbol = "Unknown"
         token_name = "Unknown Token"
         
-        # Try to extract from different services
-        # Birdeye
-        if "birdeye" in service_data and service_data["birdeye"]:
-            birdeye_data = service_data["birdeye"]
-            if "price" in birdeye_data:
-                # Extract from price data if available
-                pass  # Birdeye doesn't typically include name/symbol in price endpoint
+        logger.info(f"🔍 DEBUG: Available service keys: {list(service_data.keys())}")
         
-        # SolanaFM
-        if "solanafm" in service_data and service_data["solanafm"]:
-            sf_data = service_data["solanafm"]["token"]
-            print(sf_data)
-            if sf_data.get("symbol"):
-                token_symbol = sf_data["symbol"]
-            if sf_data.get("name"):
-                token_name = sf_data["name"]
+        # Try DexScreener first (most reliable structure)
+        if "dexscreener" in service_data and service_data["dexscreener"]:
+            dex_data = service_data["dexscreener"]
+            logger.info(f"🔍 DEXSCREENER: {dex_data}")
+            
+            if dex_data.get("pairs") and dex_data["pairs"].get("pairs"):
+                pairs_list = dex_data["pairs"]["pairs"]
+                if isinstance(pairs_list, list) and len(pairs_list) > 0:
+                    pair = pairs_list[0]
+                    base_token = pair.get("baseToken", {})
+                    
+                    logger.info(f"🔍 DEXSCREENER base_token: {base_token}")
+                    
+                    if base_token.get("symbol"):
+                        token_symbol = base_token["symbol"]
+                        logger.info(f"✅ Found symbol in DexScreener: {token_symbol}")
+                    if base_token.get("name"):
+                        token_name = base_token["name"]
+                        logger.info(f"✅ Found name in DexScreener: {token_name}")
         
-        # Helius metadata
-        if "helius" in service_data and service_data["helius"]:
-            metadata = service_data["helius"]["metadata"]["legacyMetadata"]
+        # Try GOplus metadata if still unknown
+        if (token_symbol == "Unknown" or token_name == "Unknown Token") and "goplus" in service_data and service_data["goplus"]:
+            goplus_data = service_data["goplus"]
+            logger.info(f"🔍 GOPLUS metadata: {goplus_data.get('metadata', {})}")
+            
+            metadata = goplus_data.get("metadata", {})
             if isinstance(metadata, dict):
                 if metadata.get("symbol"):
                     token_symbol = metadata["symbol"]
+                    logger.info(f"✅ Found symbol in GOplus: {token_symbol}")
                 if metadata.get("name"):
                     token_name = metadata["name"]
-
-        # DexScreener metadata
-        if "dexscreener" in service_data and service_data["dexscreener"]["pairs"]:
-            pairs_data = service_data["dexscreener"]["pairs"]["pairs"][0]
-
-            base_token = pairs_data.get("baseToken")
-            quote_token = pairs_data.get("quoteToken")
-
-            if base_token is not None and quote_token is not None:
-                if base_token["address"] == service_data["token_address"]:
-                    token_symbol = base_token["symbol"]
-                    token_name = base_token["name"]
-                else:
-                    token_symbol = quote_token["symbol"]
-                    token_name = quote_token["name"]
-
+                    logger.info(f"✅ Found name in GOplus: {token_name}")
+        
+        # Try Birdeye if still unknown
+        if (token_symbol == "Unknown" or token_name == "Unknown Token") and "birdeye" in service_data and service_data["birdeye"]:
+            birdeye_data = service_data["birdeye"]
+            logger.info(f"🔍 BIRDEYE data: {birdeye_data}")
+            
+            # Birdeye might have token info in different places
+            if birdeye_data.get("token"):
+                token_info = birdeye_data["token"]
+                if token_info.get("symbol"):
+                    token_symbol = token_info["symbol"]
+                    logger.info(f"✅ Found symbol in Birdeye: {token_symbol}")
+                if token_info.get("name"):
+                    token_name = token_info["name"]
+                    logger.info(f"✅ Found name in Birdeye: {token_name}")
+        
+        logger.info(f"🔍 FINAL RESULT: {token_symbol} - {token_name}")
         return {"symbol": token_symbol, "name": token_name}
     
     def _calculate_overall_score(self, service_data: Dict[str, Any], ai_data: Optional[Dict[str, Any]]) -> float:

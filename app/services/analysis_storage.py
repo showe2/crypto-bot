@@ -1433,10 +1433,8 @@ class AnalysisStorageService:
             seen_addresses = set()
             
             if results and results.get("documents") and results["documents"][0]:
-                print(results["documents"])
                 for i, doc in enumerate(results["documents"][0]):
                     metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    print(metadata)
                     
                     # DEBUG: Log each token
                     token_address = metadata.get("token_address")
