@@ -6,7 +6,7 @@ from loguru import logger
 from datetime import datetime
 
 class WebhookTaskQueue:
-    """Async task queue for webhook event processing with deduplication"""
+    """Async task queue for webhook event processing with deduplication and immediate snapshots"""
     
     def __init__(self):
         self.queue = asyncio.Queue()
@@ -19,6 +19,9 @@ class WebhookTaskQueue:
             "security_analyses_triggered": 0,
             "security_analyses_passed": 0,
             "security_analyses_failed": 0,
+            "snapshots_triggered": 0,
+            "snapshots_successful": 0,
+            "snapshots_failed": 0,
             "duplicates_prevented": 0
         }
         # Deduplication cache: token_address -> last_processed_timestamp
@@ -67,7 +70,7 @@ class WebhookTaskQueue:
             return
         
         self.running = True
-        logger.info(f"Starting {num_workers} webhook workers with security-only analysis")
+        logger.info(f"Starting {num_workers} webhook workers with security analysis + snapshots")
         
         for i in range(num_workers):
             worker = asyncio.create_task(self._worker(f"worker-{i}"))
@@ -165,7 +168,7 @@ class WebhookTaskQueue:
         logger.info(f"Webhook worker {worker_name} stopped")
     
     async def _process_task(self, task: Dict[str, Any], worker_name: str):
-        """Process a single webhook task - security analysis only"""
+        """Process a single webhook task - security analysis + snapshots"""
         start_time = time.time()
         event_type = task["event_type"]
         
@@ -185,7 +188,7 @@ class WebhookTaskQueue:
                 
                 for token_address in tokens_for_analysis:
                     try:
-                        logger.info(f"Starting security-only analysis for webhook token: {token_address}")
+                        logger.info(f"🛡️ Starting security-only analysis for webhook token: {token_address}")
                         
                         analysis_result = await analyze_token_security_only(
                             token_address, 
@@ -212,12 +215,58 @@ class WebhookTaskQueue:
                             if security_passed and stored_in_db:
                                 self.stats["security_analyses_passed"] += 1
                                 logger.info(f"✅ Security analysis PASSED and stored for {token_address}")
+                                
+                                # TRIGGER SNAPSHOT immediately after security check passes
+                                try:
+                                    self.stats["snapshots_triggered"] += 1
+                                    logger.info(f"📸 Triggering snapshot for webhook token: {token_address}")
+                                    
+                                    # Extract security status from analysis result
+                                    if analysis_result and analysis_result.get("security_analysis"):
+                                        security_analysis = analysis_result["security_analysis"]
+                                        
+                                        # Check for critical issues
+                                        critical_issues = security_analysis.get("critical_issues", [])
+                                        warnings = security_analysis.get("warnings", [])
+                                        
+                                        if critical_issues:
+                                            security_status = "unsafe"
+                                            logger.warning(f"Token {token_address} has critical issues but passed security: {critical_issues}")
+                                        elif warnings:
+                                            security_status = "warning"
+                                            logger.info(f"Token {token_address} has warnings: {warnings}")
+                                        else:
+                                            security_status = "safe"
+                                    
+                                    logger.info(f"Using security status '{security_status}' for snapshot")
+                                    
+                                    # Import snapshot function
+                                    from app.services.token_snapshot import capture_single_snapshot
+                                    
+                                    # Capture snapshot with extracted security status
+                                    snapshot_result = await capture_single_snapshot(
+                                        token_address=token_address,
+                                        security_status=security_status,
+                                        update_existing=True
+                                    )
+                                    
+                                    if snapshot_result and snapshot_result.get("errors"):
+                                        self.stats["snapshots_failed"] += 1
+                                        logger.error(f"❌ Snapshot failed for {token_address}: {snapshot_result['errors']}")
+                                    else:
+                                        self.stats["snapshots_successful"] += 1
+                                        logger.info(f"✅ Snapshot successful for {token_address} with security status: {security_status}")
+                                        
+                                except Exception as snapshot_error:
+                                    self.stats["snapshots_failed"] += 1
+                                    logger.error(f"❌ Snapshot capture failed for {token_address}: {str(snapshot_error)}")
+
                             elif security_passed:
                                 self.stats["security_analyses_passed"] += 1
                                 logger.warning(f"⚠️ Security analysis PASSED but storage failed for {token_address}")
                             else:
                                 self.stats["security_analyses_failed"] += 1
-                                logger.warning(f"❌ Security analysis FAILED for {token_address} - not stored")
+                                logger.warning(f"❌ Security analysis FAILED for {token_address} - not stored, no snapshot")
                         
                     except Exception as analysis_error:
                         self.stats["security_analyses_failed"] += 1
@@ -274,7 +323,7 @@ class WebhookTaskQueue:
         return []
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get queue statistics with security analysis metrics"""
+        """Get queue statistics with security analysis and snapshot metrics"""
         total_events = self.stats["total_processed"] + self.stats["total_failed"]
         success_rate = (
             self.stats["total_processed"] / total_events * 100
@@ -284,6 +333,11 @@ class WebhookTaskQueue:
         total_security_analyses = self.stats["security_analyses_passed"] + self.stats["security_analyses_failed"]
         security_pass_rate = (
             self.stats["security_analyses_passed"] / max(1, total_security_analyses) * 100
+        )
+        
+        total_snapshots = self.stats["snapshots_successful"] + self.stats["snapshots_failed"]
+        snapshot_success_rate = (
+            self.stats["snapshots_successful"] / max(1, total_snapshots) * 100
         )
         
         return {
@@ -298,6 +352,11 @@ class WebhookTaskQueue:
             "security_analyses_passed": self.stats["security_analyses_passed"],
             "security_analyses_failed": self.stats["security_analyses_failed"],
             "security_pass_rate": round(security_pass_rate, 2),
+            "snapshots_enabled": True,
+            "snapshots_triggered": self.stats["snapshots_triggered"],
+            "snapshots_successful": self.stats["snapshots_successful"],
+            "snapshots_failed": self.stats["snapshots_failed"],
+            "snapshot_success_rate": round(snapshot_success_rate, 2),
             "duplicates_prevented": self.stats["duplicates_prevented"],
             "deduplication_enabled": True,
             "dedup_window_seconds": self._dedup_window

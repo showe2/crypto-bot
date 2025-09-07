@@ -33,9 +33,7 @@ class Settings(BaseSettings):
     # ==============================================
     # BLOCKCHAIN API KEYS
     # ==============================================
-    QUICKNODE_RPC: Optional[str] = None
-    QUICKNODE_WSS: Optional[str] = None
-
+    
     # Helius
     HELIUS_API_KEY: Optional[str] = None
     HELIUS_RPC_URL: str = "https://rpc.helius.xyz/?api-key="
@@ -67,12 +65,6 @@ class Settings(BaseSettings):
     GOPLUS_BASE_URL: str = "https://api.gopluslabs.io"
 
     # ==============================================
-    # WEBHOOKS
-    # ==============================================
-    QUICKNODE_WEBHOOK_SECRET: Optional[str] = None
-    QUICKNODE_WEBHOOK_URL: Optional[str] = None
-
-    # ==============================================
     # STORAGE
     # ==============================================
     CHROMA_DB_PATH: str = "./shared_data/chroma"
@@ -96,15 +88,18 @@ class Settings(BaseSettings):
     CELERY_TIMEZONE: str = "UTC"
 
     # ==============================================
+    # SNAPSHOT SERVICE
+    # ==============================================
+    SNAPSHOT_INTERVAL_SECONDS: int = Field(default=3600, description="How often to run scheduled snapshots (seconds)")
+    SNAPSHOT_ENABLED: bool = Field(default=True, description="Enable/disable scheduled snapshot service")
+    SNAPSHOT_MAX_TOKENS_PER_RUN: int = Field(default=100, description="Max tokens per scheduled batch")
+    SNAPSHOT_RATE_LIMIT_DELAY: float = Field(default=1.0, description="Delay between token snapshots (seconds)")
+    SNAPSHOT_RETRY_FAILED_AFTER: int = Field(default=24, description="Retry failed tokens after N hours")
+
+    # ==============================================
     # TRADING APIS
     # ==============================================
     JUPITER_API_URL: str = "https://quote-api.jup.ag/v6"
-
-    # ==============================================
-    # NOTIFICATIONS
-    # ==============================================
-    TELEGRAM_BOT_TOKEN: Optional[str] = None
-    TELEGRAM_CHAT_ID: Optional[str] = None
 
     # ==============================================
     # SECURITY
@@ -176,6 +171,24 @@ class Settings(BaseSettings):
         path.mkdir(parents=True, exist_ok=True)
         return str(path.absolute())
 
+    @validator('SNAPSHOT_INTERVAL_SECONDS')
+    def validate_snapshot_interval(cls, v):
+        if v < 60:
+            raise ValueError('SNAPSHOT_INTERVAL_SECONDS must be at least 60 seconds')
+        return v
+
+    @validator('SNAPSHOT_MAX_TOKENS_PER_RUN')
+    def validate_snapshot_max_tokens(cls, v):
+        if v < 1 or v > 1000:
+            raise ValueError('SNAPSHOT_MAX_TOKENS_PER_RUN must be between 1 and 1000')
+        return v
+
+    @validator('SNAPSHOT_RATE_LIMIT_DELAY')
+    def validate_snapshot_rate_limit(cls, v):
+        if v < 0.1:
+            raise ValueError('SNAPSHOT_RATE_LIMIT_DELAY must be at least 0.1 seconds')
+        return v
+
     # ==============================================
     # CONFIGURATION READING
     # ==============================================
@@ -211,6 +224,18 @@ class Settings(BaseSettings):
         """Get all webhook endpoint URLs"""
         return {
             "mint": f"{self.BASE_URL}/webhooks/helius/mint",
+        }
+
+    def get_snapshot_config(self) -> dict[str, any]:
+        """Get snapshot service configuration"""
+        return {
+            "enabled": self.SNAPSHOT_ENABLED,
+            "interval_seconds": self.SNAPSHOT_INTERVAL_SECONDS,
+            "interval_hours": round(self.SNAPSHOT_INTERVAL_SECONDS / 3600, 2),
+            "max_tokens_per_run": self.SNAPSHOT_MAX_TOKENS_PER_RUN,
+            "rate_limit_delay": self.SNAPSHOT_RATE_LIMIT_DELAY,
+            "retry_failed_after_hours": self.SNAPSHOT_RETRY_FAILED_AFTER,
+            "estimated_run_time_minutes": round((self.SNAPSHOT_MAX_TOKENS_PER_RUN * self.SNAPSHOT_RATE_LIMIT_DELAY) / 60, 1)
         }
 
     def validate_critical_keys(self) -> list[str]:
