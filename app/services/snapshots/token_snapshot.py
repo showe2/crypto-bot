@@ -191,15 +191,13 @@ class TokenSnapshotService:
         try:
             logger.info(f"🔄 Starting scheduled snapshot run (max {self.max_tokens_per_run} tokens)")
             
-            # Get tokens for snapshot
+            # Get tokens for snapshot (sorted by oldest first)
             tokens = await self._get_tokens_for_snapshot()
             if not tokens:
-                logger.info("No tokens found for snapshot")
-                return {"status": "no_tokens", "tokens_processed": 0}
+                logger.info("No tokens found for snapshot - this is normal if no snapshots exist yet")
+                return {"status": "no_tokens", "tokens_processed": 0, "message": "No existing snapshots to update"}
             
-            # Limit tokens per run
-            tokens = tokens[:self.max_tokens_per_run]
-            logger.info(f"Processing {len(tokens)} tokens for snapshots")
+            logger.info(f"Processing {len(tokens)} tokens for snapshots (oldest snapshots first)")
             
             results = {
                 "status": "completed",
@@ -221,8 +219,10 @@ class TokenSnapshotService:
                     if snapshot.get("errors"):
                         results["failed"] += 1
                         results["errors"].extend(snapshot["errors"])
+                        logger.warning(f"Snapshot failed for {token_address}: {snapshot['errors']}")
                     else:
                         results["successful"] += 1
+                        logger.debug(f"Snapshot successful for {token_address}")
                     
                     # Rate limiting
                     if i < len(tokens) - 1:  # Don't delay after last token
@@ -264,34 +264,21 @@ class TokenSnapshotService:
             )
             
             if results and len(results) > 0:
-                # Get the document content (which contains the full snapshot data)
                 document = results[0]
-                
-                # Extract from metadata first
                 metadata = document.get("metadata", {})
                 analysis_id = metadata.get("analysis_id")
-                snapshot_generation = metadata.get("snapshot_generation", 0)
+                
+                # CONVERT TO INT - metadata stores as string
+                snapshot_generation = int(metadata.get("snapshot_generation", "0"))
                 timestamp = metadata.get("timestamp", 0)
                 
-                # If analysis_id not in metadata, try to extract from document content
-                if not analysis_id:
-                    content = document.get("content", "")
-                    # Parse content to extract analysis_id if needed
-                    if "snapshot_" in content:
-                        # Try to find analysis_id in content
-                        import re
-                        match = re.search(r'"analysis_id":\s*"([^"]+)"', content)
-                        if match:
-                            analysis_id = match.group(1)
-                
-                # Fallback: generate consistent ID if still not found
                 if not analysis_id:
                     analysis_id = f"snapshot_{token_address[:8]}"
                     logger.info(f"Generated fallback analysis_id: {analysis_id}")
                 
                 return {
                     "analysis_id": analysis_id,
-                    "snapshot_generation": snapshot_generation,
+                    "snapshot_generation": snapshot_generation,  # Now it's an int
                     "timestamp": timestamp
                 }
             
@@ -302,37 +289,54 @@ class TokenSnapshotService:
             return None
     
     async def _get_tokens_for_snapshot(self) -> List[str]:
-        """Get list of tokens that need snapshots"""
+        """Get list of tokens that need snapshots, sorted by oldest first"""
         try:
             logger.info("Searching for existing snapshots in ChromaDB...")
             
             # Search for existing snapshots, not analyses
             results = await analysis_storage.search_analyses(
                 query="snapshot",
-                limit=self.max_tokens_per_run * 2,
-                filters={"doc_type": "token_snapshot"}  # Look for snapshots, not analyses
+                limit=self.max_tokens_per_run * 3,  # Get more to sort and filter
+                filters={"doc_type": "token_snapshot"}
             )
             
             logger.info(f"Found {len(results)} snapshot results from ChromaDB")
             
-            tokens = []
+            if not results:
+                logger.info("No existing snapshots found")
+                return []
+            
+            # Extract tokens with their timestamps for sorting
+            token_data = []
             seen = set()
             
-            for i, result in enumerate(results):
+            for result in results:
                 metadata = result.get("metadata", {})
                 token_address = metadata.get("token_address")
+                timestamp = metadata.get("timestamp", "")
                 
                 if token_address and token_address not in seen:
-                    tokens.append(token_address)
+                    token_data.append({
+                        "token_address": token_address,
+                        "timestamp": timestamp
+                    })
                     seen.add(token_address)
-                    logger.info(f"Found token with existing snapshot: {token_address}")
             
-            logger.info(f"Returning {len(tokens)} tokens for snapshot updates")
+            # Sort by timestamp (oldest first) so oldest snapshots get updated first
+            token_data.sort(key=lambda x: x["timestamp"])
+            
+            # Extract just the token addresses, limited by max_tokens_per_run
+            tokens = [item["token_address"] for item in token_data[:self.max_tokens_per_run]]
+            
+            logger.info(f"Returning {len(tokens)} tokens for snapshot updates (oldest first)")
+            for i, token in enumerate(tokens[:3]):  # Log first 3 for debugging
+                logger.debug(f"Token {i+1}: {token}")
+            
             return tokens
             
         except Exception as e:
-            logger.error(f"Error getting tokens for snapshot: {e}")
-            return []
+            logger.warning(f"Error getting tokens for snapshot (non-fatal): {e}")
+            return []  # Return empty list instead of throwing error
     
     async def _run_market_analysis_services(self, token_address: str, snapshot_response: Dict[str, Any]) -> None:
         """Run market analysis services (same as comprehensive analysis but no security)"""
@@ -769,6 +773,9 @@ class TokenSnapshotService:
                     "price_usd": str(market_data.get("price_usd", "unknown")),
                     "price_change_24h": str(market_data.get("price_change_24h", "unknown")),
                     "volume_24h": str(market_data.get("volume_24h", "unknown")),
+                    "volume_6h": str(market_data.get("volume_6h", "unknown")),
+                    "volume_1h": str(market_data.get("volume_1h", "unknown")), 
+                    "volume_5m": str(market_data.get("volume_5m", "unknown")),
                     "market_cap": str(market_data.get("market_cap", "unknown")),
                     "liquidity": str(market_data.get("liquidity", "unknown")),
                     "holders_count": str(token_info.get("holders_count", "unknown")),
