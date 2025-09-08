@@ -1,116 +1,88 @@
 [
   {
-    ids: [
-      "analysis_1757110167_JUPyiwrY",
-      "run_pump_run_1757117385",
-      "tracking_pump_run_1757117385",
-    ],
-    embeddings: None,
-    metadatas: [
-      {
-        ai_processing_time: 0.0,
-        ai_risk_assessment: "unknown",
-        ai_score: 0.0,
-        ai_stop_flags_count: 0,
-        analysis_date: "2025-09-06",
-        analysis_id:
-          "security_1757117367_JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-        analysis_month: "2025-09",
-        analysis_stopped_at_security: False,
-        analysis_type: "security_only",
-        analysis_year: "2025",
-        confidence_score: 90.0,
-        content_type: "text",
-        critical_issues_count: 0,
-        critical_issues_list: "[]",
-        data_completeness: 100.0,
-        dev_holdings_percent: 0.0,
-        discovery_analyzed: False,
-        doc_id: "analysis_1757110167_JUPyiwrY",
-        doc_type: "token_analysis",
-        freeze_authority_active: False,
-        has_ai_analysis: False,
-        has_goplus: True,
-        has_rugcheck: True,
-        has_solsniffer: True,
-        holder_count: 886720,
-        last_profile_update: 1757117388,
-        liquidity: 0.0,
-        listing_analyzed: False,
-        lp_status: "locked",
-        market_cap: 3403619484.42,
-        mint_authority_active: False,
-        overall_score: 70.0,
-        price_change_24h: 0.0,
-        price_usd: 0.0,
-        processing_time: 2.555,
-        profiles:
-          '{"pump": true, "twitter": false, "whale": false, "discovery": false, "listing": false}',
-        pump_analyzed: True,
-        recommendation: "consider",
-        risk_level: "low",
-        security_score: 95,
-        security_status: "safe",
-        services_successful: 3,
-        sniper_risk: "unknown",
-        source_event: "webhook_mint",
-        timestamp: "2025-09-06T00:09:29.874928",
-        timestamp_unix: 1757110167,
-        token_address: "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
-        token_name: "Jupiter",
-        token_symbol: "JUP",
-        total_supply: 0.0,
-        twitter_analyzed: False,
-        volatility_risk: "unknown",
-        volume_24h: 0.0,
-        volume_liquidity_ratio: 0.0,
-        warnings_count: 1,
-        warnings_list: '["Very low liquidity detected"]',
-        whale_analyzed: False,
-        whale_control_percent: 0.0,
-        whale_count: 0,
-        whale_risk: "unknown",
+    analysis_id: "snapshot_1735683600_So11111",
+    token_address: "So11111111111111111111111111111111111111112",
+    timestamp: "2024-12-31T12:00:00Z",
+    source_event: "snapshot_scheduled",
+    analysis_type: "snapshot",
+    snapshot_generation: 1, // Increments with each update
+    warnings: [],
+    errors: [],
+    data_sources: ["birdeye", "helius", "solanafm", "dexscreener"],
+
+    service_responses: {
+      birdeye: {
+        /* Birdeye API response */
       },
-      {
-        avg_pump_probability: 2.3,
-        content_type: "text",
-        doc_id: "run_pump_run_1757117385",
-        doc_type: "analysis_run",
-        filters_applied:
-          '{"max_age_hours": 24, "min_liquidity": 5000, "min_volume_5m": 10000, "min_buy_sell_ratio": 1.5, "min_trades_5m": 20, "security_gate_only": true, "ignore_previous_analysis": true}',
-        processing_time: 3.46,
-        profile_type: "pump",
-        pumps_found: 0,
-        results_count: 1,
-        results_json:
-          '[{"token_address": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "token_name": "Jupiter", "token_symbol": "JUP", "success": true, "pump_score": 2.9832, "pump_probability": 2.3, "pool_age_hours": 14012, "pool_age_minutes": 840720, "buy_sell_ratio": 1.22, "volume_5m": 2055765.3, "volume_recent": 2055765.3, "trade_count_recent": 20, "security_gate_passed": true, "new_pool": false, "sustainability_score": 70.0, "volume_spike_percent": 0, "liquidity": 12048035.231012633, "price_usd": 0.49692460920466647, "volume_24h": 0, "market_cap": 0, "risk_level": "low", "recommendation": "HOLD", "profiles_before": {}, "analysis_timestamp": 1757117388, "warnings": [], "scan_run_id": "run_1757117385"}]',
-        run_id: "run_1757117385",
-        run_status: "completed",
-        successful_analyses: 1,
-        timestamp: "2025-09-06T00:09:48.683011",
-        timestamp_unix: 1757117388,
-        tokens_analyzed: 1,
-        top_pump_score: 2.9832,
+      helius: {
+        /* Helius API response */
       },
-      {
-        analysis_count: 1,
-        content_type: "text",
-        doc_id: "tracking_pump_run_1757117385",
-        doc_type: "token_analysis_tracking",
-        profile_type: "pump",
-        run_id: "run_1757117385",
-        successful_updates: 1,
-        timestamp: "2025-09-06T00:09:48.483080",
-        timestamp_unix: 1757117388,
-        tokens_analyzed: '["JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN"]',
+      solanafm: {
+        /* SolanaFM API response */
       },
-    ],
-    documents: [
-      "Token: Jupiter (JUP). Traditional security_only analysis. Security status: SECURE with 1 warning. Risk level: low. Recommendation: consider. Overall score: 70.0. Market cap: $3,403,619,484. Perfect token distribution - no whales. Has 1 security warnings. Summary: Security checks passed. Analysis reasoning: Analysis score: 70.0/100. Security verification passed. Analysis based on 3 data sources..... Data from 3 sources. Processing time: 2.56s. Analyzed on: 2025-09-06 00:09:27.",
-      "\n            Analysis Run run_1757117385 - PUMP Profile\n            \n            Completed: 2025-09-06T02:09:48\n            Profile: pump\n            Tokens analyzed: 1\n            Successful analyses: 1\n            Success rate: 100.0% if tokens_analyzed > 0 else 0\n            Processing time: 3.46s\n            \n            Run summary: Pump scan completed: 0 pumps found from 1 successful analyses\n            \nPumps detected: 0\nTop pump candidates by score:\n- JUP: Score 2.98",
-      "Tokens analyzed in pump run run_1757117385: 1 tokens",
-    ],
-    uris: None,
-    data: None,
+      dexscreener: {
+        /* DexScreener API response */
+      },
+    },
+
+    security_analysis: {
+      security_status: "safe",
+      overall_safe: true,
+      critical_issues: [],
+      warnings: [],
+      note: "Security validation bypassed for snapshot",
+    },
+
+    overall_analysis: {
+      score: 75.5,
+      risk_level: "low",
+      recommendation: "consider",
+      confidence: 85.0,
+      confidence_score: 85.0,
+      summary: "Snapshot analysis from 4 market sources",
+      positive_signals: ["Market data available", "Trading activity present"],
+      risk_factors: [],
+      security_passed: true, // Always true for snapshots
+      services_analyzed: 4,
+
+      // Enhanced metrics (same as comprehensive analysis)
+      volatility: {
+        recent_volatility_percent: 12.5,
+        volatility_available: true,
+        volatility_risk: "medium",
+      },
+      whale_analysis: {
+        whale_count: 3,
+        whale_control_percent: 25.5,
+        top_whale_percent: 15.2,
+        whale_risk_level: "medium",
+      },
+      sniper_detection: {
+        sniper_risk: "low",
+        pattern_detected: false,
+        similar_holders: 2,
+      },
+      market_structure: {
+        data_sources: 4,
+        has_price_data: true,
+        has_volume_data: true,
+        has_liquidity_data: true,
+      },
+    },
+
+    metadata: {
+      processing_time_seconds: 8.5,
+      data_sources_available: 4,
+      services_attempted: 4,
+      services_successful: 4,
+      security_check_passed: true, // Always true
+      analysis_stopped_at_security: false, // Always false
+      ai_analysis_completed: false,
+      snapshot_update: true,
+      previous_snapshot_id: "snapshot_1735680000_So11111",
+    },
+
+    docx_cache_key: "snapshot_1735683600_So11111",
+    docx_expires_at: "2024-12-31T15:00:00Z",
   },
 ];
