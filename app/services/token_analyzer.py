@@ -235,22 +235,7 @@ class TokenAnalyzer:
             "ai_enhanced": False
         }
         
-        # Store in ChromaDB immediately (blocking for webhooks to ensure storage)
-        try:
-            success = await analysis_storage.store_analysis(analysis_response)
-            if success:
-                logger.info(f"💾 Security analysis stored in ChromaDB: {analysis_id}")
-                analysis_response["stored_in_db"] = True
-            else:
-                logger.warning(f"Failed to store security analysis: {analysis_id}")
-                analysis_response["stored_in_db"] = False
-                analysis_response["warnings"].append("ChromaDB storage failed")
-        except Exception as e:
-            logger.error(f"ChromaDB storage error: {str(e)}")
-            analysis_response["stored_in_db"] = False
-            analysis_response["errors"].append(f"Storage failed: {str(e)}")
-        
-        logger.info(f"✅ Security-only analysis completed for {token_address} in {processing_time:.2f}s - PASSED & STORED")
+        logger.info(f"✅ Security-only analysis completed for {token_address} in {processing_time:.2f}s - PASSED")
         return analysis_response
 
     

@@ -168,7 +168,7 @@ class WebhookTaskQueue:
         logger.info(f"Webhook worker {worker_name} stopped")
     
     async def _process_task(self, task: Dict[str, Any], worker_name: str):
-        """Process a single webhook task - security analysis + snapshots"""
+        """Process a single webhook task - security analysis + immediate snapshots"""
         start_time = time.time()
         event_type = task["event_type"]
         
@@ -210,9 +210,8 @@ class WebhookTaskQueue:
                         # Check if security analysis passed and was stored
                         if analysis_result:
                             security_passed = analysis_result.get("metadata", {}).get("security_check_passed", False)
-                            stored_in_db = analysis_result.get("stored_in_db", False)
                             
-                            if security_passed and stored_in_db:
+                            if security_passed:
                                 self.stats["security_analyses_passed"] += 1
                                 logger.info(f"✅ Security analysis PASSED and stored for {token_address}")
                                 
@@ -221,8 +220,11 @@ class WebhookTaskQueue:
                                     self.stats["snapshots_triggered"] += 1
                                     logger.info(f"📸 Triggering snapshot for webhook token: {token_address}")
                                     
-                                    # Extract security status from analysis result
-                                    if analysis_result and analysis_result.get("security_analysis"):
+                                    # Extract security status, data, and security service responses from analysis result
+                                    security_status = "safe"  # Default
+                                    security_data = {}
+                                    
+                                    if analysis_result.get("security_analysis"):
                                         security_analysis = analysis_result["security_analysis"]
                                         
                                         # Check for critical issues
@@ -238,15 +240,27 @@ class WebhookTaskQueue:
                                         else:
                                             security_status = "safe"
                                     
+                                    # Extract ONLY security service responses
+                                    all_service_responses = analysis_result.get("service_responses", {})
+                                    security_services = ["goplus", "rugcheck", "solsniffer"]
+                                    security_respnoses = {}
+                                    
+                                    for service in security_services:
+                                        if service in all_service_responses:
+                                            security_respnoses[service] = all_service_responses[service]
+                                    
                                     logger.info(f"Using security status '{security_status}' for snapshot")
+                                    logger.info(f"Extracted security service responses: {security_services}")
                                     
                                     # Import snapshot function
                                     from app.services.token_snapshot import capture_single_snapshot
                                     
-                                    # Capture snapshot with extracted security status
+                                    # Capture snapshot with extracted security data
                                     snapshot_result = await capture_single_snapshot(
                                         token_address=token_address,
                                         security_status=security_status,
+                                        security_data=security_data,
+                                        security_service_responses=security_respnoses,
                                         update_existing=True
                                     )
                                     
@@ -255,12 +269,14 @@ class WebhookTaskQueue:
                                         logger.error(f"❌ Snapshot failed for {token_address}: {snapshot_result['errors']}")
                                     else:
                                         self.stats["snapshots_successful"] += 1
-                                        logger.info(f"✅ Snapshot successful for {token_address} with security status: {security_status}")
+                                        snapshot_gen = snapshot_result.get("snapshot_generation", 1) if snapshot_result else 1
+                                        is_first = snapshot_result.get("metadata", {}).get("is_first_snapshot", True) if snapshot_result else True
+                                        logger.info(f"✅ Snapshot successful for {token_address} (gen: {snapshot_gen}, first: {is_first}, security: {security_status})")
                                         
                                 except Exception as snapshot_error:
                                     self.stats["snapshots_failed"] += 1
                                     logger.error(f"❌ Snapshot capture failed for {token_address}: {str(snapshot_error)}")
-
+                                    
                             elif security_passed:
                                 self.stats["security_analyses_passed"] += 1
                                 logger.warning(f"⚠️ Security analysis PASSED but storage failed for {token_address}")
@@ -277,7 +293,7 @@ class WebhookTaskQueue:
             self.stats["total_processed"] += 1
             
             logger.info(
-                f"Webhook task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed"
+                f"Webhook task completed: {event_type} ({processing_time:.2f}s) - {len(tokens_for_analysis)} tokens analyzed + snapshots"
             )
             
         except Exception as e:

@@ -24,23 +24,43 @@ class TokenSnapshotService:
         self.default_security_status = getattr(settings, 'SNAPSHOT_SECURITY_STATUS', 'safe')
         self._running = False
         
-    async def capture_token_snapshot(self, token_address: str, security_status: str = "safe", update_existing: bool = True) -> Dict[str, Any]:
-        """Capture a single token snapshot without security checks"""
+    async def capture_token_snapshot(
+        self, 
+        token_address: str, 
+        security_status: str = "safe", 
+        security_data: Optional[Dict[str, Any]] = None,
+        security_service_responses: Optional[Dict[str, Any]] = None,
+        update_existing: bool = True
+    ) -> Dict[str, Any]:
+        """Capture a single token snapshot - security responses + market metrics"""
         start_time = time.time()
         timestamp_unix = int(time.time())
         
         # Check for existing snapshot
         existing_snapshot = None
         snapshot_generation = 1
+        is_first_snapshot = True
         
         if update_existing:
             existing_snapshot = await self._get_latest_snapshot(token_address)
             if existing_snapshot:
                 snapshot_generation = existing_snapshot.get("snapshot_generation", 0) + 1
+                is_first_snapshot = False
                 logger.info(f"Updating existing snapshot for {token_address} (generation {snapshot_generation})")
         
         # Generate snapshot ID
         analysis_id = f"snapshot_{timestamp_unix}_{token_address[:8]}"
+        
+        # Initialize service responses (ONLY security services stored)
+        service_responses = {}
+        
+        # Include security services ONLY on first snapshot
+        if is_first_snapshot and security_service_responses:
+            logger.info(f"First snapshot - storing security service responses: {list(security_service_responses.keys())}")
+            service_responses.update(security_service_responses)
+        else:
+            if not is_first_snapshot:
+                logger.info(f"Update snapshot - skipping security services storage (generation {snapshot_generation})")
         
         # Initialize response structure
         snapshot_response = {
@@ -52,48 +72,51 @@ class TokenSnapshotService:
             "snapshot_generation": snapshot_generation,
             "warnings": [],
             "errors": [],
-            "data_sources": [],
-            "service_responses": {},
+            "data_sources": list(service_responses.keys()),  # Only security services in data_sources
+            "service_responses": service_responses,  # Only security responses stored
             "security_analysis": {
                 "security_status": security_status,
-                "overall_safe": True,
-                "critical_issues": [],
-                "warnings": [],
+                "overall_safe": security_status == "safe",
+                "critical_issues": security_data.get("critical_issues", []) if security_data else [],
+                "warnings": security_data.get("warnings", []) if security_data else [],
                 "note": "Security validation bypassed for snapshot"
             },
             "metadata": {
                 "processing_time_seconds": 0,
                 "data_sources_available": 0,
                 "services_attempted": 0,
-                "services_successful": 0,
+                "services_successful": len(service_responses),
                 "security_check_passed": True,
                 "analysis_stopped_at_security": False,
                 "ai_analysis_completed": False,
                 "snapshot_update": update_existing,
+                "is_first_snapshot": is_first_snapshot,
                 "previous_snapshot_id": existing_snapshot.get("analysis_id") if existing_snapshot else None
             }
         }
         
         try:
-            # Run market analysis services (no security checks)
+            # ALWAYS run market analysis to get fresh data (but don't store raw responses)
+            logger.info(f"Fetching fresh market data for snapshot (not storing raw responses)")
             await self._run_market_analysis_services(token_address, snapshot_response)
             
-            # Generate metrics
-            snapshot_response["metrics"] = await self._generate_snapshot_metrics(
-                snapshot_response["service_responses"], token_address
+            # Generate metrics from BOTH security and market data
+            snapshot_response["metrics"] = await self._generate_combined_metrics(
+                security_responses=service_responses,
+                market_responses={},
+                token_address=token_address
             )
+            
+            # Update metadata with market services attempted
+            snapshot_response["metadata"]["data_sources_available"] = len(service_responses)
             
             # Calculate processing time
             processing_time = time.time() - start_time
             snapshot_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             
-            # Cache the result
+            # Cache and store
             try:
-                await self.cache.set(
-                    key=analysis_id,
-                    value=snapshot_response,
-                    ttl=self.cache_ttl
-                )
+                await self.cache.set(key=analysis_id, value=snapshot_response, ttl=self.cache_ttl)
                 snapshot_response["docx_cache_key"] = analysis_id
                 snapshot_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=self.cache_ttl)).isoformat()
             except Exception as e:
@@ -103,7 +126,7 @@ class TokenSnapshotService:
             # Store in ChromaDB
             asyncio.create_task(self._store_snapshot_async(snapshot_response))
             
-            logger.info(f"✅ Snapshot captured for {token_address} in {processing_time:.2f}s (gen {snapshot_generation})")
+            logger.info(f"✅ Snapshot captured for {token_address} in {processing_time:.2f}s (gen {snapshot_generation}, first: {is_first_snapshot}, security stored: {len(service_responses)})")
             return snapshot_response
             
         except Exception as e:
@@ -113,6 +136,37 @@ class TokenSnapshotService:
             snapshot_response["errors"].append(str(e))
             snapshot_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             return snapshot_response
+        
+    async def _generate_combined_metrics(self, security_responses: Dict[str, Any], market_responses: Dict[str, Any], token_address: str) -> Dict[str, Any]:
+        """Generate metrics from both security and market data"""
+        try:
+            # Market data from fresh API calls
+            market_data = self._extract_market_data(market_responses)
+            
+            # Token info from security services
+            token_info = self._extract_token_info_from_security(security_responses)
+            
+            # Enhanced metrics from security data
+            volatility = self._calculate_simple_volatility(market_responses.get("birdeye", {}))
+            whale_info = self._detect_simple_whales(security_responses.get("goplus", {}), security_responses.get("rugcheck", {}))
+            sniper_info = self._detect_sniper_patterns(security_responses.get("goplus", {}))
+            
+            return {
+                "market_data": market_data,
+                "token_info": token_info,
+                "volatility": {
+                    "recent_volatility_percent": volatility,
+                    "volatility_available": volatility is not None,
+                    "volatility_risk": "high" if volatility and volatility > 30 else "medium" if volatility and volatility > 15 else "low",
+                    "trades_analyzed": len(market_responses.get("birdeye", {}).get("trades", {}).get("items", []))
+                },
+                "whale_analysis": whale_info,
+                "sniper_detection": sniper_info
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error generating combined metrics: {e}")
+            return {"market_data": {}, "token_info": {}, "volatility": {}, "whale_analysis": {}, "sniper_detection": {}}
     
     async def run_scheduled_snapshots(self) -> Dict[str, Any]:
         """Run scheduled snapshots for multiple tokens"""
@@ -243,7 +297,7 @@ class TokenSnapshotService:
     
     async def _run_market_analysis_services(self, token_address: str, snapshot_response: Dict[str, Any]) -> None:
         """Run market analysis services (same as comprehensive analysis but no security)"""
-        
+        print(snapshot_response)
         # BIRDEYE - Sequential processing
         birdeye_data = {}
         if api_manager.clients.get("birdeye"):
@@ -330,60 +384,153 @@ class TokenSnapshotService:
                 logger.warning("Market analysis services timed out")
                 snapshot_response["warnings"].append("Some market services timed out")
     
-    async def _generate_snapshot_metrics(self, service_responses: Dict[str, Any], token_address: str) -> Dict[str, Any]:
-        """Generate metrics from service responses (reuses comprehensive analysis logic)"""
-        # Import the metric calculation methods from token_analyzer
-        from app.services.token_analyzer import token_analyzer
-        
+    def _calculate_simple_volatility(self, birdeye_data: Dict[str, Any]) -> Optional[float]:
+        """Calculate simple volatility from recent trades"""
         try:
-            # Extract market data
-            market_data = self._extract_market_data(service_responses)
+            trades = birdeye_data.get("trades", []).get("items", [])
+            if not trades or len(trades) < 5:
+                return None
             
-            # Calculate enhanced metrics
-            volatility = token_analyzer._calculate_simple_volatility(service_responses.get("birdeye", {}))
-            whale_info = token_analyzer._detect_simple_whales(
-                service_responses.get("goplus", {}), 
-                service_responses.get("rugcheck", {})
-            )
-            sniper_info = token_analyzer._detect_sniper_patterns(service_responses.get("goplus", {}))
+            token_address = birdeye_data.get("price", {}).get("address", None)
+
+            if token_address is not None:
+                # Extract prices from recent trades
+                prices = []
+                for trade in trades[:20]:  # Use up to 20 recent trades
+                    source = "from" if trade["from"]["address"] == token_address else "to"
+                    if isinstance(trade, dict) and source and trade.get(source):
+                        try:
+                            price = float(trade[source]["price"])
+                            if price > 0:
+                                prices.append(price)
+                        except (ValueError, TypeError):
+                            continue
+                
+                if len(prices) < 3:
+                    return None
+            else:
+                raise Exception("Unable to extract token address from Birdeye data")
             
-            # Token info
-            token_info = self._extract_token_info(service_responses)
+            # Simple volatility = (max_price - min_price) / avg_price * 100
+            max_price = max(prices)
+            min_price = min(prices)
+            avg_price = sum(prices) / len(prices)
             
-            # Market structure
-            market_structure = {
-                "data_sources": len(service_responses),
-                "has_price_data": bool(service_responses.get("birdeye", {}).get("price", {}).get("value")),
-                "has_volume_data": bool(service_responses.get("birdeye", {}).get("price", {}).get("volume_24h")),
-                "has_liquidity_data": bool(service_responses.get("birdeye", {}).get("price", {}).get("liquidity")),
-                "metadata_completeness": token_info.get("metadata_completeness", False)
+            volatility = ((max_price - min_price) / avg_price) * 100 if avg_price > 0 else 0
+            
+            logger.info(f"Simple volatility calculated: {volatility:.2f}% from {len(prices)} trades")
+            return round(volatility, 2)
+            
+        except Exception as e:
+            logger.warning(f"Volatility calculation failed: {e}")
+            return None
+
+    def _detect_simple_whales(self, goplus_data: Dict[str, Any], rugcheck_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Simple whale detection from existing holder data"""
+        try:
+            whale_info = {
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "whale_risk_level": "low",
+                "dev_whale_percent": 0.0
             }
             
+            # Method 1: GOplus holders
+            holders = goplus_data.get("holders", [])
+            if holders and isinstance(holders, list):
+                whales = []
+                for holder in holders:
+                    if isinstance(holder, dict):
+                        try:
+                            percent_raw = holder.get("percent", "0")
+                            percent = float(percent_raw)
+                            
+                            # Whale threshold: >2% = whale
+                            if percent > 2.0:
+                                whales.append(percent)
+                        except (ValueError, TypeError):
+                            continue
+                
+                if whales:
+                    whale_info["whale_count"] = len(whales)
+                    whale_info["whale_control_percent"] = round(sum(whales), 2)
+                    whale_info["top_whale_percent"] = round(max(whales), 2)
+                    
+                    # Simple risk assessment
+                    if whale_info["whale_control_percent"] > 60:
+                        whale_info["whale_risk_level"] = "high"
+                    elif whale_info["whale_control_percent"] > 30:
+                        whale_info["whale_risk_level"] = "medium"  
+                    else:
+                        whale_info["whale_risk_level"] = "low"
+                    
+                    logger.info(f"Whales detected: {whale_info['whale_count']} whales control {whale_info['whale_control_percent']}%")
+            
+            return whale_info
+            
+        except Exception as e:
+            logger.warning(f"Whale detection failed: {e}")
             return {
-                "market_data": market_data,
-                "token_info": token_info,
-                "volatility": {
-                    "recent_volatility_percent": volatility,
-                    "volatility_available": volatility is not None,
-                    "volatility_risk": "high" if volatility and volatility > 30 else "medium" if volatility and volatility > 15 else "low",
-                    "trades_analyzed": len(service_responses.get("birdeye", {}).get("trades", {}).get("items", []))
-                },
-                "whale_analysis": whale_info,
-                "sniper_detection": sniper_info,
-                "market_structure": market_structure
+                "whale_count": 0,
+                "whale_control_percent": 0.0,
+                "top_whale_percent": 0.0,
+                "whale_risk_level": "unknown",
+                "dev_whale_percent": 0.0
+            }
+
+    def _detect_sniper_patterns(self, goplus_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Simple sniper pattern detection from holder distribution"""
+        try:
+            holders = goplus_data.get("holders", [])
+            if not holders or len(holders) < 10:
+                return {"sniper_risk": "unknown", "pattern_detected": False, "similar_holders": 0}
+            
+            # Simple pattern: many holders with very similar percentages
+            percentages = []
+            for holder in holders[:50]:  # Check top 50 holders
+                if isinstance(holder, dict):
+                    try:
+                        percent_raw = holder.get("percent", "0")
+                        percent = float(percent_raw)
+                        if 0.1 <= percent <= 5.0:  # Sniper range
+                            percentages.append(percent)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(percentages) < 5:
+                return {"sniper_risk": "low", "pattern_detected": False, "similar_holders": 0}
+            
+            # Simple pattern detection: count very similar percentages
+            similar_count = 0
+            for i, p1 in enumerate(percentages):
+                for p2 in percentages[i+1:]:
+                    if abs(p1 - p2) < 0.05:  # Very similar percentages (within 0.05%)
+                        similar_count += 1
+            
+            # Risk assessment based on similar holder count
+            if similar_count > 10:
+                sniper_risk = "high"
+                pattern_detected = True
+            elif similar_count > 5:
+                sniper_risk = "medium" 
+                pattern_detected = True
+            else:
+                sniper_risk = "low"
+                pattern_detected = False
+            
+            logger.info(f"Sniper analysis: {similar_count} similar holder pairs, risk: {sniper_risk}")
+            
+            return {
+                "sniper_risk": sniper_risk,
+                "pattern_detected": pattern_detected,
+                "similar_holders": similar_count
             }
             
         except Exception as e:
-            logger.warning(f"Error generating snapshot metrics: {e}")
-            return {
-                "market_data": {},
-                "token_info": {},
-                "volatility": {"volatility_available": False},
-                "whale_analysis": {"whale_risk_level": "unknown"},
-                "sniper_detection": {"sniper_risk": "unknown"},
-                "market_structure": {"data_sources": 0}
-            }
-    
+            logger.warning(f"Sniper pattern detection failed: {e}")
+            return {"sniper_risk": "unknown", "pattern_detected": False, "similar_holders": 0}
+
     def _extract_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
         """Extract market data from service responses"""
         market_data = {
@@ -428,8 +575,8 @@ class TokenSnapshotService:
             logger.warning(f"Error extracting market data: {e}")
             return market_data
     
-    def _extract_token_info(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract token info from service responses"""
+    def _extract_token_info_from_security(self, security_responses: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract token info from security service responses"""
         token_info = {
             "holders_count": None,
             "dev_holdings_percent": None,
@@ -438,55 +585,64 @@ class TokenSnapshotService:
         }
         
         try:
-            # Get supply from Helius
-            helius_data = service_responses.get("helius", {})
-            if helius_data and helius_data.get("supply"):
-                supply_data = helius_data["supply"]
-                token_info["total_supply"] = supply_data.get("ui_amount")
+            # Get holders from GOplus
+            goplus_data = security_responses.get("goplus", {})
+            if goplus_data and goplus_data.get("holder_count"):
+                try:
+                    holder_count_raw = goplus_data["holder_count"]
+                    if isinstance(holder_count_raw, str):
+                        clean = holder_count_raw.replace(",", "").replace(" ", "")
+                        token_info["holders_count"] = int(clean)
+                    else:
+                        token_info["holders_count"] = int(holder_count_raw)
+                except (ValueError, TypeError):
+                    pass
             
-            # Get token name/symbol from SolanaFM
-            solanafm_data = service_responses.get("solanafm", {})
-            if solanafm_data and solanafm_data.get("token"):
-                token_data = solanafm_data["token"]
-                if token_data.get("name") and token_data.get("symbol"):
-                    token_info["metadata_completeness"] = True
+            # Get dev holdings from RugCheck
+            rugcheck_data = security_responses.get("rugcheck", {})
+            if rugcheck_data and rugcheck_data.get("creator_analysis"):
+                creator_balance = rugcheck_data["creator_analysis"].get("creator_balance")
+                total_supply = rugcheck_data.get("total_supply")
+                if creator_balance and total_supply:
+                    try:
+                        token_info["dev_holdings_percent"] = (float(creator_balance) / float(total_supply)) * 100
+                        token_info["total_supply"] = float(total_supply)
+                    except (ValueError, TypeError):
+                        pass
             
             return token_info
             
         except Exception as e:
-            logger.warning(f"Error extracting token info: {e}")
+            logger.warning(f"Error extracting token info from security: {e}")
             return token_info
-    
+        
     async def _safe_service_call(self, service_func, *args, **kwargs):
         """Execute service call with error handling"""
         try:
             result = await service_func(*args, **kwargs) if kwargs else await service_func(*args)
             return result if result is not None else None
         except Exception as e:
-            logger.debug(f"{service_func.__name__} failed: {str(e)}")
+            logger.error(f"{service_func.__name__} failed: {str(e)}")
             return None
-    
-    async def _store_snapshot_async(self, snapshot_response: Dict[str, Any]) -> None:
-        """Store snapshot in ChromaDB asynchronously"""
-        try:
-            success = await analysis_storage.store_analysis(snapshot_response)
-            if success:
-                logger.debug(f"Snapshot stored in ChromaDB: {snapshot_response.get('analysis_id')}")
-            else:
-                logger.debug(f"ChromaDB storage skipped for: {snapshot_response.get('analysis_id')}")
-        except Exception as e:
-            logger.warning(f"ChromaDB storage error: {str(e)}")
 
 
 # Global snapshot service instance
 token_snapshot_service = TokenSnapshotService()
 
 
-async def capture_single_snapshot(token_address: str, security_status: str = "safe", update_existing: bool = True) -> Dict[str, Any]:
+async def capture_single_snapshot(
+    token_address: str, 
+    security_status: str = "safe", 
+    security_data: Optional[Dict[str, Any]] = None,
+    security_service_responses: Optional[Dict[str, Any]] = None,
+    update_existing: bool = True
+) -> Dict[str, Any]:
     """Capture a single token snapshot"""
     return await token_snapshot_service.capture_token_snapshot(
         token_address=token_address,
         security_status=security_status,
+        security_data=security_data,
+        security_service_responses=security_service_responses,
         update_existing=update_existing
     )
 
