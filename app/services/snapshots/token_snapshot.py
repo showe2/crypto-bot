@@ -34,7 +34,9 @@ class TokenSnapshotService:
     ) -> Dict[str, Any]:
         """Capture a single token snapshot - security responses + market metrics"""
         start_time = time.time()
-        timestamp_unix = int(time.time())
+        
+        # Use consistent analysis_id based on token address only (NO TIMESTAMP)
+        analysis_id = f"snapshot_{token_address[:8]}"
         
         # Check for existing snapshot
         existing_snapshot = None
@@ -47,9 +49,6 @@ class TokenSnapshotService:
                 snapshot_generation = existing_snapshot.get("snapshot_generation", 0) + 1
                 is_first_snapshot = False
                 logger.info(f"Updating existing snapshot for {token_address} (generation {snapshot_generation})")
-        
-        # Generate snapshot ID
-        analysis_id = f"snapshot_{timestamp_unix}_{token_address[:8]}"
         
         # Initialize service responses (ONLY security services stored)
         service_responses = {}
@@ -64,7 +63,7 @@ class TokenSnapshotService:
         
         # Initialize response structure
         snapshot_response = {
-            "analysis_id": analysis_id,
+            "analysis_id": analysis_id,  # CONSISTENT ID - NO TIMESTAMP
             "token_address": token_address,
             "timestamp": datetime.utcnow().isoformat(),
             "source_event": "snapshot_scheduled",
@@ -72,8 +71,8 @@ class TokenSnapshotService:
             "snapshot_generation": snapshot_generation,
             "warnings": [],
             "errors": [],
-            "data_sources": list(service_responses.keys()),  # Only security services in data_sources
-            "service_responses": service_responses,  # Only security responses stored
+            "data_sources": list(service_responses.keys()),
+            "service_responses": service_responses,
             "security_analysis": {
                 "security_status": security_status,
                 "overall_safe": security_status == "safe",
@@ -96,25 +95,37 @@ class TokenSnapshotService:
         }
         
         try:
-            # ALWAYS run market analysis to get fresh data (but don't store raw responses)
-            logger.info(f"Fetching fresh market data for snapshot (not storing raw responses)")
+            # ALWAYS run market analysis to get fresh data
+            logger.info(f"Fetching fresh market data for snapshot")
             await self._run_market_analysis_services(token_address, snapshot_response)
+            
+            # DEBUG LOGGING
+            logger.info(f"Market services collected: {list(snapshot_response.get('service_responses', {}).keys())}")
+            if "birdeye" in snapshot_response.get("service_responses", {}):
+                birdeye_data = snapshot_response["service_responses"]["birdeye"]
+                logger.info(f"Birdeye data keys: {list(birdeye_data.keys())}")
+                if "price" in birdeye_data:
+                    price_data = birdeye_data["price"]
+                    logger.info(f"Price data: {price_data.get('value', 'NO VALUE')}")
             
             # Generate metrics from BOTH security and market data
             snapshot_response["metrics"] = await self._generate_combined_metrics(
                 security_responses=service_responses,
-                market_responses={},
+                market_responses=snapshot_response["service_responses"],
                 token_address=token_address
             )
             
-            # Update metadata with market services attempted
+            # DEBUG LOGGING
+            logger.info(f"Generated metrics market_data: {snapshot_response['metrics'].get('market_data', {})}")
+            
+            # Update metadata
             snapshot_response["metadata"]["data_sources_available"] = len(service_responses)
             
             # Calculate processing time
             processing_time = time.time() - start_time
             snapshot_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             
-            # Cache and store
+            # Cache
             try:
                 await self.cache.set(key=analysis_id, value=snapshot_response, ttl=self.cache_ttl)
                 snapshot_response["docx_cache_key"] = analysis_id
@@ -126,7 +137,7 @@ class TokenSnapshotService:
             # Store in ChromaDB
             asyncio.create_task(self._store_snapshot_async(snapshot_response))
             
-            logger.info(f"✅ Snapshot captured for {token_address} in {processing_time:.2f}s (gen {snapshot_generation}, first: {is_first_snapshot}, security stored: {len(service_responses)})")
+            logger.info(f"✅ Snapshot captured for {token_address} in {processing_time:.2f}s (gen {snapshot_generation}, ID: {analysis_id})")
             return snapshot_response
             
         except Exception as e:
@@ -253,11 +264,35 @@ class TokenSnapshotService:
             )
             
             if results and len(results) > 0:
-                metadata = results[0].get("metadata", {})
+                # Get the document content (which contains the full snapshot data)
+                document = results[0]
+                
+                # Extract from metadata first
+                metadata = document.get("metadata", {})
+                analysis_id = metadata.get("analysis_id")
+                snapshot_generation = metadata.get("snapshot_generation", 0)
+                timestamp = metadata.get("timestamp", 0)
+                
+                # If analysis_id not in metadata, try to extract from document content
+                if not analysis_id:
+                    content = document.get("content", "")
+                    # Parse content to extract analysis_id if needed
+                    if "snapshot_" in content:
+                        # Try to find analysis_id in content
+                        import re
+                        match = re.search(r'"analysis_id":\s*"([^"]+)"', content)
+                        if match:
+                            analysis_id = match.group(1)
+                
+                # Fallback: generate consistent ID if still not found
+                if not analysis_id:
+                    analysis_id = f"snapshot_{token_address[:8]}"
+                    logger.info(f"Generated fallback analysis_id: {analysis_id}")
+                
                 return {
-                    "analysis_id": metadata.get("analysis_id"),
-                    "snapshot_generation": metadata.get("snapshot_generation", 0),
-                    "timestamp": metadata.get("timestamp", 0)
+                    "analysis_id": analysis_id,
+                    "snapshot_generation": snapshot_generation,
+                    "timestamp": timestamp
                 }
             
             return None
@@ -269,26 +304,30 @@ class TokenSnapshotService:
     async def _get_tokens_for_snapshot(self) -> List[str]:
         """Get list of tokens that need snapshots"""
         try:
-            # Get tokens from existing analyses that need snapshots
-            # This reuses the existing token discovery from comprehensive analyses
+            logger.info("Searching for existing snapshots in ChromaDB...")
+            
+            # Search for existing snapshots, not analyses
             results = await analysis_storage.search_analyses(
-                query="token analysis",
-                limit=self.max_tokens_per_run * 2,  # Get more to filter
-                filters={"doc_type": "token_analysis"}
+                query="snapshot",
+                limit=self.max_tokens_per_run * 2,
+                filters={"doc_type": "token_snapshot"}  # Look for snapshots, not analyses
             )
+            
+            logger.info(f"Found {len(results)} snapshot results from ChromaDB")
             
             tokens = []
             seen = set()
             
-            for result in results:
+            for i, result in enumerate(results):
                 metadata = result.get("metadata", {})
                 token_address = metadata.get("token_address")
                 
                 if token_address and token_address not in seen:
                     tokens.append(token_address)
                     seen.add(token_address)
+                    logger.info(f"Found token with existing snapshot: {token_address}")
             
-            logger.info(f"Found {len(tokens)} tokens for potential snapshots")
+            logger.info(f"Returning {len(tokens)} tokens for snapshot updates")
             return tokens
             
         except Exception as e:
@@ -297,7 +336,7 @@ class TokenSnapshotService:
     
     async def _run_market_analysis_services(self, token_address: str, snapshot_response: Dict[str, Any]) -> None:
         """Run market analysis services (same as comprehensive analysis but no security)"""
-        print(snapshot_response)
+
         # BIRDEYE - Sequential processing
         birdeye_data = {}
         if api_manager.clients.get("birdeye"):
@@ -387,29 +426,43 @@ class TokenSnapshotService:
     def _calculate_simple_volatility(self, birdeye_data: Dict[str, Any]) -> Optional[float]:
         """Calculate simple volatility from recent trades"""
         try:
-            trades = birdeye_data.get("trades", []).get("items", [])
+            trades_data = birdeye_data.get("trades", {})
+            if isinstance(trades_data, dict):
+                trades = trades_data.get("items", [])
+            else:
+                trades = trades_data if isinstance(trades_data, list) else []
+                
             if not trades or len(trades) < 5:
                 return None
             
-            token_address = birdeye_data.get("price", {}).get("address", None)
+            # Get token address from price data
+            price_data = birdeye_data.get("price", {})
+            token_address = price_data.get("address") if price_data else None
+            
+            if not token_address:
+                logger.warning("Unable to extract token address from Birdeye data")
+                return None
 
-            if token_address is not None:
-                # Extract prices from recent trades
-                prices = []
-                for trade in trades[:20]:  # Use up to 20 recent trades
-                    source = "from" if trade["from"]["address"] == token_address else "to"
-                    if isinstance(trade, dict) and source and trade.get(source):
-                        try:
-                            price = float(trade[source]["price"])
-                            if price > 0:
-                                prices.append(price)
-                        except (ValueError, TypeError):
-                            continue
+            # Extract prices from recent trades
+            prices = []
+            for trade in trades[:20]:  # Use up to 20 recent trades
+                if not isinstance(trade, dict):
+                    continue
+                    
+                # Determine which side of the trade contains our token
+                source = "from" if trade.get("from", {}).get("address") == token_address else "to"
                 
-                if len(prices) < 3:
-                    return None
-            else:
-                raise Exception("Unable to extract token address from Birdeye data")
+                if source in trade and isinstance(trade[source], dict):
+                    try:
+                        price = float(trade[source].get("price", 0))
+                        if price > 0:
+                            prices.append(price)
+                    except (ValueError, TypeError):
+                        continue
+            
+            if len(prices) < 3:
+                logger.warning(f"Insufficient price data: only {len(prices)} valid prices found")
+                return None
             
             # Simple volatility = (max_price - min_price) / avg_price * 100
             max_price = max(prices)
@@ -537,11 +590,9 @@ class TokenSnapshotService:
             "price_usd": None,
             "price_change_24h": None,
             "volume_24h": None,
-            "volume_change_24h": None,
-            "volume_7d": None,
-            "volume_change_7d": None,
+            "volume_6h": None,
+            "volume_1h": None,
             "volume_5m": None,
-            "volume_change_5m": None,
             "market_cap": None,
             "liquidity": None,
             "volume_liquidity_ratio": None,
@@ -549,6 +600,7 @@ class TokenSnapshotService:
         }
         
         try:
+            # 1. BIRDEYE - Price and liquidity
             birdeye_data = service_responses.get("birdeye", {})
             if birdeye_data and birdeye_data.get("price"):
                 price_data = birdeye_data["price"]
@@ -556,18 +608,65 @@ class TokenSnapshotService:
                 market_data.update({
                     "price_usd": price_data.get("value"),
                     "price_change_24h": price_data.get("price_change_24h"),
-                    "volume_24h": price_data.get("volume_24h"),
-                    "market_cap": price_data.get("market_cap"),
                     "liquidity": price_data.get("liquidity")
                 })
+            
+            # 2. DEXSCREENER - Volume and market cap
+            dexscreener_data = service_responses.get("dexscreener", {})
+            if dexscreener_data and dexscreener_data.get("pairs", {}).get("pairs"):
+                pairs = dexscreener_data["pairs"]["pairs"]
+                if pairs and len(pairs) > 0:
+                    pair = pairs[0]  # Use first pair
+                    
+                    market_data.update({
+                        "volume_24h": pair.get("volume", {}).get("h24"),
+                        "volume_6h": pair.get("volume", {}).get("h6"),
+                        "volume_1h": pair.get("volume", {}).get("h1"),
+                        "volume_5m": pair.get("volume", {}).get("m5"),
+                        "market_cap": pair.get("marketCap"),
+                        "price_usd": pair.get("priceUsd") or market_data["price_usd"],
+                        "price_change_24h": pair.get("priceChange", {}).get("h24") or market_data["price_change_24h"]
+                    })
+            
+            # 3. SOLSNIFFER - Market cap
+            solsniffer_data = service_responses.get("solsniffer", {})
+            if solsniffer_data and not market_data["market_cap"]:
+                market_data["market_cap"] = solsniffer_data.get("marketCap")
+            
+            # 4. HELIUS - Supply data for market cap calculation
+            helius_data = service_responses.get("helius", {})
+            if helius_data and helius_data.get("supply"):
+                supply_data = helius_data["supply"]
+                total_supply = supply_data.get("value")
                 
-                # Calculate volume/liquidity ratio
-                if market_data["volume_24h"] and market_data["liquidity"]:
-                    market_data["volume_liquidity_ratio"] = (market_data["volume_24h"] / market_data["liquidity"]) * 100
+                # Calculate market cap if we have price and supply
+                if market_data["price_usd"] and total_supply and not market_data["market_cap"]:
+                    market_data["market_cap"] = float(market_data["price_usd"]) * float(total_supply)
+            
+            # 5. SOLANAFM - Additional token info (fallback)
+            solanafm_data = service_responses.get("solanafm", {})
+            if solanafm_data and solanafm_data.get("token"):
+                token_data = solanafm_data["token"]
                 
-                # Calculate data completeness
-                fields = [market_data["price_usd"], market_data["volume_24h"], market_data["market_cap"], market_data["liquidity"]]
-                market_data["data_completeness_percent"] = (sum(1 for f in fields if f is not None) / len(fields)) * 100
+                if not market_data["volume_24h"]:
+                    market_data["volume_24h"] = token_data.get("volume_24h")
+                if not market_data["market_cap"]:
+                    market_data["market_cap"] = token_data.get("market_cap")
+            
+            # Calculate volume/liquidity ratio
+            if market_data["volume_24h"] and market_data["liquidity"]:
+                market_data["volume_liquidity_ratio"] = (market_data["volume_24h"] / market_data["liquidity"]) * 100
+            
+            # Calculate data completeness
+            important_fields = [
+                market_data["price_usd"], 
+                market_data["volume_24h"], 
+                market_data["market_cap"], 
+                market_data["liquidity"]
+            ]
+            market_data["data_completeness_percent"] = (sum(1 for f in important_fields if f is not None) / len(important_fields)) * 100
+            
+            logger.info(f"Market data extracted: price={market_data['price_usd']}, volume={market_data['volume_24h']}, mcap={market_data['market_cap']}")
             
             return market_data
             
@@ -624,6 +723,79 @@ class TokenSnapshotService:
         except Exception as e:
             logger.error(f"{service_func.__name__} failed: {str(e)}")
             return None
+        
+    async def _store_snapshot_async(self, snapshot_response: Dict[str, Any]) -> None:
+        """Store snapshot in ChromaDB asynchronously - UPDATE existing document"""
+        try:
+            analysis_id = snapshot_response["analysis_id"]
+            token_address = snapshot_response["token_address"]
+            
+            # Get ChromaDB client directly
+            from app.utils.chroma_client import get_chroma_client
+            chroma_client = await get_chroma_client()
+            
+            if not chroma_client.is_connected():
+                logger.warning("ChromaDB not available")
+                return
+                
+            doc_id = f"snapshot_{token_address[:8]}"
+            content = f"snapshot {token_address} gen {snapshot_response.get('snapshot_generation', 1)}"
+            
+            # FULL metadata with all the important data
+            metadata = {
+                "doc_type": "token_snapshot",
+                "analysis_id": analysis_id,
+                "token_address": token_address,
+                "snapshot_generation": str(snapshot_response.get("snapshot_generation", 1)),
+                "is_first_snapshot": str(snapshot_response.get("metadata", {}).get("is_first_snapshot", False)),
+                "analysis_type": "snapshot",
+                "timestamp": snapshot_response.get("timestamp", ""),
+                "services_successful": str(snapshot_response.get("metadata", {}).get("services_successful", 0)),
+                "security_status": snapshot_response.get("security_analysis", {}).get("security_status", "unknown"),
+                "critical_issues_count": str(len(snapshot_response.get("security_analysis", {}).get("critical_issues", []))),
+                "warnings_count": str(len(snapshot_response.get("security_analysis", {}).get("warnings", [])))
+            }
+            
+            # Add market data to metadata
+            metrics = snapshot_response.get("metrics", {})
+            if metrics:
+                market_data = metrics.get("market_data", {})
+                token_info = metrics.get("token_info", {})
+                volatility = metrics.get("volatility", {})
+                whale_analysis = metrics.get("whale_analysis", {})
+                sniper_detection = metrics.get("sniper_detection", {})
+                
+                metadata.update({
+                    "price_usd": str(market_data.get("price_usd", "unknown")),
+                    "price_change_24h": str(market_data.get("price_change_24h", "unknown")),
+                    "volume_24h": str(market_data.get("volume_24h", "unknown")),
+                    "market_cap": str(market_data.get("market_cap", "unknown")),
+                    "liquidity": str(market_data.get("liquidity", "unknown")),
+                    "holders_count": str(token_info.get("holders_count", "unknown")),
+                    "dev_holdings_percent": str(token_info.get("dev_holdings_percent", "unknown")),
+                    "whale_count": str(whale_analysis.get("whale_count", "unknown")),
+                    "whale_control_percent": str(whale_analysis.get("whale_control_percent", "unknown")),
+                    "sniper_risk": str(sniper_detection.get("sniper_risk", "unknown")),
+                    "volatility_risk": str(volatility.get("volatility_risk", "unknown"))
+                })
+            
+            # Check if exists and UPDATE or CREATE
+            existing = chroma_client._collection.get(ids=[doc_id])
+            if existing and existing.get('ids'):
+                # UPDATE existing
+                chroma_client._collection.update(
+                    ids=[doc_id],
+                    documents=[content], 
+                    metadatas=[metadata]
+                )
+                logger.info(f"✅ UPDATED snapshot with full data: {doc_id}")
+            else:
+                # CREATE new
+                await chroma_client.add_document(content=content, metadata=metadata, doc_id=doc_id)
+                logger.info(f"✅ CREATED snapshot with full data: {doc_id}")
+                
+        except Exception as e:
+            logger.error(f"Failed to store snapshot: {str(e)}")
 
 
 # Global snapshot service instance

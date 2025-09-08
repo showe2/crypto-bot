@@ -125,6 +125,19 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Webhook background workers started")
     except Exception as e:
         logger.warning(f"⚠️  Webhook workers failed to start: {str(e)}")
+
+    # Start snapshot scheduler
+    try:
+        from app.services.snapshots.snapshot_scheduler import start_snapshot_scheduler
+        scheduler_started = await start_snapshot_scheduler()
+        
+        if scheduler_started:
+            logger.info("✅ Snapshot scheduler started")
+        else:
+            logger.info("📸 Snapshot scheduler disabled in configuration")
+            
+    except Exception as e:
+        logger.warning(f"⚠️  Snapshot scheduler failed to start: {str(e)}")
     
     # Check all services
     health_status = await health_check_all_services()
@@ -226,6 +239,19 @@ async def lifespan(app: FastAPI):
         logger.info("✅ Webhook workers stopped")
     except Exception as e:
         logger.warning(f"⚠️  Error stopping webhook workers: {str(e)}")
+
+    # Start snapshot scheduler
+    try:
+        from app.services.snapshots.snapshot_scheduler import start_snapshot_scheduler
+        scheduler_started = await start_snapshot_scheduler()
+        
+        if scheduler_started:
+            logger.info("✅ Snapshot scheduler started")
+        else:
+            logger.info("📸 Snapshot scheduler disabled in configuration")
+            
+    except Exception as e:
+        logger.warning(f"⚠️  Snapshot scheduler failed to start: {str(e)}")
     
     # Cleanup API services
     try:

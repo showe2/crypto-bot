@@ -1,4 +1,4 @@
-from typing import Dict, List, Optional, Union, Literal
+from typing import Dict, List, Optional, Union, Literal, Any
 from fastapi import APIRouter, HTTPException, Header, Depends
 from pydantic import BaseModel, Field, field_validator
 from datetime import datetime
@@ -18,9 +18,10 @@ class EngagementMetrics(BaseModel):
     influencer_mass: float
 
 class AIModelResults(BaseModel):
-    aegis: Dict[str, float]
-    deepseek: Dict[str, float]
-    mythomax: Dict[str, float]
+    """Flexible AI model results that can contain mixed data types"""
+    aegis: Dict[str, Any]
+    deepseek: Dict[str, Any]
+    mythomax: Dict[str, Any]
     intent_classification: str
     social_score: float
 
@@ -96,6 +97,11 @@ async def ingest_social_alert(alert: SocialAlert):
             f"intent={alert.filter_metadata.intent_classification}"
         )
         
+        # Log AI results structure for debugging
+        logger.debug(f"AI results received: {alert.filter_metadata.ai_results.model_dump()}")
+        
+        print(alert)
+
         return {
             "ok": True,
             "id": alert_id

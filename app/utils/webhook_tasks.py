@@ -253,7 +253,7 @@ class WebhookTaskQueue:
                                     logger.info(f"Extracted security service responses: {security_services}")
                                     
                                     # Import snapshot function
-                                    from app.services.token_snapshot import capture_single_snapshot
+                                    from app.services.snapshots.token_snapshot import capture_single_snapshot
                                     
                                     # Capture snapshot with extracted security data
                                     snapshot_result = await capture_single_snapshot(

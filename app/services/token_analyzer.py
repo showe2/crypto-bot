@@ -203,7 +203,7 @@ class TokenAnalyzer:
         analysis_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
         
         if not security_passed:
-            logger.warning(f"❌ Security check FAILED for {token_address} - NOT storing")
+            logger.warning(f"❌ Security check FAILED for {token_address}")
             analysis_response["metadata"]["analysis_stopped_at_security"] = True
             
             # Generate minimal security-focused analysis for failed case
@@ -221,7 +221,7 @@ class TokenAnalyzer:
             logger.warning(f"Security analysis completed for {token_address} in {processing_time:.2f}s - FAILED")
             return analysis_response
         
-        logger.info(f"✅ Security check PASSED for {token_address} - storing to DB")
+        logger.info(f"✅ Security check PASSED for {token_address}")
         
         # Generate minimal analysis for passed security
         analysis_response["overall_analysis"] = await self._generate_security_focused_analysis(
