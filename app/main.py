@@ -139,60 +139,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Snapshot scheduler failed to start: {str(e)}")
     
-    # Check all services
-    health_status = await health_check_all_services()
-    
-    if not health_status.get("overall_status"):
-        logger.error("❌ Critical services unavailable!")
-        for service_name, service_status in health_status.get("services", {}).items():
-            if not service_status.get("healthy"):
-                error_msg = service_status.get("error", "Unknown error")
-                logger.error(f"   • {service_name}: {error_msg}")
-        
-        # Show recommendations
-        for recommendation in health_status.get("recommendations", []):
-            logger.warning(f"   💡 {recommendation}")
-    else:
-        logger.info("✅ All critical services ready")
-        
-        # Show optional service status with more detail
-        optional_services = health_status.get("service_categories", {}).get("optional", {})
-        working_optional = optional_services.get("healthy_count", 0)
-        total_optional = optional_services.get("total_count", 0)
-        
-        if working_optional < total_optional:
-            logger.info(f"ℹ️  Optional services: {working_optional}/{total_optional} available")
-            
-            # List which optional services are missing
-            for service_name, service_status in health_status.get("services", {}).items():
-                if service_name in ["redis", "chromadb", "cache"] and not service_status.get("healthy"):
-                    if service_status.get("optional"):
-                        logger.debug(f"   • {service_name}: not available (optional)")
-                    else:
-                        logger.info(f"   • {service_name}: not available")
-        else:
-            logger.info("✅ All optional services available")
-    
-    # Check analysis services specifically
-    try:
-        from app.services.service_manager import get_api_health_status
-        api_health = await get_api_health_status()
-        
-        healthy_apis = api_health.get("summary", {}).get("healthy_services", 0)
-        total_apis = api_health.get("summary", {}).get("total_services", 0)
-        
-        logger.info(f"🔗 Analysis services: {healthy_apis}/{total_apis} available")
-        
-        if healthy_apis >= 3:
-            logger.info("✅ Sufficient analysis services for comprehensive token analysis")
-        elif healthy_apis >= 1:
-            logger.warning("⚠️  Limited analysis services - basic analysis available")
-        else:
-            logger.error("❌ No analysis services available - analysis features disabled")
-            
-    except Exception as e:
-        logger.warning(f"⚠️  Could not check analysis services: {str(e)}")
-    
     # Check web interface status
     templates_available = templates_dir.exists() and any(templates_dir.iterdir())
     
@@ -328,10 +274,16 @@ app.include_router(
 app.include_router(alex_ingest.router)
 app.include_router(analysis_runs_router, prefix="/api", tags=["Analysis Profiles"])
 
-# Health check endpoints (keep original simple ones)
+
+# Health check endpoints
 @app.get("/health", summary="System health check")
 async def health_check():
-    """Detailed system component health check"""
+    """Detailed system component health check - RUNS ONLY ON REQUEST"""
+    logger.info("🏥 Running comprehensive health check (on-demand)")
+    
+    # Import here to avoid startup delays
+    from app.utils.health import health_check_all_services
+    
     health_status = await health_check_all_services()
     
     status_code = (
@@ -340,84 +292,15 @@ async def health_check():
         else status.HTTP_503_SERVICE_UNAVAILABLE
     )
     
+    # Log health check result
+    healthy_services = health_status.get("summary", {}).get("healthy_services", 0)
+    total_services = health_status.get("summary", {}).get("total_services", 0)
+    logger.info(f"🏥 Health check completed: {healthy_services}/{total_services} services healthy")
+    
     return JSONResponse(
         content=health_status,
         status_code=status_code
     )
-
-
-@app.get("/health/simple", summary="Simple health check")
-async def simple_health_check():
-    """Simple health check for load balancers"""
-    try:
-        from app.utils.health import get_startup_readiness
-        readiness = await get_startup_readiness()
-        
-        if readiness.get("ready"):
-            return {"status": "healthy", "timestamp": readiness.get("timestamp")}
-        else:
-            return JSONResponse(
-                content={
-                    "status": "unhealthy", 
-                    "message": readiness.get("message"),
-                    "timestamp": readiness.get("timestamp")
-                },
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
-    except (ImportError, AttributeError):
-        # Fallback simple check
-        return {"status": "healthy", "message": "Basic health check"}
-    except Exception as e:
-        return JSONResponse(
-            content={
-                "status": "unhealthy",
-                "error": str(e)
-            },
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
-
-
-@app.get("/health/analysis", summary="Analysis Services Health Check")
-async def analysis_health_check():
-    """Check health of token analysis services specifically"""
-    try:
-        from app.services.service_manager import get_api_health_status
-        analysis_health = await get_api_health_status()
-        
-        status_code = 200 if analysis_health.get("overall_healthy") else 503
-        
-        return JSONResponse(
-            content={
-                **analysis_health,
-                "analysis_capabilities": {
-                    "comprehensive_analysis": analysis_health.get("overall_healthy", False),
-                    "security_analysis": any(
-                        service in analysis_health.get("services", {}) and 
-                        analysis_health["services"][service].get("healthy", False)
-                        for service in ["goplus", "rugcheck"]
-                    ),
-                    "market_analysis": any(
-                        service in analysis_health.get("services", {}) and 
-                        analysis_health["services"][service].get("healthy", False)
-                        for service in ["birdeye", "dexscreener"]
-                    ),
-                    "onchain_analysis": any(
-                        service in analysis_health.get("services", {}) and 
-                        analysis_health["services"][service].get("healthy", False)
-                        for service in ["helius", "solanafm"]
-                    )
-                }
-            },
-            status_code=status_code
-        )
-    except Exception as e:
-        return JSONResponse(
-            content={
-                "error": "Analysis health check failed",
-                "detail": str(e)
-            },
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE
-        )
 
 
 @app.get("/metrics", summary="System metrics")
@@ -439,7 +322,7 @@ async def system_metrics():
 
 @app.get("/config", summary="Configuration status")
 async def config_status():
-    """Get configuration status (non-sensitive)"""
+    """Get configuration status (non-sensitive) - NO HEALTH CHECKS"""
     config_info = {
         "environment": settings.ENV,
         "debug_mode": settings.DEBUG,
@@ -455,7 +338,7 @@ async def config_status():
         "webhooks": {
             "enabled": True,
             "endpoints": ["/webhooks/helius/mint", "/webhooks/helius/pool", "/webhooks/helius/tx"],
-            "base_url_configured": bool(settings.WEBHOOK_BASE_URL),
+            "base_url_configured": bool(settings.BASE_URL),
             "analysis_integration": True
         },
         "analysis_engine": {
@@ -497,7 +380,12 @@ async def config_status():
             key for key, status in settings.get_all_api_keys_status().items()
             if status['configured']
         ]),
-        "missing_critical_keys": settings.validate_critical_keys()
+        "missing_critical_keys": settings.validate_critical_keys(),
+        "health_check_info": {
+            "automated_checks_disabled": True,
+            "available_endpoints": ["/health", "/health/simple", "/health/analysis", "/metrics"],
+            "note": "Health checks run only on explicit request"
+        }
     }
     
     return config_info

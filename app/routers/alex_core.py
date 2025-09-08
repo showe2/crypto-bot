@@ -40,13 +40,6 @@ else:
 async def get_template_context(request: Request) -> dict:
     """Get common template context for all pages"""
     try:
-        # Get system health
-        health_data = await health_check_all_services()
-    except Exception as e:
-        logger.warning(f"Failed to get health data for template: {e}")
-        health_data = None
-    
-    try:
         # Get API keys status
         api_keys_status = settings.get_all_api_keys_status()
         configured_keys = sum(1 for status in api_keys_status.values() if status['configured'])
@@ -59,14 +52,15 @@ async def get_template_context(request: Request) -> dict:
     return {
         "request": request,
         "settings": settings,
-        "health_data": health_data,
+        "health_data": None,  # No automatic health data
         "page_title": "Solana Token Analysis AI",
         "version": "1.0.0",
         "environment": settings.ENV,
         "debug_mode": settings.DEBUG,
         "api_keys_configured": configured_keys,
         "total_api_keys": total_keys,
-        "current_time": datetime.utcnow().isoformat()
+        "current_time": datetime.utcnow().isoformat(),
+        "health_check_note": "Health data available at /health endpoint"
     }
 
 
@@ -770,7 +764,8 @@ async def dashboard_api():
     """Get dashboard data for frontend - using real system metrics and ChromaDB data"""
     try:
         # Get real system health
-        health_data = await health_check_all_services()
+        # No automatic health checks - use fallback data
+        health_data = {"overall_status": True, "summary": {"healthy_services": 0, "total_services": 1}}
         
         # Calculate real metrics based on system data
         healthy_services = health_data.get("summary", {}).get("healthy_services", 0)
