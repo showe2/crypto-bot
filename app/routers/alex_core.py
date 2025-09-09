@@ -5,6 +5,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pathlib import Path as PathlibPath
 from loguru import logger
 from datetime import datetime
+from pydantic import BaseModel
+import os
 import time
 import io
 import json
@@ -22,6 +24,24 @@ from app.services.ai.ai_service import generate_analysis_docx_from_cache
 # Settings and dependencies
 settings = get_settings()
 router = APIRouter()
+
+class ApiKeyUpdate(BaseModel):
+    key: str
+    value: str
+
+class FilterRequest(BaseModel):
+    adsDEX: bool = True
+    globalFee: float = 0
+    liqMax: float = 120000
+    liqMin: float = 4000
+    mcapMax: float = 250000
+    mcapMin: float = 10000
+    socialMin: float = 50
+    timeMax: float = 60
+    timeMin: float = 5
+    volMax: float = 120000
+    volMin: float = 2000
+    whales1hMin: float = 800
 
 # Initialize templates
 templates_dir = PathlibPath("templates")
@@ -179,200 +199,101 @@ async def marketplace_page(request: Request):
 # ==============================================
 # PROFILES AND RUNS ANALYSIS ENDPOINTS
 # ==============================================
-@router.get("/api/pump/results", summary="Get Pump Scan Results")
-async def get_pump_scan_results_api(
-    run_id: Optional[str] = Query(None, description="Specific run ID to get results from"),
-    min_age_hours: Optional[float] = Query(None, description="Maximum pool age in hours"),
-    min_liquidity: Optional[float] = Query(None, description="Minimum liquidity USD"),
-    min_volume_5m: Optional[float] = Query(None, description="Minimum 5m volume USD"),
-    min_buy_sell_ratio: Optional[float] = Query(None, description="Minimum buy/sell ratio"),
-    min_trades_5m: Optional[int] = Query(None, description="Minimum trades in 5m"),
-    security_gate_only: bool = Query(False, description="Only tokens that passed security gate"),
-    limit: int = Query(20, ge=1, le=100, description="Maximum results to return"),
+
+@router.post("/api/keys", summary="Update API Keys")
+async def update_api_key(
+    key_data: ApiKeyUpdate,
     _: None = Depends(rate_limit_per_ip)
 ):
-    """Get pump scan results with filtering - from specific run or latest run"""
+    """
+    Update API key values at runtime
+    
+    Accepts:
+    - key: The environment variable name (e.g., "HELIUS_API_KEY")
+    - value: The new API key value
+    """
     try:
-        from app.services.analysis_storage import analysis_storage
+        key_name = key_data.key.upper()
+        key_value = key_data.value.strip()
         
-        # Build filters
-        filters = {}
-        if min_age_hours is not None:
-            filters["min_age_hours"] = min_age_hours
-        if min_liquidity is not None:
-            filters["min_liquidity"] = min_liquidity
-        if min_volume_5m is not None:
-            filters["min_volume_5m"] = min_volume_5m
-        if min_buy_sell_ratio is not None:
-            filters["min_buy_sell_ratio"] = min_buy_sell_ratio
-        if min_trades_5m is not None:
-            filters["min_trades_5m"] = min_trades_5m
-        if security_gate_only:
-            filters["security_gate_only"] = True
-
-        if run_id:
-            # Get specific run results
-            results = await analysis_storage.get_run_results_with_filters(
-                run_id=run_id,
-                profile_type="pump",
-                filters=filters,
-                limit=limit
-            )
-        else:
-            # Get latest pump run
-            recent_runs = await analysis_storage.get_recent_runs(profile_type="pump", limit=1)
-            if not recent_runs:
-                return {
-                    "status": "success",
-                    "results": [],
-                    "run_info": None,
-                    "total_results": 0,
-                    "message": "No pump scan runs found"
-                }
-            
-            latest_run = recent_runs[0]
-            results = await analysis_storage.get_run_results_with_filters(
-                run_id=latest_run["run_id"],
-                profile_type="pump",
-                filters=filters,
-                limit=limit
-            )
+        # Validate key name (only allow known API keys for security)
+        valid_keys = [
+            'HELIUS_API_KEY', 'BIRDEYE_API_KEY', 'PUMPFUN_API_KEY', 
+            'SOLSNIFFER_API_KEY', 'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
+            'GROQ_API_KEY', 'INTERNAL_TOKEN', 'WALLET_SECRET_KEY'
+        ]
         
-        return {
-            "status": "success",
-            "results": results.get("results", []),
-            "run_info": results.get("run_info"),
-            "total_results": results.get("total_results", 0),
-            "filters_applied": filters,
-            "run_id": run_id or (results.get("run_info", {}).get("run_id"))
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting pump scan results: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "results": [],
-            "run_info": None,
-            "total_results": 0
-        }
-
-@router.get("/api/pump/status", summary="Get Pump Scan Status") 
-async def get_pump_scan_status_api():
-    """Get status of pump scanning system"""
-    try:
-        from app.services.analysis_storage import analysis_storage
-        
-        # Get tokens eligible for pump analysis (pump: false)
-        eligible_tokens = await analysis_storage.get_tokens_for_profile_analysis("pump", limit=100)
-        
-        # Get recent pump runs
-        recent_runs = await analysis_storage.get_recent_runs(profile_type="pump", limit=5)
-        
-        # Get latest run info
-        latest_run = recent_runs[0] if recent_runs else None
-        
-        # Calculate summary statistics
-        total_eligible = len(eligible_tokens)
-        
-        # Categorize eligible tokens by criteria
-        high_liquidity = len([t for t in eligible_tokens if t.get("liquidity", 0) >= 10000])
-        high_volume = len([t for t in eligible_tokens if t.get("volume_24h", 0) >= 50000])
-        
-        status_data = {
-            "eligible_tokens": total_eligible,
-            "system_ready": total_eligible > 0,
-            "last_scan": latest_run,
-            "recent_runs": recent_runs,
-            "token_breakdown": {
-                "total_eligible": total_eligible,
-                "high_liquidity": high_liquidity,
-                "high_volume": high_volume
-            },
-            "message": f"{total_eligible} tokens ready for pump scanning (never analyzed by pump profile)" if eligible_tokens else "No eligible tokens found - all tokens have been pump-analyzed"
-        }
-        
-        return status_data
-        
-    except Exception as e:
-        logger.error(f"Error getting pump scan status: {e}")
-        return {
-            "eligible_tokens": 0,
-            "system_ready": False,
-            "last_scan": None,
-            "recent_runs": [],
-            "token_breakdown": {
-                "total_eligible": 0,
-                "high_liquidity": 0,
-                "high_volume": 0
-            },
-            "message": f"Status check failed: {e}"
-        }
-
-@router.get("/api/pump/runs", summary="Get Pump Run History")
-async def get_pump_runs_api(
-    limit: int = Query(10, ge=1, le=50, description="Number of runs to return"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """Get pump scan run history"""
-    try:
-        from app.services.analysis_storage import analysis_storage
-        
-        runs = await analysis_storage.get_recent_runs(profile_type="pump", limit=limit)
-        
-        return {
-            "status": "success",
-            "runs": runs,
-            "total_runs": len(runs)
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting pump runs: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "runs": [],
-            "total_runs": 0
-        }
-
-@router.get("/api/runs/{profile_type}", summary="Get Analysis Runs by Profile Type")
-async def get_analysis_runs_api(
-    profile_type: str = Path(..., description="Profile type (pump, twitter, whale, etc.)"),
-    limit: int = Query(10, ge=1, le=50, description="Number of runs to return"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """Get analysis run history for any profile type"""
-    try:
-        from app.services.analysis_storage import analysis_storage
-        
-        # Validate profile type
-        valid_profiles = ["pump", "twitter", "whale", "discovery", "listing"]
-        if profile_type not in valid_profiles:
+        if key_name not in valid_keys:
             raise HTTPException(
                 status_code=400, 
-                detail=f"Invalid profile type. Must be one of: {', '.join(valid_profiles)}"
+                detail=f"Invalid key name. Allowed keys: {', '.join(valid_keys)}"
             )
         
-        runs = await analysis_storage.get_recent_runs(profile_type=profile_type, limit=limit)
+        print("before", os.environ[key_name])
+        # Update environment variable
+        os.environ[key_name] = key_value
+
+        print("after", os.environ[key_name])
+        
+        # Update settings instance
+        from app.core.config import get_settings
+        settings = get_settings()
+        setattr(settings, key_name, key_value)
+        
+        logger.info(f"✅ API key updated: {key_name}")
         
         return {
             "status": "success",
-            "profile_type": profile_type,
-            "runs": runs,
-            "total_runs": len(runs)
+            "message": f"API key {key_name} updated successfully",
+            "key": key_name,
+            "value_preview": f"{key_value[:8]}***" if key_value else None
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting {profile_type} runs: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "profile_type": profile_type,
-            "runs": [],
-            "total_runs": 0
-        }
+        logger.error(f"❌ Failed to update API key {key_data.key}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update API key: {str(e)}")
+    
+    
+@router.post("/api/filters", summary="Filter Pump Candidates from Snapshots")
+async def filter_pump_candidates(
+    filters: FilterRequest,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Filter pump candidates from existing snapshots using provided criteria
+    Returns top 1-5 candidates ranked by pump score
+    """
+    start_time = time.time()
+    
+    try:
+        logger.info(f"🔍 Starting pump filter analysis with filters: {filters.dict()}")
+        
+        # Get snapshot-based pump analysis
+        from app.services.analysis_profiles.pump_profile import PumpAnalysisProfile
+        pump_analyzer = PumpAnalysisProfile()
+        
+        # Run snapshot-based analysis
+        result = await pump_analyzer.analyze_snapshots_for_pumps(filters.dict())
+        
+        # Extract ONLY the candidates array
+        candidates = result.get("candidates", [])
+        
+        # Log timing info but don't add to response
+        processing_time = time.time() - start_time
+        logger.info(f"✅ Pump filter completed in {processing_time:.2f}s: {len(candidates)} candidates found")
+        
+        # Return ONLY the candidates array
+        return candidates
+        
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"❌ Pump filter failed: {str(e)}")
+        
+        # Return empty array on error
+        return []
+    
 
 @router.get("/api/run/{run_id}", summary="Get Specific Analysis Run")
 async def get_specific_run_api(
@@ -413,59 +334,6 @@ async def get_specific_run_api(
             "status": "error",
             "error": str(e),
             "run": None
-        }
-
-@router.get("/api/profile/{profile_type}/status", summary="Get Profile Analysis Status")
-async def get_profile_status_api(
-    profile_type: str = Path(..., description="Profile type (pump, twitter, whale, etc.)"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """Get status for any profile analysis type"""
-    try:
-        from app.services.analysis_storage import analysis_storage
-        
-        # Validate profile type
-        valid_profiles = ["pump", "twitter", "whale", "discovery", "listing"]
-        if profile_type not in valid_profiles:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid profile type. Must be one of: {', '.join(valid_profiles)}"
-            )
-        
-        # Get tokens eligible for this profile analysis
-        eligible_tokens = await analysis_storage.get_tokens_for_profile_analysis(profile_type, limit=100)
-        
-        # Get recent runs for this profile
-        recent_runs = await analysis_storage.get_recent_runs(profile_type=profile_type, limit=5)
-        
-        # Get latest run info
-        latest_run = recent_runs[0] if recent_runs else None
-        
-        # Calculate summary statistics
-        total_eligible = len(eligible_tokens)
-        
-        status_data = {
-            "profile_type": profile_type,
-            "eligible_tokens": total_eligible,
-            "system_ready": total_eligible > 0,
-            "last_scan": latest_run,
-            "recent_runs": recent_runs,
-            "message": f"{total_eligible} tokens ready for {profile_type} analysis" if eligible_tokens else f"No eligible tokens found for {profile_type} analysis"
-        }
-        
-        return status_data
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting {profile_type} status: {e}")
-        return {
-            "profile_type": profile_type,
-            "eligible_tokens": 0,
-            "system_ready": False,
-            "last_scan": None,
-            "recent_runs": [],
-            "message": f"Status check failed: {e}"
         }
 
 # ==============================================

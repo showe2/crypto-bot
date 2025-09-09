@@ -9,14 +9,8 @@ from app.services.token_analyzer import token_analyzer
 from app.services.service_manager import get_api_health_status
 from app.core.dependencies import rate_limit_per_ip
 from app.utils.redis_client import get_redis_client
-from pydantic import BaseModel
-import os
 
 router = APIRouter(prefix="/api", tags=["Token Analysis API"])
-
-class ApiKeyUpdate(BaseModel):
-    key: str
-    value: str
 
 @router.get("/health", summary="API Services Health Check")
 async def api_services_health():
@@ -36,63 +30,6 @@ async def api_services_health():
     except Exception as e:
         logger.error(f"Error checking API health: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    
-
-@router.post("/keys", summary="Update API Keys")
-async def update_api_key(
-    key_data: ApiKeyUpdate,
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Update API key values at runtime
-    
-    Accepts:
-    - key: The environment variable name (e.g., "HELIUS_API_KEY")
-    - value: The new API key value
-    """
-    try:
-        key_name = key_data.key.upper()
-        key_value = key_data.value.strip()
-        
-        # Validate key name (only allow known API keys for security)
-        valid_keys = [
-            'HELIUS_API_KEY', 'BIRDEYE_API_KEY', 'PUMPFUN_API_KEY', 
-            'SOLSNIFFER_API_KEY', 'GOPLUS_APP_KEY', 'GOPLUS_APP_SECRET',
-            'GROQ_API_KEY', 'INTERNAL_TOKEN', 'WALLET_SECRET_KEY'
-        ]
-        
-        if key_name not in valid_keys:
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Invalid key name. Allowed keys: {', '.join(valid_keys)}"
-            )
-        
-        print("before", os.environ[key_name])
-        # Update environment variable
-        os.environ[key_name] = key_value
-
-        print("after", os.environ[key_name])
-        
-        # Update settings instance
-        from app.core.config import get_settings
-        settings = get_settings()
-        setattr(settings, key_name, key_value)
-        
-        logger.info(f"✅ API key updated: {key_name}")
-        
-        return {
-            "status": "success",
-            "message": f"API key {key_name} updated successfully",
-            "key": key_name,
-            "value_preview": f"{key_value[:8]}***" if key_value else None
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Failed to update API key {key_data.key}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update API key: {str(e)}")
-
 
 @router.post("/analyze/token", summary="Comprehensive Token Analysis")
 async def analyze_token_endpoint(

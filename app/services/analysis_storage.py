@@ -627,25 +627,6 @@ class AnalysisStorageService:
             analysis_results = doc_data.get("analysis_results", {})
             metadata = doc_data.get("metadata", {})
             
-            # Initialize profiles field - tracks which analyses have been run
-            profiles = {
-                "pump": False,
-                "twitter": False, 
-                "whale": False,
-                "discovery": False,
-                "listing": False
-            }
-            
-            # Determine which profile this analysis represents
-            analysis_type = doc_data.get("analysis_type", "quick")
-            if analysis_type in ["quick", "deep"]:
-                # These are general analyses, not profile-specific
-                pass
-            else:
-                # This is a profile-specific analysis
-                if analysis_type in profiles:
-                    profiles[analysis_type] = True
-            
             return {
                 # === CORE IDENTIFIERS ===
                 "doc_type": "token_analysis",
@@ -653,14 +634,6 @@ class AnalysisStorageService:
                 "token_address": doc_data.get("token_address") or "unknown",
                 "token_name": token_info.get("name") or "unknown",
                 "token_symbol": token_info.get("symbol") or "unknown",
-                
-                # === PROFILES TRACKING ===
-                "profiles": json.dumps(profiles),
-                "pump_analyzed": profiles["pump"],
-                "twitter_analyzed": profiles["twitter"],
-                "whale_analyzed": profiles["whale"],
-                "discovery_analyzed": profiles["discovery"],
-                "listing_analyzed": profiles["listing"],
                 
                 # === ANALYSIS RESULTS ===
                 "security_status": "safe" if security_analysis.get("overall_safe") else "unsafe",
@@ -736,12 +709,6 @@ class AnalysisStorageService:
                 "token_address": doc_data.get("token_address") or "unknown",
                 "analysis_type": doc_data.get("analysis_type") or "quick",
                 "timestamp_unix": int(doc_data.get("timestamp_unix") or 0),
-                "profiles": json.dumps({"pump": False, "twitter": False, "whale": False, "discovery": False, "listing": False}),
-                "pump_analyzed": False,
-                "twitter_analyzed": False,
-                "whale_analyzed": False,
-                "discovery_analyzed": False,
-                "listing_analyzed": False
             }
     
     def _extract_comprehensive_security(self, analysis_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -1410,136 +1377,6 @@ class AnalysisStorageService:
         except Exception as e:
             logger.error(f"Error in paginated query: {str(e)}")
             return None
-
-    async def get_tokens_for_profile_analysis(self, profile_type: str, limit: int = 50) -> List[Dict[str, Any]]:
-        """Get tokens that haven't been analyzed by specific profile yet"""
-        try:
-            chroma_client = await get_chroma_client()
-            if not chroma_client.is_connected():
-                logger.warning("ChromaDB not available for profile token selection")
-                return []
-
-            # Search for all token analyses and filter in Python
-            results = await chroma_client.search(
-                query="token analysis",
-                n_results=min(50, limit),
-            )
-
-            # DEBUG: See what we got
-            logger.info(f"DEBUG: Found {len(results['documents'][0]) if results and results.get('documents') else 0} total documents")
-
-            # Filter in Python instead of using complex where clauses
-            eligible_tokens = []
-            seen_addresses = set()
-            
-            if results and results.get("documents") and results["documents"][0]:
-                for i, doc in enumerate(results["documents"][0]):
-                    metadata = results["metadatas"][0][i] if results.get("metadatas") else {}
-                    
-                    # DEBUG: Log each token
-                    token_address = metadata.get("token_address")
-                    profiles_json = metadata.get("profiles", "{}")
-                    logger.info(f"DEBUG: Token {i}: {token_address}, profiles: {profiles_json}")
-                    
-                    # Skip if not a token analysis
-                    if metadata.get("doc_type") != "token_analysis":
-                        logger.info(f"DEBUG: Skipping {token_address} - not token_analysis")
-                        continue
-                    
-                    # Check profiles JSON
-                    try:
-                        profiles = json.loads(profiles_json)
-                        pump_analyzed = profiles.get(profile_type, False)
-                        logger.info(f"DEBUG: {token_address} pump_analyzed: {pump_analyzed}")
-                        if pump_analyzed:
-                            logger.info(f"DEBUG: Skipping {token_address} - already pump analyzed")
-                            continue
-                    except (json.JSONDecodeError, TypeError):
-                        logger.info(f"DEBUG: {token_address} profiles parsing failed, assuming not analyzed")
-                        pass
-                    
-                    if not token_address or token_address in seen_addresses:
-                        logger.info(f"DEBUG: Skipping {token_address} - no address or duplicate")
-                        continue
-                    
-                    logger.info(f"DEBUG: {token_address} ELIGIBLE for pump analysis")
-                    eligible_tokens.append({
-                        "token_address": token_address,
-                        "token_name": metadata.get("token_name", "Unknown"),
-                        "token_symbol": metadata.get("token_symbol", "N/A"),
-                    })
-                    
-                    seen_addresses.add(token_address)
-
-            logger.info(f"DEBUG: Final eligible tokens: {len(eligible_tokens)}")
-            return eligible_tokens
-            
-        except Exception as e:
-            logger.error(f"Error getting tokens for {profile_type} analysis: {e}")
-            return []
-
-    def _parse_profiles_status(self, profiles_json: str) -> Dict[str, bool]:
-        """Parse profiles JSON string safely"""
-        try:
-            return json.loads(profiles_json)
-        except (json.JSONDecodeError, TypeError):
-            return {"pump": False, "twitter": False, "whale": False, "discovery": False, "listing": False}
-
-    async def update_token_profile_status(self, token_address: str, profile_type: str, completed: bool = True) -> bool:
-        """Update the profile analysis status for a token"""
-        try:
-            chroma_client = await get_chroma_client()
-            if not chroma_client.is_connected():
-                return False
-
-            # Search for the token's latest analysis
-            results = await chroma_client.search(
-                query=f"token analysis {token_address}",
-                n_results=1,
-                where={
-                    "doc_type": "token_analysis",
-                    "token_address": token_address
-                }
-            )
-            
-            if not results or not results.get("metadatas") or not results["metadatas"][0]:
-                logger.warning(f"No analysis found for token {token_address} to update profile status")
-                return False
-            
-            # Get existing metadata
-            existing_metadata = results["metadatas"][0][0]
-            existing_doc_id = existing_metadata.get("doc_id") or f"update_{int(time.time())}_{token_address[:8]}"
-            
-            # Parse and update profiles
-            profiles = self._parse_profiles_status(existing_metadata.get("profiles", "{}"))
-            profiles[profile_type] = completed
-            
-            # Update metadata
-            existing_metadata["profiles"] = json.dumps(profiles)
-            existing_metadata[f"{profile_type}_analyzed"] = completed
-            existing_metadata["last_profile_update"] = int(time.time())
-            
-            # DELETE the old document first
-            try:
-                chroma_client._collection.delete(ids=[existing_doc_id])
-            except Exception:
-                pass
-            
-            # Add updated document with same ID
-            doc_content = results["documents"][0][0] if results.get("documents") else ""
-            
-            await chroma_client.add_document(
-                content=doc_content,
-                metadata=existing_metadata,
-                doc_id=existing_doc_id
-            )
-
-            logger.info(f"Updated {profile_type} analysis status for {token_address}: {completed}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error updating profile status for {token_address}: {e}")
-            return False
         
     async def store_analysis_run(self, run_data: Dict[str, Any]) -> bool:
         """Store analysis run results with reusable structure"""
@@ -1557,8 +1394,9 @@ class AnalysisStorageService:
                 return False
 
             # Generate searchable content
-            tokens_analyzed = len(run_data.get("results", []))
-            success_count = len([r for r in run_data.get("results", []) if r.get("success", True)])
+            results = run_data.get("results", [])
+            tokens_analyzed = len(results)
+            success_count = len([r for r in results if r.get("success", True)])
             
             content = f"""
             Analysis Run {run_id} - {profile_type.upper()} Profile
@@ -1567,24 +1405,24 @@ class AnalysisStorageService:
             Profile: {profile_type}
             Tokens analyzed: {tokens_analyzed}
             Successful analyses: {success_count}
-            Success rate: {(success_count/tokens_analyzed*100):.1f}% if tokens_analyzed > 0 else 0
+            Success rate: {(success_count/max(tokens_analyzed, 1)*100):.1f}%
             Processing time: {run_data.get('processing_time', 0)}s
             
             Run summary: {run_data.get('summary', 'Analysis run completed')}
             """
             
             # Add profile-specific content
-            if profile_type == "pump":
-                pumps_found = len([r for r in run_data.get("results", []) if r.get("pump_probability", 0) > 50])
+            if profile_type == "pump" or profile_type == "pump_filter":
+                pumps_found = len([r for r in results if r.get("pump_probability", 0) > 50])
                 content += f"\nPumps detected: {pumps_found}"
                 
                 # Add top results
-                top_results = sorted(run_data.get("results", []), 
-                                key=lambda x: x.get("pump_score", 0), reverse=True)[:5]
+                top_results = sorted(results, key=lambda x: x.get("pump_score", 0), reverse=True)[:5]
                 if top_results:
                     content += "\nTop pump candidates by score:"
                     for result in top_results:
-                        content += f"\n- {result.get('token_symbol', 'N/A')}: Score {result.get('pump_score', 0):.2f}"
+                        token_name = result.get('name', result.get('token_symbol', 'N/A'))
+                        content += f"\n- {token_name}: Score {result.get('pump_score', 0):.2f}"
 
             # Generate metadata
             metadata = {
@@ -1597,16 +1435,20 @@ class AnalysisStorageService:
                 "processing_time": run_data.get("processing_time", 0),
                 "filters_applied": json.dumps(run_data.get("filters", {})),
                 "run_status": run_data.get("status", "completed"),
-                "results_count": len(run_data.get("results", [])),
-                "results_json": json.dumps(run_data.get("results", []), default=str)
+                "results_count": len(results),
+                "results_json": json.dumps(results, default=str)
             }
             
             # Add profile-specific metadata
-            if profile_type == "pump":
+            if profile_type == "pump" or profile_type == "pump_filter":
+                pump_results = [r for r in results if r.get("pump_probability", 0) > 50]
+                pump_scores = [r.get("pump_score", 0) for r in results]
+                pump_probabilities = [r.get("pump_probability", 0) for r in results]
+                
                 metadata.update({
-                    "pumps_found": len([r for r in run_data.get("results", []) if r.get("pump_probability", 0) > 50]),
-                    "top_pump_score": max([r.get("pump_score", 0) for r in run_data.get("results", [])], default=0),
-                    "avg_pump_probability": sum([r.get("pump_probability", 0) for r in run_data.get("results", [])]) / max(len(run_data.get("results", [])), 1)
+                    "pumps_found": len(pump_results),
+                    "top_pump_score": max(pump_scores, default=0),
+                    "avg_pump_probability": sum(pump_probabilities) / max(len(results), 1)
                 })
             
             doc_id = f"run_{profile_type}_{run_id}"
@@ -1814,48 +1656,6 @@ class AnalysisStorageService:
                 filtered.append(result)
         
         return filtered
-
-    async def mark_tokens_analyzed(self, 
-                                token_addresses: List[str], 
-                                profile_type: str,
-                                run_id: str) -> bool:
-        """Mark tokens as analyzed for a specific profile type"""
-        try:
-            # Update each token's profile status
-            success_count = 0
-            for token_address in token_addresses:
-                if await self.update_token_profile_status(token_address, profile_type, completed=True):
-                    success_count += 1
-            
-            # Also create a batch tracking document
-            chroma_client = await get_chroma_client()
-            if chroma_client.is_connected():
-                content = f"Tokens analyzed in {profile_type} run {run_id}: {len(token_addresses)} tokens"
-                
-                metadata = {
-                    "doc_type": "token_analysis_tracking",
-                    "profile_type": profile_type,
-                    "run_id": run_id,
-                    "timestamp_unix": int(time.time()),
-                    "tokens_analyzed": json.dumps(token_addresses),
-                    "analysis_count": len(token_addresses),
-                    "successful_updates": success_count
-                }
-                
-                doc_id = f"tracking_{profile_type}_{run_id}"
-                
-                await chroma_client.add_document(
-                    content=content,
-                    metadata=metadata,
-                    doc_id=doc_id
-                )
-
-            logger.info(f"Updated profile status for {success_count}/{len(token_addresses)} tokens in {profile_type} run {run_id}")
-            return success_count > 0
-            
-        except Exception as e:
-            logger.error(f"Error marking tokens as analyzed: {e}")
-            return False
 
     def _format_relative_time(self, timestamp):
         """Format timestamp as relative time"""
