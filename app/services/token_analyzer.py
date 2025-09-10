@@ -136,8 +136,6 @@ class TokenAnalyzer:
             logger.warning(f"Failed to cache analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
         
-        asyncio.create_task(self._store_analysis_async(analysis_response))
-        
         # Log completion
         logger.info(
             f"FULL Analysis COMPLETED for {token_address} in {processing_time:.2f}s "
@@ -145,19 +143,6 @@ class TokenAnalyzer:
         )
         
         return analysis_response
-    
-    # Async ChromaDB Storage
-    async def _store_analysis_async(self, analysis_response: Dict[str, Any]) -> None:
-        """Store analysis in ChromaDB asynchronously (non-blocking)"""
-        try:
-            success = await analysis_storage.store_analysis(analysis_response)
-            if success:
-                logger.debug(f"Analysis stored in ChromaDB: {analysis_response.get('analysis_id')}")
-            else:
-                logger.debug(f"ChromaDB storage skipped for: {analysis_response.get('analysis_id')}")
-        except Exception as e:
-            # Don't let ChromaDB errors affect the main analysis flow
-            logger.warning(f"ChromaDB storage error: {str(e)}")
 
 
     async def analyze_token_security_only(self, token_address: str, source_event: str = "webhook") -> Dict[str, Any]:

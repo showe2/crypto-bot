@@ -295,6 +295,76 @@ async def filter_pump_candidates(
         return []
     
 
+@router.get("/api/token/report", summary="Generate Comprehensive Token Report")
+async def generate_token_report(
+    query: str = Query(..., description="Token address (name/symbol lookup coming soon)"),
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Generate comprehensive token report using discovery profile
+    
+    Current: Token address only
+    Future: Token names, symbols, URLs (FROG, PEPE, pump.fun, etc.)
+    """
+    start_time = time.time()
+    
+    try:
+        # For now, only handle token addresses
+        token_address = query.strip()
+        
+        # TODO: Add name/symbol lookup logic
+        # if not _is_token_address(token_address):
+        #     # Try to resolve name/symbol to address
+        #     resolved_address = await _resolve_token_query(query)
+        #     if not resolved_address:
+        #         raise HTTPException(status_code=400, detail=f"Could not resolve '{query}' to token address")
+        #     token_address = resolved_address
+        
+        # Validate token address format
+        if not token_address or len(token_address) < 32 or len(token_address) > 44:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid Solana token address format"
+            )
+        
+        logger.info(f"🔍 Token report request for {token_address}")
+        
+        # Use discovery profile for analysis
+        from app.services.analysis_profiles.discovery_profile import TokenDiscoveryProfile
+        discovery_profile = TokenDiscoveryProfile()
+        
+        # Run discovery analysis (internally uses deep analysis + stores as run)
+        result = await discovery_profile.analyze(token_address)
+        
+        # Return the same format as deep analysis (unchanged)
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"❌ Token report failed for {query}: {str(e)}")
+        
+        # Return error in same format as deep analysis
+        return {
+            "status": "error",
+            "analysis_type": "discovery",
+            "token_address": query,
+            "timestamp": time.time(),
+            "processing_time": round(processing_time, 2),
+            "message": f"Token report failed: {str(e)}",
+            "error": str(e),
+            "endpoint": "/api/token/report",
+            "metadata": {
+                "processing_time_seconds": processing_time,
+                "services_attempted": 0,
+                "services_successful": 0,
+                "security_check_passed": False,
+                "analysis_stopped_at_security": False
+            }
+        }
+    
+
 @router.get("/api/run/{run_id}", summary="Get Specific Analysis Run")
 async def get_specific_run_api(
     run_id: str = Path(..., description="Run ID"),
@@ -336,178 +406,7 @@ async def get_specific_run_api(
             "run": None
         }
 
-# ==============================================
-# TOKEN ANALYSIS ENDPOINTS (Frontend Integration)
-# ==============================================
 
-@router.post("/deep/{token_mint}", summary="Deep Token Analysis with AI Integration")
-async def deep_analysis_endpoint(
-    token_mint: str = Path(..., description="Token mint address"),
-    force_refresh: bool = Query(False, description="Force refresh cached data"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Deep token analysis with AI integration using Llama 3.0
-    
-    This endpoint provides comprehensive analysis including:
-    - Security checks (GOplus, RugCheck, SolSniffer)  
-    - Market analysis (Birdeye, Helius, SolanaFM, DexScreener)
-    - AI analysis with Llama 3.0 (MCAP, liquidity, volume, holders, LP, dev %, snipers/bundlers)
-    - Enhanced scoring system combining traditional + AI insights
-    - Structured recommendations with stop flags
-    
-    Flow: Security → Market → AI → Enhanced Analysis → Database → Response
-    """
-    start_time = time.time()
-    
-    try:
-        # Validate token mint format
-        if not token_mint or len(token_mint) < 32 or len(token_mint) > 44:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid Solana token mint address format"
-            )
-        
-        logger.info(f"🔍 Deep analysis request for {token_mint}")
-        
-        # Determine source event
-        source_event = "api_deep"
-        if force_refresh:
-            source_event = "api_deep_refresh"
-        
-        # Perform deep comprehensive analysis with AI
-        analysis_result = await analyze_token_deep_comprehensive(token_mint, source_event)
-        
-        # Add endpoint metadata
-        analysis_result["metadata"]["from_cache"] = not force_refresh
-        analysis_result["metadata"]["force_refresh"] = force_refresh
-        analysis_result["metadata"]["api_response_time"] = round((time.time() - start_time) * 1000, 1)
-        analysis_result["metadata"]["endpoint"] = "/deep"
-        
-        # Log successful analysis
-        ai_enhanced = analysis_result.get("ai_analysis", {})
-        ai_score = ai_enhanced.get("ai_score", 0) if ai_enhanced else 0
-        overall_score = analysis_result.get("overall_analysis", {}).get("score", 0)
-        
-        logger.info(
-            f"✅ Deep analysis completed for {token_mint} in {analysis_result['metadata']['processing_time_seconds']}s "
-            f"(AI score: {ai_score}, Overall: {overall_score}, "
-            f"Recommendation: {analysis_result.get('overall_analysis', {}).get('recommendation', 'N/A')})"
-        )
-        
-        return analysis_result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"❌ Deep analysis failed for {token_mint}: {str(e)}")
-        
-        # Return structured error response
-        return {
-            "status": "error",
-            "analysis_type": "deep",
-            "token_address": token_mint,
-            "timestamp": time.time(),
-            "processing_time": round(processing_time, 2),
-            "message": f"Deep analysis failed: {str(e)}",
-            "error": str(e),
-            "endpoint": "/deep",
-            "ai_analysis_attempted": True,
-            "ai_analysis_completed": False,
-            "metadata": {
-                "processing_time_seconds": processing_time,
-                "services_attempted": 0,
-                "services_successful": 0,
-                "security_check_passed": False,
-                "ai_analysis_completed": False,
-                "analysis_stopped_at_security": False
-            }
-        }
-
-
-@router.get("/deep/{token_mint}", summary="Get Deep Token Analysis (GET endpoint)")
-async def get_deep_analysis(
-    token_mint: str = Path(..., description="Token mint address"),
-    force_refresh: bool = Query(False, description="Force refresh cached data"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Alternative GET endpoint for deep token analysis
-    """
-    return await deep_analysis_endpoint(token_mint, force_refresh)
-
-
-# Update the existing quick analysis to clearly differentiate from deep
-@router.post("/quick/{token_mint}", summary="Quick Token Analysis - Security + Market Only")
-async def quick_analysis_endpoint(
-    token_mint: str = Path(..., description="Token mint address"),
-    _: None = Depends(rate_limit_per_ip)
-):
-    """
-    Quick token analysis without AI integration
-    
-    Includes:
-    - Security checks (GOplus, RugCheck, SolSniffer)
-    - Market analysis (Birdeye, Helius, SolanaFM, DexScreener)  
-    - Traditional scoring system
-    
-    For AI-enhanced analysis, use /deep endpoint instead.
-    """
-    start_time = time.time()
-    
-    try:
-        # Validate token mint format
-        if not token_mint or len(token_mint) < 32 or len(token_mint) > 44:
-            raise HTTPException(
-                status_code=422,
-                detail="Invalid Solana token mint address format"
-            )
-        
-        logger.info(f"⚡ Quick analysis request for {token_mint}")
-        
-        # Use existing comprehensive analysis from token_analyzer
-        from app.services.token_analyzer import token_analyzer
-        analysis_result = await token_analyzer.analyze_token_comprehensive(token_mint, "api_quick")
-        
-        # Add endpoint metadata
-        analysis_result["metadata"]["api_response_time"] = round((time.time() - start_time) * 1000, 1)
-        analysis_result["metadata"]["endpoint"] = "/quick"
-        analysis_result["analysis_type"] = "quick"
-        
-        # Log successful analysis
-        logger.info(
-            f"✅ Quick analysis completed for {token_mint} in {analysis_result['metadata']['processing_time_seconds']}s "
-            f"(Score: {analysis_result['overall_analysis']['score']}, "
-            f"Risk: {analysis_result['overall_analysis']['risk_level']})"
-        )
-        
-        return analysis_result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        processing_time = time.time() - start_time
-        logger.error(f"❌ Quick analysis failed for {token_mint}: {str(e)}")
-        
-        return {
-            "status": "error",
-            "analysis_type": "quick", 
-            "token_address": token_mint,
-            "timestamp": time.time(),
-            "processing_time": round(processing_time, 2),
-            "message": f"Quick analysis failed: {str(e)}",
-            "error": str(e),
-            "endpoint": "/quick",
-            "metadata": {
-                "processing_time_seconds": processing_time,
-                "services_attempted": 0,
-                "services_successful": 0,
-                "security_check_passed": False,
-                "analysis_stopped_at_security": False
-            }
-        }
-    
 @router.get("/document/{cache_key:path}")
 async def download_analysis_document(
     cache_key: str,

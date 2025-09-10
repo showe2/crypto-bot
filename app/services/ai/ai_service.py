@@ -14,15 +14,12 @@ settings = get_settings()
 
 
 class AIAnalysisRequest(BaseModel):
-    """Enhanced request model for AI analysis with profile support"""
+    """Request model for AI analysis"""
     token_address: str
     service_responses: Dict[str, Any]
     security_analysis: Dict[str, Any]
     analysis_type: str = "deep"
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    custom_prompt: Optional[str] = Field(None, description="Custom prompt for profile analysis")
-    json_filters: Optional[Dict[str, Any]] = Field(None, description="Profile-specific JSON filters")
-    profile_type: Optional[str] = Field(None, description="Profile type for specialized analysis")
 
 
 class AIAnalysisResponse(BaseModel):
@@ -851,293 +848,58 @@ RESPOND WITH ONLY VALID JSON."""
 llama_ai_service = LlamaAIService()
 
 async def analyze_token_with_ai(request: AIAnalysisRequest) -> Optional[AIAnalysisResponse]:
-    # AUTO-DETECT: Check if this is a profile-specific analysis
-    if request.custom_prompt and request.profile_type:
-        logger.info(f"🎯 Profile-specific AI analysis detected: {request.profile_type}")
+    """Simple AI analysis"""
+    logger.info(f"🔍 Running AI analysis for {request.token_address}")
+    
+    try:
+        start_time = time.time()
         
+        # Prepare analysis data
+        analysis_data = llama_ai_service._prepare_analysis_data(request)
+        
+        # Build analysis prompt
+        prompt = llama_ai_service._build_analysis_prompt(analysis_data)
+        
+        # Call Groq service directly
+        response_text = await groq_llama_service.send_request(prompt)
+        
+        if not response_text:
+            logger.warning("No response from Groq service")
+            processing_time = time.time() - start_time
+            return llama_ai_service._create_fallback_response(request.token_address, processing_time)
+        
+        # Parse JSON response
         try:
-            # Use the custom prompt with JSON filtering
-            ai_response = await _call_llama_with_custom_prompt(
-                request.custom_prompt,
-                request.json_filters or {}
+            response_data = json.loads(response_text)
+            
+            processing_time = time.time() - start_time
+            
+            # Create AIAnalysisResponse
+            ai_response = AIAnalysisResponse(
+                ai_score=float(response_data.get("ai_score", 60.0)),
+                risk_assessment=response_data.get("risk_assessment", "medium"),
+                recommendation=response_data.get("recommendation", "HOLD"),
+                confidence=float(response_data.get("confidence", 70.0)),
+                key_insights=response_data.get("key_insights", []),
+                risk_factors=response_data.get("risk_factors", []),
+                stop_flags=response_data.get("stop_flags", []),
+                market_metrics=response_data.get("market_metrics", {}),
+                llama_reasoning=response_data.get("llama_reasoning", "AI analysis completed"),
+                processing_time=processing_time
             )
             
-            if ai_response:
-                # Parse profile-specific response
-                parsed_response = _parse_profile_ai_response(ai_response, request.profile_type)
-                if parsed_response:
-                    logger.info(f"✅ Profile AI analysis successful for {request.profile_type}")
-                    return parsed_response
+            logger.info(f"✅ AI analysis completed: Score {ai_response.ai_score}, Recommendation {ai_response.recommendation}")
+            return ai_response
             
-            # If profile analysis fails, fall back to standard
-            logger.warning(f"Profile analysis failed, falling back to standard analysis")
-            
-        except Exception as e:
-            logger.warning(f"Profile AI analysis error: {str(e)}, falling back to standard")
-    
-    # Standard comprehensive analysis (your existing logic)
-    logger.info(f"🔍 Running standard comprehensive AI analysis")
-    try:
-        return await llama_ai_service.analyze_token(request)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI response JSON: {str(e)}")
+            logger.debug(f"Raw response: {response_text[:500]}...")
+            processing_time = time.time() - start_time
+            return llama_ai_service._create_fallback_response(request.token_address, processing_time)
+        
     except Exception as e:
         logger.error(f"AI analysis service error: {str(e)}")
         return None
-    
-async def _call_llama_with_custom_prompt(prompt: str, json_filters: Dict[str, Any]) -> Optional[str]:
-    """Call Llama with custom prompt and JSON filtering"""
-    try:
-        # Add JSON filtering instruction to prompt if provided
-        if json_filters:
-            prompt += f"\n\nJSON FILTERS: {json_filters}\n"
-            prompt += "\nEnsure your response matches the exact JSON structure specified above."
-        
-        # Use your existing groq service
-        response = await groq_llama_service.send_request(prompt)
-        return response
-        
-    except Exception as e:
-        logger.error(f"Llama custom prompt failed: {str(e)}")
-        return None
-    
-def _extract_risks_from_profile_response(parsed: Dict, profile_type: str) -> List[str]:
-    """Extract risk factors from profile-specific response"""
-    risks = []
-    
-    # Profile-specific risk field mapping
-    risk_field_mapping = {
-        "twitter": "social_risks",
-        "pump": "pump_risks",
-        "whale": "whale_risks", 
-        "listing": "early_risks",
-        "discovery": "risk_factors"
-    }
-    
-    risk_field = risk_field_mapping.get(profile_type, "risk_factors")
-    profile_risks = parsed.get(risk_field, [])
-    
-    if isinstance(profile_risks, list):
-        risks.extend(profile_risks)
-    elif isinstance(profile_risks, str):
-        risks.append(profile_risks)
-    
-    return risks
-
-def _extract_score_from_profile_response(parsed: Dict, profile_type: str) -> float:
-    """Extract AI score from profile-specific response"""
-    # Map profile-specific score fields to ai_score
-    score_field_mapping = {
-        "twitter": "social_score",
-        "pump": "pump_score", 
-        "whale": "whale_risk",
-        "listing": "listing_score",
-        "discovery": "ai_score"
-    }
-    
-    score_field = score_field_mapping.get(profile_type, "ai_score")
-    score = parsed.get(score_field, 50.0)
-    
-    # Ensure score is in 0-100 range
-    try:
-        return max(0.0, min(100.0, float(score)))
-    except (ValueError, TypeError):
-        return 50.0  # Safe default
-    
-def _extract_risk_from_profile_response(parsed: Dict, profile_type: str) -> str:
-        """Extract risk assessment from profile-specific response"""
-        
-        if profile_type == "twitter":
-            viral_potential = parsed.get("viral_potential", "medium")
-            community_strength = parsed.get("community_strength", "moderate")
-            
-            if viral_potential == "high" and community_strength == "strong":
-                return "low"
-            elif viral_potential == "low" or community_strength == "weak":
-                return "high"
-            else:
-                return "medium"
-        
-        elif profile_type == "pump":
-            sustainability = parsed.get("sustainability", "medium")
-            momentum = parsed.get("momentum_strength", "moderate")
-            
-            if sustainability == "low":
-                return "high"  # Unsustainable pump = high risk
-            elif sustainability == "high" and momentum in ["weak", "moderate"]:
-                return "low"  # Sustainable growth = lower risk
-            else:
-                return "medium"
-        
-        elif profile_type == "whale":
-            movement_risk = parsed.get("movement_risk", "medium")
-            distribution_score = parsed.get("distribution_score", 50)
-            
-            try:
-                dist_score = float(distribution_score)
-                if movement_risk == "high" or dist_score < 40:
-                    return "high"
-                elif movement_risk == "low" and dist_score > 70:
-                    return "low"
-                else:
-                    return "medium"
-            except (ValueError, TypeError):
-                return "medium"
-        
-        elif profile_type == "listing":
-            opportunity = parsed.get("opportunity_rating", "medium")
-            # New listings are inherently riskier
-            if opportunity == "low":
-                return "high"
-            else:
-                return "medium"  # Even good listings are medium risk
-        
-        elif profile_type == "discovery":
-            # Discovery uses standard risk assessment
-            return parsed.get("risk_assessment", "medium")
-        
-        return "medium"  # Safe default
-    
-def _parse_profile_ai_response(response_text: str, profile_type: str) -> Optional[AIAnalysisResponse]:
-    """Parse profile-specific AI response into standard AIAnalysisResponse format"""
-    try:
-        import re
-        
-        # Clean response text
-        cleaned = response_text.strip()
-        
-        # Extract JSON from response (handle various formats)
-        if "```json" in cleaned:
-            json_start = cleaned.find("```json") + 7
-            json_end = cleaned.find("```", json_start)
-            json_content = cleaned[json_start:json_end].strip()
-        elif "{" in cleaned and "}" in cleaned:
-            # Find the JSON object
-            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
-            if json_match:
-                json_content = json_match.group()
-            else:
-                raise ValueError("No JSON found in response")
-        else:
-            raise ValueError("No JSON structure found in AI response")
-        
-        # Parse JSON
-        parsed = json.loads(json_content)
-        
-        # Transform profile-specific response to standard AIAnalysisResponse
-        ai_score = _extract_score_from_profile_response(parsed, profile_type)
-        risk_assessment = _extract_risk_from_profile_response(parsed, profile_type)
-        recommendation = parsed.get("recommendation", "HOLD")
-        
-        real_reasoning = _generate_reasoning(parsed, profile_type)
-        
-        return AIAnalysisResponse(
-            ai_score=float(ai_score),
-            risk_assessment=risk_assessment,
-            recommendation=recommendation,
-            confidence=75.0,  # Default confidence for profile analysis
-            key_insights=parsed.get("key_insights", []),
-            risk_factors=_extract_risks_from_profile_response(parsed, profile_type),
-            stop_flags=[],  # Profiles typically don't have critical stop flags
-            market_metrics=parsed,  # Store full profile response
-            llama_reasoning=real_reasoning,  # ← FIXED
-            processing_time=1.0
-        )
-        
-    except Exception as e:
-        logger.warning(f"Failed to parse {profile_type} AI response: {str(e)}")
-        logger.debug(f"Raw response: {response_text[:500]}...")
-        return None
-
-def _generate_reasoning(parsed: Dict, profile_type: str) -> str:
-    """Generate actual reasoning based on AI analysis results"""
-    try:
-        reasoning_parts = []
-        
-        if profile_type == "pump":
-            # Extract pump-specific data
-            pump_score = parsed.get("pump_score", 0)
-            pump_type = parsed.get("pump_type", "unknown")
-            sustainability = parsed.get("sustainability", "unknown")
-            age_factor = parsed.get("age_factor", "unknown")
-            buy_pressure = parsed.get("buy_pressure", "unknown")
-            momentum = parsed.get("momentum_strength", "unknown")
-            
-            reasoning_parts.append(f"Pump analysis score: {pump_score}/100")
-            
-            if pump_type != "unknown":
-                reasoning_parts.append(f"Classified as {pump_type} activity")
-            
-            if age_factor == "new_pool":
-                reasoning_parts.append("Very new pool detected - high opportunity but high risk")
-            elif age_factor == "young":
-                reasoning_parts.append("Young token with recent activity")
-            elif age_factor == "established":
-                reasoning_parts.append("Established token showing new pump activity")
-            
-            if buy_pressure == "high":
-                reasoning_parts.append("Strong buy pressure indicates demand")
-            elif buy_pressure == "low":
-                reasoning_parts.append("Weak buy pressure suggests limited interest")
-            
-            if sustainability == "low":
-                reasoning_parts.append("Low sustainability - likely short-term pump")
-            elif sustainability == "high":
-                reasoning_parts.append("High sustainability - potential for continued growth")
-            
-            if momentum == "strong":
-                reasoning_parts.append("Strong momentum detected")
-            elif momentum == "weak":
-                reasoning_parts.append("Weak momentum - limited price action")
-            
-            # Add key insights if available
-            insights = parsed.get("key_insights", [])
-            if insights and len(insights) > 0:
-                reasoning_parts.append(f"Key factor: {insights[0]}")
-        
-        elif profile_type == "twitter":
-            social_score = parsed.get("social_score", 0)
-            viral_potential = parsed.get("viral_potential", "unknown")
-            community_strength = parsed.get("community_strength", "unknown")
-            
-            reasoning_parts.append(f"Social analysis score: {social_score}/100")
-            reasoning_parts.append(f"Viral potential: {viral_potential}")
-            reasoning_parts.append(f"Community strength: {community_strength}")
-        
-        elif profile_type == "whale":
-            whale_risk = parsed.get("whale_risk", 0)
-            distribution_score = parsed.get("distribution_score", 0)
-            movement_risk = parsed.get("movement_risk", "unknown")
-            
-            reasoning_parts.append(f"Whale risk assessment: {whale_risk}/100")
-            reasoning_parts.append(f"Distribution score: {distribution_score}/100")
-            reasoning_parts.append(f"Movement risk: {movement_risk}")
-        
-        elif profile_type == "listing":
-            listing_score = parsed.get("listing_score", 0)
-            opportunity_rating = parsed.get("opportunity_rating", "unknown")
-            growth_potential = parsed.get("growth_potential", "unknown")
-            
-            reasoning_parts.append(f"Listing opportunity score: {listing_score}/100")
-            reasoning_parts.append(f"Opportunity rating: {opportunity_rating}")
-            reasoning_parts.append(f"Growth potential: {growth_potential}")
-        
-        # Add recommendation reasoning
-        recommendation = parsed.get("recommendation", "HOLD")
-        if recommendation == "AVOID":
-            reasoning_parts.append("Recommendation: AVOID due to identified risks")
-        elif recommendation == "BUY":
-            reasoning_parts.append("Recommendation: BUY - opportunity identified")
-        elif recommendation == "CONSIDER":
-            reasoning_parts.append("Recommendation: CONSIDER with caution")
-        
-        # Combine into coherent reasoning
-        if reasoning_parts:
-            return ". ".join(reasoning_parts[:6]) + "."  # Limit to 6 parts
-        else:
-            return f"{profile_type.title()} analysis completed with available data."
-            
-    except Exception as e:
-        logger.warning(f"Error generating reasoning for {profile_type}: {str(e)}")
-        return f"{profile_type.title()} analysis completed with specialized focus."
 
 async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
     """Generate DOCX report from cached analysis data"""

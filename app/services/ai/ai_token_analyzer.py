@@ -157,9 +157,6 @@ class EnhancedTokenAnalyzer:
             logger.warning(f"Failed to cache deep analysis: {str(e)}")
             analysis_response["warnings"].append(f"Caching failed: {str(e)}")
         
-        # Store in ChromaDB asynchronously
-        asyncio.create_task(self._store_analysis_async(analysis_response))
-        
         # Log completion
         logger.info(
             f"✅ DEEP ANALYSIS COMPLETED for {token_address} in {processing_time:.2f}s "
@@ -526,17 +523,6 @@ class EnhancedTokenAnalyzer:
         """Generate security-focused analysis - delegate to existing logic"""
         from app.services.token_analyzer import token_analyzer
         return await token_analyzer._generate_security_focused_analysis(security_data, token_address, passed)
-    
-    async def _store_analysis_async(self, analysis_response: Dict[str, Any]) -> None:
-        """Store analysis in ChromaDB asynchronously"""
-        try:
-            success = await analysis_storage.store_analysis(analysis_response)
-            if success:
-                logger.debug(f"Deep analysis stored in ChromaDB: {analysis_response.get('analysis_id')}")
-            else:
-                logger.debug(f"ChromaDB storage skipped for: {analysis_response.get('analysis_id')}")
-        except Exception as e:
-            logger.warning(f"ChromaDB storage error: {str(e)}")
 
 
 # Global enhanced analyzer instance
