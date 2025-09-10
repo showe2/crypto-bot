@@ -59,7 +59,14 @@ class PumpAnalysisProfile:
             # Add ranks
             for i, candidate in enumerate(candidates[:5]):
                 candidate["rank"] = i + 1
-            
+
+                # Generate AI analysis for ai field
+                try:
+                    ai_message = await self._generate_pump_ai_message(candidate)
+                    candidate["ai"] = ai_message
+                    logger.info(f"Generated AI message for {candidate['name']}: {ai_message[:50]}...")
+                except Exception as e:
+                    logger.warning(f"AI message generation failed for {candidate['name']}: {e}")
             # Return top 5
             top_candidates = candidates[:5]
             
@@ -171,7 +178,7 @@ class PumpAnalysisProfile:
                 "whales1h": int(whale_control * 100),  # Convert to basis points
                 "social": 0,  # Placeholder
                 "mcap": int(market_cap),
-                "action": "",  # Leave blank for now
+                "ai": "",  # Leave blank for now
                 "pump_score": round(pump_score, 2),
                 "age_minutes": age_minutes,
                 "timestamp": timestamp_str
@@ -267,6 +274,102 @@ class PumpAnalysisProfile:
             logger.warning(f"Age calculation failed: {e}")
             return 60.0  # Default 1 hour
     
+    async def _generate_pump_ai_message(self, candidate: Dict[str, Any]) -> str:
+        """Generate Russian AI message for pump candidate"""
+        try:
+            # Import groq client directly for custom request
+            from groq import AsyncGroq
+            from app.core.config import get_settings
+            
+            settings = get_settings()
+            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+            
+            # Build comprehensive pump analysis prompt
+            age_minutes = candidate.get('age_minutes', 0)
+            liq_ratio = (candidate['vol5'] / candidate['liq']) if candidate['liq'] > 0 else 0
+            vol_growth = (candidate['vol5'] / candidate['vol60']) if candidate['vol60'] > 0 else 0
+            
+            prompt = f"""
+    ГЛУБОКИЙ АНАЛИЗ ПАМПА ТОКЕНА:
+
+    БАЗОВЫЕ МЕТРИКИ:
+    - Токен: {candidate['name']}
+    - Возраст пула: {age_minutes:.1f} минут
+    - Ликвидность: ${candidate['liq']:,}
+    - Объем 5м: ${candidate['vol5']:,} 
+    - Объем 60м: ${candidate['vol60']:,}
+    - Рыночная кап: ${candidate['mcap']:,}
+    - Концентрация китов: {candidate['whales1h']} базисных пунктов
+    - Итоговая оценка пампа: {candidate['pump_score']:.2f}
+
+    РАСЧЕТНЫЕ ИНДИКАТОРЫ:
+    - Коэффициент объем/ликвидность: {liq_ratio:.3f} ({liq_ratio*100:.1f}%)
+    - Рост объема (5м/60м): {vol_growth:.2f}x
+    - Размер позиции китов: {candidate['whales1h']/100:.1f}% от общего объема
+
+    ЗАДАЧА: Создай ЭКСПЕРТНОЕ сообщение на русском языке (2-3 предложения) для опытных трейдеров.
+
+    ПРИМЕРЫ:
+    "Окно 23м, объем/лик 8.5%: активная накачка. Киты 34% - риск дампа выше 60%. Вход 0.5% стека."
+    "Поздняя стадия 180м, momentum падает 2.1x→1.3x. Лик $890K хорошая, но upside ограничен."
+    "Ранний памп 18м: лик/объем 12% перегрев, но киты только 8%. Возможен x2-3 при прорыве."
+
+    Ответь ТОЛЬКО русским техническим анализом, БЕЗ объяснений структуры.
+            """
+            
+            # Call Groq directly without JSON format
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": "Ты эксперт по анализу криптовалют. Отвечай только на русском языке короткими техническими сообщениями."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=200,
+                temperature=0.3
+                # NO response_format - we want plain text
+            )
+            
+            if response and response.choices:
+                message = response.choices[0].message.content.strip()
+                # Clean response
+                message = message.replace('"', '').replace("'", '')
+                # Limit length
+                if len(message) > 200:
+                    message = message[:197] + "..."
+                
+                return message
+            
+            # Fallback message
+            # return self._generate_fallback_message(candidate)
+            
+        except Exception as e:
+            logger.warning(f"AI message generation failed: {e}")
+            # return self._generate_fallback_message(candidate)
+
+    def _generate_fallback_message(self, candidate: Dict[str, Any]) -> str:
+        """Generate fallback Russian message when AI fails"""
+        try:
+            liq = candidate['liq']
+            vol5 = candidate['vol5'] 
+            whales = candidate['whales1h']
+            score = candidate.get('pump_score', 0)
+            
+            if score > 80:
+                if liq > 100000:
+                    return f"Сильный памп: ликвидность ${liq/1000:.0f}K, объем ${vol5/1000:.0f}K. Следим."
+                else:
+                    return f"Памп на низкой ликвидности ${liq/1000:.0f}K. Риск слипажа."
+            elif score > 60:
+                if whales > 2000:
+                    return f"Умеренный рост, киты {whales/100:.0f}%. Вход при подтверждении."
+                else:
+                    return f"Средний потенциал: объем ${vol5/1000:.0f}K, низкая концентрация."
+            else:
+                return f"Слабые сигналы: ликвидность ${liq/1000:.0f}K, ждем импульса."
+                
+        except Exception:
+            return "Анализ завершен, данные обрабатываются."
+        
     def _parse_float(self, value) -> float:
         """Safely parse float from string or number"""
         try:

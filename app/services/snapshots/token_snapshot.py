@@ -63,7 +63,7 @@ class TokenSnapshotService:
         
         # Initialize response structure
         snapshot_response = {
-            "analysis_id": analysis_id,  # CONSISTENT ID - NO TIMESTAMP
+            "analysis_id": analysis_id,
             "token_address": token_address,
             "timestamp": datetime.utcnow().isoformat(),
             "source_event": "snapshot_scheduled",
@@ -587,6 +587,67 @@ class TokenSnapshotService:
         except Exception as e:
             logger.warning(f"Sniper pattern detection failed: {e}")
             return {"sniper_risk": "unknown", "pattern_detected": False, "similar_holders": 0}
+        
+    def _extract_token_name_symbol(self, snapshot_response: Dict[str, Any]) -> tuple[str, str]:
+        """Extract token name and symbol from snapshot service responses"""
+        try:
+            service_responses = snapshot_response.get("service_responses", {})
+            
+            # Try Solsniffer first (most reliable for token metadata)
+            solsniffer_data = service_responses.get("solsniffer", {})
+            if solsniffer_data:
+                name = solsniffer_data.get("tokenName")
+                symbol = solsniffer_data.get("tokenSymbol")
+                if name and symbol:
+                    return name, symbol
+            
+            # Try Helius metadata
+            helius_data = service_responses.get("helius", {})
+            if helius_data:
+                metadata = helius_data.get("metadata", {})
+                if metadata:
+                    onchain = metadata.get("onChainMetadata", {})
+                    if onchain:
+                        meta_data = onchain.get("metadata", {})
+                        if meta_data:
+                            data = meta_data.get("data", {})
+                            name = data.get("name")
+                            symbol = data.get("symbol")
+                            if name and symbol:
+                                return name, symbol
+            
+            # Try SolanaFM
+            solanafm_data = service_responses.get("solanafm", {})
+            if solanafm_data:
+                token_data = solanafm_data.get("token", {})
+                if token_data:
+                    name = token_data.get("name")
+                    symbol = token_data.get("symbol")
+                    if name and symbol:
+                        return name, symbol
+            
+            # Try DexScreener
+            dexscreener_data = service_responses.get("dexscreener", {})
+            if dexscreener_data:
+                pairs_data = dexscreener_data.get("pairs", {})
+                if pairs_data:
+                    pairs = pairs_data.get("pairs", [])
+                    if pairs and len(pairs) > 0:
+                        pair = pairs[0]
+                        base_token = pair.get("baseToken", {})
+                        name = base_token.get("name")
+                        symbol = base_token.get("symbol")
+                        if name and symbol:
+                            return name, symbol
+            
+            # Fallback defaults
+            token_address = snapshot_response.get("token_address", "")
+            return "Unknown Token", token_address[:4].upper() if token_address else "N/A"
+            
+        except Exception as e:
+            logger.warning(f"Error extracting token name/symbol: {e}")
+            token_address = snapshot_response.get("token_address", "")
+            return "Unknown Token", token_address[:4].upper() if token_address else "N/A"
 
     def _extract_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
         """Extract market data from service responses"""
@@ -744,12 +805,17 @@ class TokenSnapshotService:
                 
             doc_id = f"snapshot_{token_address[:8]}"
             content = f"snapshot {token_address} gen {snapshot_response.get('snapshot_generation', 1)}"
+
+            # Extract token name and symbol from service responses
+            token_name, token_symbol = self._extract_token_name_symbol(snapshot_response)
             
             # FULL metadata with all the important data
             metadata = {
                 "doc_type": "token_snapshot",
                 "analysis_id": analysis_id,
                 "token_address": token_address,
+                "token_name": token_name,
+                "token_symbol": token_symbol,
                 "snapshot_generation": str(snapshot_response.get("snapshot_generation", 1)),
                 "is_first_snapshot": str(snapshot_response.get("metadata", {}).get("is_first_snapshot", False)),
                 "analysis_type": "snapshot",
