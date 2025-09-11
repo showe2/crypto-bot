@@ -59,7 +59,7 @@ class SolSnifferClient:
         
         self._last_request_time = time.time()
     
-    async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
+    async def _request(self, method: str, endpoint: str, retries: int = 0, **kwargs) -> Dict[str, Any]:
         """Make HTTP request with error handling and rate limiting"""
         await self._ensure_session()
         await self._rate_limit()
@@ -91,13 +91,14 @@ class SolSnifferClient:
                         logger.warning(f"Unexpected content type from SolSniffer: {content_type}")
                         raise SolSnifferAPIError(f"Expected JSON, got {content_type}")
                         
-                elif response.status == 429:
+                elif response.status == 429 and retries < 3:
                     # Rate limited
+                    retries += 1
                     retry_after = int(response.headers.get('Retry-After', 2))
                     logger.warning(f"SolSniffer rate limited, waiting {retry_after}s")
                     await asyncio.sleep(retry_after)
                     # Retry once
-                    return await self._request(method, endpoint, **kwargs)
+                    return await self._request(method, endpoint, retries, **kwargs)
                 elif response.status == 401:
                     raise SolSnifferAPIError("Invalid SolSniffer API key or unauthorized access")
                 elif response.status == 403:

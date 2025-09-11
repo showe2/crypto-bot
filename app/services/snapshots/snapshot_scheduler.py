@@ -96,6 +96,8 @@ class SnapshotScheduler:
                     f"✅ Scheduled snapshot run completed: "
                     f"{result.get('successful', 0)} successful, {result.get('failed', 0)} failed"
                 )
+            elif result.get("status") == "no_tokens":
+                logger.warning(f"⚠️ Scheduled snapshot run failed: No tokens found")
             else:
                 logger.error(f"❌ Scheduled snapshot run failed: {result.get('error', 'Unknown error')}")
                 

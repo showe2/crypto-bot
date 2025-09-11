@@ -46,80 +46,80 @@ class LlamaAIService:
         self.system_prompt = self._build_system_prompt()
     
     def _build_system_prompt(self) -> str:
-        """Build comprehensive system prompt for token analysis"""
-        return """You are an expert Solana token analyst specializing in cryptocurrency evaluation. Your task is to analyze token data and provide structured investment recommendations with realistic data availability expectations.
+        """Build comprehensive system prompt for token analysis in Russian"""
+        return """Ты эксперт-аналитик Solana токенов, специализирующийся на оценке криптовалют. Твоя задача - анализировать данные токенов и предоставлять структурированные инвестиционные рекомендации с реалистичными ожиданиями о доступности данных.
 
-ANALYSIS FRAMEWORK:
-Evaluate tokens based on these critical metrics, but account for data availability:
+    ФРЕЙМВОРК АНАЛИЗА:
+    Оценивай токены на основе этих критических метрик, но учитывай доступность данных:
 
-MARKET CAP (MCAP):
-- Excellent: <$1M (high growth potential)
-- Good: $1M-$10M (moderate growth)
-- Acceptable: $10M-$50M (established)
-- Poor: >$50M (limited growth)
+    РЫНОЧНАЯ КАПИТАЛИЗАЦИЯ (MCAP):
+    - Отлично: <$1M (высокий потенциал роста)
+    - Хорошо: $1M-$10M (умеренный рост)
+    - Приемлемо: $10M-$50M (устоявшийся)
+    - Плохо: >$50M (ограниченный рост)
 
-LIQUIDITY:
-- Excellent: $500K+ (very strong)
-- Good: $100K-$500K (strong)
-- Acceptable: $50K-$100K (moderate)
-- Poor: <$50K (weak)
+    ЛИКВИДНОСТЬ:
+    - Отлично: $500K+ (очень сильная)
+    - Хорошо: $100K-$500K (сильная)
+    - Приемлемо: $50K-$100K (умеренная)
+    - Плохо: <$50K (слабая)
 
-VOLUME/LIQUIDITY RATIO:
-- Excellent: >10% (very active)
-- Good: 5-10% (active)
-- Acceptable: 1-5% (moderate)
-- Poor: <1% (low activity)
+    ОТНОШЕНИЕ ОБЪЕМ/ЛИКВИДНОСТЬ:
+    - Отлично: >10% (очень активно)
+    - Хорошо: 5-10% (активно)
+    - Приемлемо: 1-5% (умеренно)
+    - Плохо: <1% (низкая активность)
 
-TOP HOLDERS CONCENTRATION:
-- Excellent: <20% (great distribution)
-- Good: 20-35% (good distribution)
-- Acceptable: 35-50% (moderate risk)
-- Poor: >50% (high concentration risk)
+    КОНЦЕНТРАЦИЯ ТОПОВЫХ ХОЛДЕРОВ:
+    - Отлично: <20% (отличное распределение)
+    - Хорошо: 20-35% (хорошее распределение)
+    - Приемлемо: 35-50% (умеренный риск)
+    - Плохо: >50% (высокий риск концентрации)
 
-LP STATUS (with realistic expectations):
-- Excellent: Verifiably burned/locked
-- Good: Strong evidence of locking
-- Acceptable: Moderate evidence or concentration
-- Unknown: Data unavailable (neutral, not negative)
+    СТАТУС LP (с реалистичными ожиданиями):
+    - Отлично: Проверенно сожжен/заблокирован
+    - Хорошо: Сильные доказательства блокировки
+    - Приемлемо: Умеренные доказательства или концентрация
+    - Неизвестно: Данные недоступны (нейтрально, не негативно)
 
-SECURITY FLAGS (CRITICAL ONLY):
-- Active mint authority (unlimited supply risk)
-- Active freeze authority (account freeze risk)
-- Transfer restrictions or honeypot behavior
-- Verified rug pull or scam
+    ФЛАГИ БЕЗОПАСНОСТИ (ТОЛЬКО КРИТИЧЕСКИЕ):
+    - Активные полномочия минта (риск неограниченного предложения)
+    - Активные полномочия заморозки (риск заморозки аккаунтов)
+    - Ограничения переводов или поведение honeypot
+    - Подтвержденный rug pull или скам
 
-DATA AVAILABILITY PHILOSOPHY:
-- Missing data is NOT automatically negative
-- Focus on available data quality
-- Only penalize for clearly negative indicators
-- Unknown ≠ Bad (neutral stance)
+    ФИЛОСОФИЯ ДОСТУПНОСТИ ДАННЫХ:
+    - Отсутствующие данные НЕ автоматически негативны
+    - Фокусируйся на качестве доступных данных
+    - Наказывай только за явно негативные индикаторы
+    - Неизвестно ≠ Плохо (нейтральная позиция)
 
-RESPONSE FORMAT:
-Provide analysis in JSON format with:
-- ai_score (0-100): Overall token assessment
-- risk_assessment: "low", "medium", "high", "critical"
-- recommendation: "BUY", "CONSIDER", "HOLD", "CAUTION", "AVOID"
-- confidence (0-100): Analysis confidence based on available data
-- key_insights: List of positive factors found
-- risk_factors: List of actual concerns (not data gaps)
-- stop_flags: List of critical red flags only
-- market_metrics: Key calculated metrics
-- llama_reasoning: Detailed explanation
+    ФОРМАТ ОТВЕТА:
+    Предоставь анализ в JSON формате с:
+    - ai_score (0-100): Общая оценка токена
+    - risk_assessment: "low", "medium", "high", "critical"
+    - recommendation: "BUY", "CONSIDER", "HOLD", "CAUTION", "AVOID"
+    - confidence (0-100): Уверенность в анализе на основе доступных данных
+    - key_insights: Список найденных положительных факторов
+    - risk_factors: Список реальных проблем (не пробелов в данных)
+    - stop_flags: Список только критических красных флагов
+    - market_metrics: Ключевые рассчитанные метрики
+    - llama_reasoning: Подробное объяснение
 
-DECISION LOGIC (Less Strict):
-- BUY: Exceptional metrics with strong data confidence
-- CONSIDER: Good metrics with reasonable data
-- HOLD: Mixed signals or moderate metrics
-- CAUTION: Some concerning factors present
-- AVOID: Clear red flags or critical security issues
+    ЛОГИКА ПРИНЯТИЯ РЕШЕНИЙ (Менее строгая):
+    - BUY: Исключительные метрики с высокой уверенностью в данных
+    - CONSIDER: Хорошие метрики с разумными данными
+    - HOLD: Смешанные сигналы или умеренные метрики
+    - CAUTION: Некоторые тревожные факторы присутствуют
+    - AVOID: Явные красные флаги или критические проблемы безопасности
 
-CONFIDENCE CALCULATION:
-- High (80-100%): Strong data across multiple sources
-- Medium (60-79%): Good data coverage with some gaps
-- Low (40-59%): Limited data but no red flags
-- Very Low (<40%): Minimal data available
+    РАСЧЕТ УВЕРЕННОСТИ:
+    - Высокая (80-100%): Сильные данные из множественных источников
+    - Средняя (60-79%): Хорошее покрытие данных с некоторыми пробелами
+    - Низкая (40-59%): Ограниченные данные, но без красных флагов
+    - Очень низкая (<40%): Минимальные доступные данные
 
-Be realistic about data limitations in crypto markets. Focus on actual risk indicators rather than data gaps."""
+    Будь реалистичен относительно ограничений данных на крипто рынках. Фокусируйся на реальных индикаторах риска, а не на пробелах в данных."""
     
     def _prepare_analysis_data(self, request: AIAnalysisRequest) -> Dict[str, Any]:
         """Extract and calculate key metrics from service responses with enhanced data handling"""
@@ -666,166 +666,294 @@ Be realistic about data limitations in crypto markets. Focus on actual risk indi
         except Exception as e:
             logger.warning(f"Sniper pattern analysis failed: {e}")
             return {"similar_holders": 0, "pattern_detected": False, "data_available": False}
+        
+    async def analyze_token_timing(self, request: AIAnalysisRequest) -> Optional[Dict[str, Any]]:
+        """Separate timing analysis with Russian predictions"""
+        try:
+            logger.info(f"⏰ Starting timing analysis for {request.token_address}")
+            
+            # Prepare data
+            analysis_data = self._prepare_analysis_data(request)
+            
+            # Build timing-specific prompt
+            timing_prompt = self._build_timing_analysis_prompt(analysis_data)
+            
+            # Call Groq
+            response_text = await groq_llama_service.send_request(timing_prompt)
+            
+            if not response_text:
+                return None
+            
+            # Parse timing response
+            try:
+                timing_data = json.loads(response_text)
+                logger.info(f"✅ Timing analysis completed")
+                return timing_data
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse timing JSON: {e}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Timing analysis failed: {e}")
+            return None
+
+    def _build_timing_analysis_prompt(self, data: Dict[str, Any]) -> str:
+        """Build timing-specific analysis prompt"""
+        
+        # Calculate additional timing indicators
+        volume_24h = data.get('volume_24h', 0)
+        market_cap = data.get('market_cap', 0)
+        price_change_24h = data.get('price_change_24h', 0)
+        volatility = data.get('recent_volatility_percent', 0)
+        
+        # Activity level assessment
+        activity_level = "низкая"
+        if volume_24h > 100000:
+            activity_level = "высокая"
+        elif volume_24h > 10000:
+            activity_level = "средняя"
+        
+        # Market cap category
+        mcap_category = "крупная"
+        if market_cap < 1000000:
+            mcap_category = "микро"
+        elif market_cap < 10000000:
+            mcap_category = "малая"
+        elif market_cap < 50000000:
+            mcap_category = "средняя"
+        
+        prompt = f"""АНАЛИЗ ВРЕМЕНИ СОЛАНА ТОКЕНА
+
+    ТОКЕН: {data['token_address']}
+
+    === ВРЕМЕННЫЕ ДАННЫЕ ===
+    Недавняя волатильность: {data.get('recent_volatility_percent', 'Недоступно')}%
+    Отношение объем/ликвидность: {data.get('volume_liquidity_ratio', 'Недоступно')}%
+    Количество китов: {data.get('whale_count', 'Недоступно')}
+    Контроль китов: {data.get('whale_control_percent', 'Недоступно')}%
+    Схожие холдеры (боты): {data.get('sniper_similar_holders', 'Недоступно')}
+    Объем 24ч: ${volume_24h:,.0f} ({activity_level} активность)
+    Рыночная кап: ${market_cap:,.0f} ({mcap_category} кап)
+    Ликвидность: ${data.get('liquidity', 0):,.0f}
+    Изменение цены 24ч: {price_change_24h:+.2f}%
+
+    === АНАЛИЗ ВРЕМЕННЫХ ПАТТЕРНОВ ===
+
+    Проанализируй временные окна для этого токена на основе следующих факторов:
+
+    1. ОПРЕДЕЛЕНИЕ ПОСЛЕДНЕГО ПАМПА:
+    - Изменение цены 24ч {price_change_24h:+.2f}% (>20% = недавний памп)
+    - Волатильность {volatility}% (>30% = недавняя активность)
+    - Активность торговли: {activity_level}
+    - Если высокие показатели = "Недавно" или "24ч назад"
+    - Если низкие показатели = "Нет недавних пампов"
+
+    2. ПРЕДСКАЗАНИЕ СЛЕДУЮЩЕГО ОКНА:
+    - Микро кап (<$1M) + высокая активность = "Немедленно" или "1-2ч"
+    - Малая кап ($1-10M) + средняя активность = "2-6ч" или "6-24ч"
+    - Средняя/крупная кап + низкая активность = "1-3д" или "Неизвестно"
+    - Высокая концентрация китов = более долгие окна
+    - Много ботов = более быстрые окна
+
+    3. ОПРЕДЕЛЕНИЕ ФАЗЫ РЫНКА:
+    - Низкий объем + стабильная цена = "накопление"
+    - Высокий объем + рост цены = "памп"
+    - Высокий объем + падение цены = "распределение"
+    - Низкий объем + боковик = "консолидация"
+    - Недостаточно данных = "неизвестно"
+
+    4. ОЦЕНКА ВЕРОЯТНОСТИ ПАМПА:
+    - Учитывай возраст токена, активность, распределение
+    - Новые токены + высокая активность = высокая вероятность
+    - Устоявшиеся токены + низкая активность = низкая вероятность
+
+    ВРЕМЕННЫЕ ПРАВИЛА:
+    - Немедленно: Очень высокая активность, микро кап, свежие сигналы
+    - 1-2ч: Высокая активность, небольшая кап, недавний импульс
+    - 2-6ч: Средняя активность, умеренные сигналы
+    - 6-24ч: Низкая активность, но потенциал есть
+    - 1-3д: Долгосрочные сигналы, крупные капы
+    - Неизвестно: Недостаточно данных или противоречивые сигналы
+
+    ФОРМАТ ОТВЕТА (ТОЛЬКО JSON):
+    {{
+    "last_pump": "Недавно|24ч назад|2-3 дня назад|Неделю назад|Нет недавних пампов",
+    "next_window": "Немедленно|1-2ч|2-6ч|6-24ч|1-3д|Неизвестно",
+    "pump_probability": 0-100,
+    "timing_confidence": 0-100,
+    "market_phase": "накопление|памп|распределение|консолидация|неизвестно",
+    "reasoning": "Краткое объяснение временного анализа на русском (1-2 предложения)",
+    "signals": ["список конкретных временных сигналов"]
+    }}
+
+    ПРИНЦИПЫ АНАЛИЗА ВРЕМЕНИ:
+    - Используй КОНКРЕТНЫЕ данные для предсказаний
+    - Высокие изменения цены = недавняя активность
+    - Малая кап + активность = быстрые окна
+    - Большая кап + стабильность = медленные окна
+    - Будь реалистичен с уверенностью
+
+    ОТВЕЧАЙ ТОЛЬКО JSON."""
+
+        return prompt
     
-    def _build_analysis_prompt(self, data: Dict[str, Any]) -> str:
-        """Build analysis prompt with enhanced metrics for AI risk assessment"""
+    def _build_main_analysis_prompt(self, data: Dict[str, Any]) -> str:
+        """Build main analysis prompt without timing section"""
         
         # Helper function to format data availability
         def format_data_point(value, label, format_func=None):
             if value is not None:
                 formatted = format_func(value) if format_func else str(value)
                 return f"{label}: {formatted} ✓"
-            return f"{label}: Not available"
+            return f"{label}: Недоступно"
         
         # Build market data section
         market_data_lines = [
-            format_data_point(data.get('market_cap'), "Market Cap", lambda x: f"${x:,.0f}"),
-            format_data_point(data.get('liquidity'), "Liquidity", lambda x: f"${x:,.0f}"),
-            format_data_point(data.get('volume_24h'), "24h Volume", lambda x: f"${x:,.0f}"),
-            format_data_point(data.get('volume_liquidity_ratio'), "Volume/Liquidity", lambda x: f"{x:.1f}%"),
-            format_data_point(data.get('price_usd'), "Price", lambda x: f"${x:.8f}"),
-            format_data_point(data.get('price_change_24h'), "24h Change", lambda x: f"{x:+.2f}%")
+            format_data_point(data.get('market_cap'), "Рыночная кап", lambda x: f"${x:,.0f}"),
+            format_data_point(data.get('liquidity'), "Ликвидность", lambda x: f"${x:,.0f}"),
+            format_data_point(data.get('volume_24h'), "Объем 24ч", lambda x: f"${x:,.0f}"),
+            format_data_point(data.get('volume_liquidity_ratio'), "Объем/Ликвидность", lambda x: f"{x:.1f}%"),
+            format_data_point(data.get('price_usd'), "Цена", lambda x: f"${x:.8f}"),
+            format_data_point(data.get('price_change_24h'), "Изменение 24ч", lambda x: f"{x:+.2f}%")
         ]
         
         # Build enhanced metrics section
         enhanced_metrics_lines = [
-            format_data_point(data.get('recent_volatility_percent'), "Recent Volatility", lambda x: f"{x}%"),
-            format_data_point(data.get('whale_count'), "Whale Count", lambda x: f"{x} whales"),
-            format_data_point(data.get('whale_control_percent'), "Whale Control", lambda x: f"{x}%"),
-            format_data_point(data.get('top_whale_percent'), "Top Whale", lambda x: f"{x}%"),
-            format_data_point(data.get('sniper_similar_holders'), "Similar Holders", lambda x: f"{x} patterns"),
-            f"Sniper Pattern Detected: {data.get('sniper_pattern_detected', False)}"
+            format_data_point(data.get('recent_volatility_percent'), "Недавняя волатильность", lambda x: f"{x}%"),
+            format_data_point(data.get('whale_count'), "Количество китов", lambda x: f"{x} китов"),
+            format_data_point(data.get('whale_control_percent'), "Контроль китов", lambda x: f"{x}%"),
+            format_data_point(data.get('top_whale_percent'), "Топ кит", lambda x: f"{x}%"),
+            format_data_point(data.get('sniper_similar_holders'), "Схожие холдеры", lambda x: f"{x} паттернов"),
+            f"Обнаружен паттерн снайперов: {data.get('sniper_pattern_detected', False)}"
         ]
         
         # Build holder data section
         holder_data_lines = [
-            format_data_point(data.get('holder_count'), "Total Holders", lambda x: f"{x:,}"),
-            format_data_point(data.get('top_holders_percent'), "Top 10 Control", lambda x: f"{x:.1f}%"),
-            format_data_point(data.get('dev_percent'), "Dev Holdings", lambda x: f"{x:.1f}%")
+            format_data_point(data.get('holder_count'), "Всего холдеров", lambda x: f"{x:,}"),
+            format_data_point(data.get('top_holders_percent'), "Контроль топ-10", lambda x: f"{x:.1f}%"),
+            format_data_point(data.get('dev_percent'), "Холдинги разработчика", lambda x: f"{x:.1f}%")
         ]
         
         # Build LP section
-        lp_status = data.get('lp_status', 'unknown')
+        lp_status = data.get('lp_status', 'неизвестно')
         lp_confidence = data.get('lp_confidence', 0)
         lp_evidence = data.get('lp_evidence', [])
         
         lp_status_text = {
-            'locked': 'SECURED (Locked)',
-            'burned': 'SECURED (Burned)', 
-            'concentrated': 'LIKELY SECURED (Concentrated)',
-            'unknown': 'UNKNOWN (No data available)'
-        }.get(lp_status, 'UNKNOWN')
+            'locked': 'ЗАЩИЩЕН (Заблокирован)',
+            'burned': 'ЗАЩИЩЕН (Сожжен)', 
+            'concentrated': 'ВЕРОЯТНО ЗАЩИЩЕН (Сконцентрирован)',
+            'unknown': 'НЕИЗВЕСТНО (Данные недоступны)'
+        }.get(lp_status, 'НЕИЗВЕСТНО')
         
-        lp_info = f"LP Status: {lp_status_text}"
+        lp_info = f"Статус LP: {lp_status_text}"
         if lp_confidence > 0:
-            lp_info += f" (Confidence: {lp_confidence}%)"
+            lp_info += f" (Уверенность: {lp_confidence}%)"
         if lp_evidence:
-            lp_info += f"\nEvidence: {'; '.join(lp_evidence)}"
+            lp_info += f"\nДоказательства: {'; '.join(lp_evidence)}"
         
         # Security flags
         security_flags = data.get('security_flags', [])
-        security_section = "No critical security issues detected" if not security_flags else "\n".join(f"🚨 {flag}" for flag in security_flags)
+        security_section = "Критические проблемы безопасности не обнаружены" if not security_flags else "\n".join(f"🚨 {flag}" for flag in security_flags)
         
-        prompt = f"""ENHANCED SOLANA TOKEN ANALYSIS - AI RISK ASSESSMENT
+        prompt = f"""РАСШИРЕННЫЙ АНАЛИЗ SOLANA ТОКЕНА - AI ОЦЕНКА РИСКОВ
 
-TOKEN: {data['token_address']}
+    ТОКЕН: {data['token_address']}
 
-=== MARKET FUNDAMENTALS ===
-{chr(10).join(market_data_lines)}
+    === РЫНОЧНЫЕ ПОКАЗАТЕЛИ ===
+    {chr(10).join(market_data_lines)}
 
-=== ENHANCED RISK METRICS ===
-{chr(10).join(enhanced_metrics_lines)}
+    === РАСШИРЕННЫЕ МЕТРИКИ РИСКОВ ===
+    {chr(10).join(enhanced_metrics_lines)}
 
-=== HOLDER DISTRIBUTION ===  
-{chr(10).join(holder_data_lines)}
+    === РАСПРЕДЕЛЕНИЕ ХОЛДЕРОВ ===  
+    {chr(10).join(holder_data_lines)}
 
-=== LIQUIDITY SECURITY ===
-{lp_info}
-Mint Authority: {'ACTIVE 🚨' if data.get('mint_authority_active') else 'DISABLED ✓'}
-Freeze Authority: {'ACTIVE ⚠️' if data.get('freeze_authority_active') else 'DISABLED ✓'}
+    === БЕЗОПАСНОСТЬ ЛИКВИДНОСТИ ===
+    {lp_info}
+    Полномочия минта: {'АКТИВНЫ 🚨' if data.get('mint_authority_active') else 'ОТКЛЮЧЕНЫ ✓'}
+    Полномочия заморозки: {'АКТИВНЫ ⚠️' if data.get('freeze_authority_active') else 'ОТКЛЮЧЕНЫ ✓'}
 
-=== SECURITY ANALYSIS ===
-{security_section}
+    === АНАЛИЗ БЕЗОПАСНОСТИ ===
+    {security_section}
 
-=== DATA AVAILABILITY ===
-Overall Completeness: {data.get('data_completeness', 0):.1f}%
-Available Data Points: {sum(data.get('data_availability', {}).values())} / {len(data.get('data_availability', {}))}
+    === ДОСТУПНОСТЬ ДАННЫХ ===
+    Общая полнота: {data.get('data_completeness', 0):.1f}%
+    Доступные точки данных: {sum(data.get('data_availability', {}).values())} / {len(data.get('data_availability', {}))}
 
-=== AI ANALYSIS INSTRUCTIONS ===
+    === ИНСТРУКЦИИ ДЛЯ AI АНАЛИЗА ===
 
-You are analyzing this token with ENHANCED METRICS. Assess each metric's risk level:
+    Ты анализируешь этот токен с РАСШИРЕННЫМИ МЕТРИКАМИ. Оцени уровень риска каждой метрики:
 
-1. MARKET CAP RISK ASSESSMENT:
-   - Evaluate if market cap suggests pump risk, growth potential, or stability
-   - Consider market cap in context of liquidity and volume
+    1. ОЦЕНКА РИСКА РЫНОЧНОЙ КАПИТАЛИЗАЦИИ:
+    - Оцени, указывает ли рыночная кап на риск пампа, потенциал роста или стабильность
+    - Рассмотри рыночную кап в контексте ликвидности и объема
 
-2. VOLATILITY RISK ASSESSMENT:
-   - Analyze recent trading volatility percentage
-   - High volatility could indicate instability OR opportunity
-   - Consider volatility in context of volume and whale activity
+    2. ОЦЕНКА РИСКА ВОЛАТИЛЬНОСТИ:
+    - Проанализируй процент недавней торговой волатильности
+    - Высокая волатильность может указывать на нестабильность ИЛИ возможность
+    - Рассмотри волатильность в контексте объема и активности китов
 
-3. WHALE RISK ASSESSMENT:
-   - Evaluate whale concentration and dump risk
-   - 0 whales = BEST (perfect distribution)
-   - Consider whale count vs control percentage
-   - Assess potential for coordinated selling
+    3. ОЦЕНКА РИСКА КИТОВ:
+    - Оцени концентрацию китов и риск дампа
+    - 0 китов = ЛУЧШИЙ (идеальное распределение)
+    - Рассмотри количество китов против процента контроля
+    - Оцени потенциал координированных продаж
 
-4. SNIPER/BOT RISK ASSESSMENT:
-   - Analyze holder patterns for artificial demand
-   - Many similar holder percentages = bot activity
-   - Pattern detection indicates coordinated buying
+    4. ОЦЕНКА РИСКА СНАЙПЕРОВ/БОТОВ:
+    - Проанализируй паттерны холдеров на искусственный спрос
+    - Много схожих процентов холдеров = активность ботов
+    - Обнаружение паттернов указывает на координированные покупки
 
-5. LIQUIDITY DEPTH ASSESSMENT:
-   - Evaluate volume/liquidity ratio for market health
-   - High ratio = active trading, Low ratio = thin markets
-   - Consider liquidity depth for price impact assessment
+    5. ОЦЕНКА ГЛУБИНЫ ЛИКВИДНОСТИ:
+    - Оцени отношение объем/ликвидность для здоровья рынка
+    - Высокое отношение = активная торговля, Низкое = тонкие рынки
+    - Рассмотри глубину ликвидности для влияния на цену
 
-6. DEV HOLDINGS RISK ASSESSMENT:
-   - Evaluate developer token percentage
-   - High dev holdings = dump risk
-   - Consider if dev holdings are reasonable for project stage
+    6. ОЦЕНКА РИСКА ХОЛДИНГОВ РАЗРАБОТЧИКА:
+    - Оцени процент токенов разработчика
+    - Высокие холдинги разработчика = риск дампа
+    - Рассмотри, разумны ли холдинги разработчика для стадии проекта
 
-7. LP SECURITY ASSESSMENT:
-   - Evaluate liquidity provider lock/burn status
-   - Locked/Burned = secure, Unknown = neutral (not negative)
-   - Consider LP evidence and confidence level
+    7. ОЦЕНКА БЕЗОПАСНОСТИ LP:
+    - Оцени статус блокировки/сжигания поставщика ликвидности
+    - Заблокирован/Сожжен = безопасно, Неизвестно = нейтрально (не негативно)
+    - Рассмотри доказательства LP и уровень доверия
 
-COMPREHENSIVE RISK SCORING:
-- DO NOT pre-categorize risks - analyze each metric independently
-- Consider metric interactions (e.g., high volatility + whales = extra risk)
-- Weight metrics based on confidence in data quality
-- Missing data = neutral assessment, not negative
+    КОМПЛЕКСНАЯ ОЦЕНКА РИСКОВ:
+    - НЕ предварительно категоризируй риски - анализируй каждую метрику независимо
+    - Рассматривай взаимодействия метрик (например, высокая волатильность + киты = дополнительный риск)
+    - Взвешивай метрики на основе доверия к качеству данных
+    - Отсутствующие данные = нейтральная оценка, не негативная
 
-RESPONSE FORMAT (JSON ONLY):
-{{
-  "ai_score": 0-100,
-  "risk_assessment": "low|medium|high|critical",
-  "recommendation": "BUY|CONSIDER|HOLD|CAUTION|AVOID", 
-  "confidence": 0-100,
-  "key_insights": ["specific positive factors with data"],
-  "risk_factors": ["specific concerns with data"],
-  "stop_flags": ["critical issues only"],
-  "market_metrics": {{
-    "volatility_risk": "low|medium|high|unknown",
-    "whale_risk": "low|medium|high|unknown", 
-    "sniper_risk": "low|medium|high|unknown",
-    "liquidity_health": "excellent|good|poor|unknown",
-    "dev_risk": "low|medium|high|unknown",
-    "lp_security": "secure|likely_secure|unknown|risky"
-  }},
-  "llama_reasoning": "Comprehensive analysis of all available metrics"
-}}
+    ФОРМАТ JSON ОТВЕТА (ТОЛЬКО JSON):
+    {{
+    "ai_score": 0-100,
+    "risk_assessment": "low|medium|high|critical",
+    "recommendation": "BUY|CONSIDER|HOLD|CAUTION|AVOID", 
+    "confidence": 0-100,
+    "key_insights": ["конкретные положительные факторы с данными"],
+    "risk_factors": ["конкретные проблемы с данными"],
+    "stop_flags": ["только критические проблемы"],
+    "market_metrics": {{
+        "volatility_risk": "low|medium|high|unknown",
+        "whale_risk": "low|medium|high|unknown", 
+        "sniper_risk": "low|medium|high|unknown",
+        "liquidity_health": "excellent|good|poor|unknown",
+        "dev_risk": "low|medium|high|unknown",
+        "lp_security": "secure|likely_secure|unknown|risky"
+    }},
+    "llama_reasoning": "Комплексный анализ всех доступных метрик"
+    }}
 
-ENHANCED DECISION FRAMEWORK:
-- BUY: Score >85, all major risks low, strong data confidence
-- CONSIDER: Score >70, acceptable risk levels, good data
-- HOLD: Score >55, mixed signals or moderate risks
-- CAUTION: Score >40, some concerning factors
-- AVOID: Score <40 or any critical security flags
+    КРИТЕРИИ РЕШЕНИЙ:
+    - BUY: Балл >85, все основные риски низкие, высокое доверие к данным
+    - CONSIDER: Балл >70, приемлемые уровни рисков, хорошие данные
+    - HOLD: Балл >55, смешанные сигналы или умеренные риски
+    - CAUTION: Балл >40, некоторые тревожные факторы
+    - AVOID: Балл <40 или любые критические флаги безопасности
 
-Let the AI evaluate each metric's risk level independently based on the actual data values. Do not impose predefined risk thresholds - let the AI determine what constitutes high/medium/low risk for each metric based on crypto market context.
-
-RESPOND WITH ONLY VALID JSON."""
+    ОТВЕЧАЙ ТОЛЬКО ВАЛИДНЫМ JSON."""
 
         return prompt
     
@@ -848,57 +976,118 @@ RESPOND WITH ONLY VALID JSON."""
 llama_ai_service = LlamaAIService()
 
 async def analyze_token_with_ai(request: AIAnalysisRequest) -> Optional[AIAnalysisResponse]:
-    """Simple AI analysis"""
-    logger.info(f"🔍 Running AI analysis for {request.token_address}")
+    """AI analysis that runs main + timing analysis separately then combines"""
+    logger.info(f"🚀 Running AI analysis for {request.token_address}")
     
     try:
         start_time = time.time()
         
-        # Prepare analysis data
+        # Prepare data once for both analyses
         analysis_data = llama_ai_service._prepare_analysis_data(request)
         
-        # Build analysis prompt
-        prompt = llama_ai_service._build_analysis_prompt(analysis_data)
+        # Run both analyses concurrently
+        main_task = run_main_analysis(analysis_data)
+        timing_task = run_timing_analysis(analysis_data)
         
-        # Call Groq service directly
-        response_text = await groq_llama_service.send_request(prompt)
+        main_result, timing_result = await asyncio.gather(main_task, timing_task, return_exceptions=True)
         
-        if not response_text:
-            logger.warning("No response from Groq service")
-            processing_time = time.time() - start_time
-            return llama_ai_service._create_fallback_response(request.token_address, processing_time)
+        # Handle main analysis result
+        if isinstance(main_result, Exception) or not main_result:
+            logger.error(f"Main analysis failed: {main_result}")
+            return None
         
-        # Parse JSON response
-        try:
-            response_data = json.loads(response_text)
-            
-            processing_time = time.time() - start_time
-            
-            # Create AIAnalysisResponse
-            ai_response = AIAnalysisResponse(
-                ai_score=float(response_data.get("ai_score", 60.0)),
-                risk_assessment=response_data.get("risk_assessment", "medium"),
-                recommendation=response_data.get("recommendation", "HOLD"),
-                confidence=float(response_data.get("confidence", 70.0)),
-                key_insights=response_data.get("key_insights", []),
-                risk_factors=response_data.get("risk_factors", []),
-                stop_flags=response_data.get("stop_flags", []),
-                market_metrics=response_data.get("market_metrics", {}),
-                llama_reasoning=response_data.get("llama_reasoning", "AI analysis completed"),
-                processing_time=processing_time
-            )
-            
-            logger.info(f"✅ AI analysis completed: Score {ai_response.ai_score}, Recommendation {ai_response.recommendation}")
-            return ai_response
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse AI response JSON: {str(e)}")
-            logger.debug(f"Raw response: {response_text[:500]}...")
-            processing_time = time.time() - start_time
-            return llama_ai_service._create_fallback_response(request.token_address, processing_time)
+        # Handle timing analysis result
+        if isinstance(timing_result, Exception) or not timing_result:
+            logger.warning(f"Timing analysis failed: {timing_result}, using defaults")
+            timing_result = {
+                "last_pump": "Неизвестно",
+                "next_window": "Неизвестно",
+                "pump_probability": 50,
+                "timing_confidence": 30,
+                "market_phase": "неизвестно",
+                "reasoning": "Временной анализ недоступен"
+            }
+        else:
+            logger.info(f"✅ Timing analysis succeeded: {timing_result}")
+        
+        # Combine results - Add timing to market_metrics (FIXED APPROACH)
+        logger.info(f"🔗 Combining main + timing results...")
+        
+        combined_market_metrics = main_result.market_metrics.copy()
+        combined_market_metrics["timing_analysis"] = timing_result
+        
+        processing_time = time.time() - start_time
+        
+        combined_response = AIAnalysisResponse(
+            ai_score=main_result.ai_score,
+            risk_assessment=main_result.risk_assessment,
+            recommendation=main_result.recommendation,
+            confidence=main_result.confidence,
+            key_insights=main_result.key_insights,
+            risk_factors=main_result.risk_factors,
+            stop_flags=main_result.stop_flags,
+            market_metrics=combined_market_metrics,  # Contains timing_analysis
+            llama_reasoning=main_result.llama_reasoning,
+            processing_time=processing_time
+        )
+        
+        logger.info(f"✅ Combined AI analysis completed: Score {combined_response.ai_score}, Timing: {timing_result.get('next_window', 'Unknown')}")
+        
+        return combined_response
         
     except Exception as e:
-        logger.error(f"AI analysis service error: {str(e)}")
+        logger.error(f"Combined AI analysis failed: {e}")
+        return None
+    
+async def run_main_analysis(analysis_data: Dict[str, Any]) -> Optional[AIAnalysisResponse]:
+    """Run main risk analysis without timing"""
+    try:
+        # Build main analysis prompt (your existing prompt without timing section)
+        prompt = llama_ai_service._build_main_analysis_prompt(analysis_data)
+        
+        # Call Groq
+        response_text = await groq_llama_service.send_request(prompt)
+        if not response_text:
+            return None
+        
+        # Parse response
+        response_data = json.loads(response_text)
+        
+        return AIAnalysisResponse(
+            ai_score=float(response_data.get("ai_score", 60.0)),
+            risk_assessment=response_data.get("risk_assessment", "medium"),
+            recommendation=response_data.get("recommendation", "HOLD"),
+            confidence=float(response_data.get("confidence", 70.0)),
+            key_insights=response_data.get("key_insights", []),
+            risk_factors=response_data.get("risk_factors", []),
+            stop_flags=response_data.get("stop_flags", []),
+            market_metrics=response_data.get("market_metrics", {}),
+            llama_reasoning=response_data.get("llama_reasoning", "Analysis completed"),
+            processing_time=0.0
+        )
+        
+    except Exception as e:
+        logger.error(f"Main analysis failed: {e}")
+        return None
+
+async def run_timing_analysis(analysis_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Run timing analysis separately"""
+    try:
+        # Build timing-specific prompt using the new method
+        timing_prompt = llama_ai_service._build_timing_analysis_prompt(analysis_data)
+        
+        # Call Groq
+        response_text = await groq_llama_service.send_request(timing_prompt)
+        if not response_text:
+            return None
+        
+        # Parse timing response
+        timing_data = json.loads(response_text)
+        logger.info(f"✅ Timing analysis: {timing_data.get('next_window', 'Unknown')}")
+        return timing_data
+        
+    except Exception as e:
+        logger.error(f"Timing analysis failed: {e}")
         return None
 
 async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
@@ -926,32 +1115,3 @@ async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
     except Exception as e:
         logger.error(f"❌ DOCX generation failed: {str(e)}")
         return None
-
-# Health check function
-async def check_ai_service_health() -> Dict[str, Any]:
-    """Check AI service health"""
-    try:
-        # Test with minimal data
-        test_request = AIAnalysisRequest(
-            token_address="test",
-            service_responses={},
-            security_analysis={}
-        )
-        
-        start_time = time.time()
-        # Don't actually call the AI for health check, just validate setup
-        response_time = time.time() - start_time
-        
-        return {
-            "healthy": True,
-            "model_name": llama_ai_service.model_name,
-            "response_time": response_time,
-            "status": "AI service ready"
-        }
-        
-    except Exception as e:
-        return {
-            "healthy": False,
-            "error": str(e),
-            "status": "AI service error"
-        }

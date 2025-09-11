@@ -17,13 +17,13 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
     ai_focus_areas = ["comprehensive_analysis", "investment_potential", "risk_assessment"]
     
     async def analyze(self, token_address: str, filters: Optional[Dict] = None, **kwargs) -> Dict[str, Any]:
-        """Perform discovery analysis using deep analysis + store as run"""
+        """Perform discovery analysis using deep analysis + store as run + return simple schema"""
         self.start_time = time.time()
         
         logger.info(f"🔍 Starting Discovery analysis for {token_address}")
         
         try:
-            # Use existing deep analysis
+            # Use existing deep analysis (unchanged)
             from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
             
             deep_result = await analyze_token_deep_comprehensive(
@@ -31,16 +31,152 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
                 "discovery_report"
             )
             
-            # Store as discovery run
+            # Store as discovery run (existing)
             await self._store_discovery_run(token_address, deep_result)
             
-            # Return same format as deep analysis
+            # Transform to simple schema with Russian timing
+            simple_response = self._transform_to_simple_schema(deep_result)
+            
             logger.info(f"✅ Discovery analysis completed for {token_address}")
-            return deep_result
+            return simple_response
             
         except Exception as e:
             logger.error(f"❌ Discovery analysis failed for {token_address}: {str(e)}")
             raise
+
+    def _transform_to_simple_schema(self, deep_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Transform deep analysis to simple schema with Russian timing"""
+        try:
+            # Extract basic info
+            service_responses = deep_result.get("service_responses", {})
+            overall_analysis = deep_result.get("overall_analysis", {})
+            ai_analysis = deep_result.get("ai_analysis", {})
+            token_address = deep_result.get("token_address", "")
+            
+            # Extract token name
+            token_name = "Unknown"
+            if service_responses.get("solanafm", {}).get("token", {}).get("name"):
+                token_name = service_responses["solanafm"]["token"]["name"]
+            elif service_responses.get("helius", {}).get("metadata", {}).get("name"):
+                token_name = service_responses["helius"]["metadata"]["name"]
+            
+            # Extract market data with None handling
+            birdeye_price = service_responses.get("birdeye", {}).get("price", {})
+            liq = int(birdeye_price.get("liquidity") or 0)
+            mcap = int(birdeye_price.get("market_cap") or 0)
+            
+            # Fallback for mcap with None handling
+            if mcap == 0:
+                solsniffer_mcap = service_responses.get("solsniffer", {}).get("marketCap")
+                if solsniffer_mcap is not None:
+                    mcap = int(solsniffer_mcap)
+            
+            # Extract risk level
+            risk_level = overall_analysis.get("risk_level", "medium").upper()
+            if risk_level == "CRITICAL":
+                risk_level = "HIGH"
+            
+            # Extract security status
+            security_analysis = deep_result.get("security_analysis", {})
+            
+            def get_security_status(service_name, data_key, threshold_func):
+                try:
+                    if service_name == "goplus":
+                        goplus_data = security_analysis.get("goplus_result", {})
+                        critical_issues = security_analysis.get("critical_issues", [])
+                        return "BAD" if critical_issues else "OK"
+                    
+                    elif service_name == "rug":
+                        rugcheck_data = security_analysis.get("rugcheck_result", {})
+                        if rugcheck_data.get("rugged"):
+                            return "BAD"
+                        score = rugcheck_data.get("score")
+                        if score is not None and float(score) < 20:
+                            return "BAD"
+                        return "OK"
+                    
+                    elif service_name == "sniffer":
+                        solsniffer_data = service_responses.get("solsniffer", {})
+                        score = solsniffer_data.get("score")
+                        if score is not None and float(score) < 5:
+                            return "BAD"
+                        return "OK"
+                    
+                    return "OK"
+                except:
+                    return "OK"
+            
+            # Extract timing from AI analysis
+
+            timing_analysis = {}
+            if ai_analysis and ai_analysis.get("market_metrics", {}).get("timing_analysis"):
+                timing_analysis = ai_analysis["market_metrics"]["timing_analysis"]
+
+            last_pump = timing_analysis.get("last_pump", "Неизвестно")
+            next_window = timing_analysis.get("next_window", "Неизвестно")
+
+            logger.info(f"🔍 Timing data: last_pump={last_pump}, next_window={next_window}")
+            if not timing_analysis:
+                logger.warning(f"🔍 No timing analysis found in market_metrics.timing_analysis")
+            
+            # Extract verdict from recommendation
+            recommendation = overall_analysis.get("recommendation", "caution")
+            verdict_mapping = {
+                "consider": "BUY",
+                "caution": "WATCH",
+                "avoid": "SELL"
+            }
+            verdict = verdict_mapping.get(recommendation, "HOLD")
+            
+            # Build simplified response
+            simple_response = {
+                "name": token_name,
+                "contract": token_address,
+                "liq": liq,
+                "mcap": mcap,
+                "risk": risk_level,
+                "links": {
+                    "birdeye": f"https://birdeye.so/solana/token/{token_address}",
+                    "pumpfun": f"https://pump.fun/coin/{token_address}",
+                },
+                "social": {
+                    "x": "+0%",  # Placeholder - no social data available
+                    "tg": "0/ч"   # Placeholder - no social data available
+                },
+                "security": {
+                    "goplus": get_security_status("goplus", None, None),
+                    "rug": get_security_status("rug", None, None),
+                    "sniffer": get_security_status("sniffer", None, None)
+                },
+                "lastPump": last_pump,
+                "nextWindow": next_window,
+                "verdict": verdict,
+                "mint": token_address,
+                
+                # Keep full deep analysis for backward compatibility
+                "_full_analysis": deep_result
+            }
+            
+            return simple_response
+            
+        except Exception as e:
+            logger.error(f"Error transforming response: {str(e)}")
+            # Return fallback response
+            return {
+                "name": "Unknown",
+                "contract": deep_result.get("token_address", ""),
+                "liq": 0,
+                "mcap": 0,
+                "risk": "HIGH",
+                "links": {"pumpfun": "", "birdeye": ""},
+                "social": {"x": "+0%", "tg": "0/ч"},
+                "security": {"goplus": "OK", "rug": "OK", "sniffer": "OK"},
+                "lastPump": "Неизвестно",
+                "nextWindow": "Неизвестно", 
+                "verdict": "HOLD",
+                "mint": deep_result.get("token_address", ""),
+                "_full_analysis": deep_result
+            }
     
     async def _store_discovery_run(self, token_address: str, analysis_result: Dict[str, Any]) -> None:
         """Store discovery analysis as a run"""
