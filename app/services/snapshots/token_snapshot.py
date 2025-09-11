@@ -1,5 +1,6 @@
 import asyncio
 import time
+import json
 from typing import Dict, Any, List, Optional
 from loguru import logger
 from datetime import datetime, timedelta
@@ -159,8 +160,10 @@ class TokenSnapshotService:
             
             # Enhanced metrics from security data
             volatility = self._calculate_simple_volatility(market_responses.get("birdeye", {}))
-            whale_info = self._detect_simple_whales(security_responses.get("goplus", {}), security_responses.get("rugcheck", {}))
             sniper_info = self._detect_sniper_patterns(security_responses.get("goplus", {}))
+            
+            # Real-time whale activity from Birdeye trades (last 1 hour)
+            whale_activity_1h = self._analyze_whale_activity_1h(market_responses.get("birdeye", {}))
             
             return {
                 "market_data": market_data,
@@ -171,13 +174,13 @@ class TokenSnapshotService:
                     "volatility_risk": "high" if volatility and volatility > 30 else "medium" if volatility and volatility > 15 else "low",
                     "trades_analyzed": len(market_responses.get("birdeye", {}).get("trades", {}).get("items", []))
                 },
-                "whale_analysis": whale_info,
+                "whale_activity_1h": whale_activity_1h,  # Real-time whale trades from Birdeye
                 "sniper_detection": sniper_info
             }
             
         except Exception as e:
             logger.warning(f"Error generating combined metrics: {e}")
-            return {"market_data": {}, "token_info": {}, "volatility": {}, "whale_analysis": {}, "sniper_detection": {}}
+            return {"market_data": {}, "token_info": {}, "volatility": {}, "whale_analysis": {}, "whale_activity_1h": {"count": 0, "total_inflow_usd": 0, "addresses": []}, "sniper_detection": {}}
     
     async def run_scheduled_snapshots(self) -> Dict[str, Any]:
         """Run scheduled snapshots for multiple tokens"""
@@ -482,58 +485,81 @@ class TokenSnapshotService:
             logger.warning(f"Volatility calculation failed: {e}")
             return None
 
-    def _detect_simple_whales(self, goplus_data: Dict[str, Any], rugcheck_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Simple whale detection from existing holder data"""
+    def _analyze_whale_activity_1h(self, birdeye_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze whale activity in last 60 minutes from Birdeye trades"""
         try:
-            whale_info = {
-                "whale_count": 0,
-                "whale_control_percent": 0.0,
-                "top_whale_percent": 0.0,
-                "whale_risk_level": "low",
-                "dev_whale_percent": 0.0
+            trades_data = birdeye_data.get("trades", {})
+            trades = trades_data.get("items", []) if isinstance(trades_data, dict) else trades_data
+            
+            if not trades:
+                return {
+                    "count": 0,
+                    "total_inflow_usd": 0,
+                    "addresses": []
+                }
+            
+            # Current time minus 1 hour
+            one_hour_ago = time.time() - 3600
+            
+            whale_transactions = {}  # {wallet_address: total_amount}
+            
+            for trade in trades:
+                try:
+                    # Get trade timestamp
+                    trade_time = trade.get("block_unix_time", 0)
+                    if trade_time < one_hour_ago:
+                        continue  # Skip trades older than 1 hour
+                    
+                    # Only analyze BUY transactions
+                    if trade.get("tx_type") != "buy" and trade.get("side") != "buy":
+                        continue
+                    
+                    # Get trade amount in USD
+                    amount_usd = float(trade.get("volume_usd", 0))
+                    if amount_usd < 5000:  # Whale threshold: $5K minimum
+                        continue
+                    
+                    # Get wallet address (owner who made the buy)
+                    wallet = trade.get("owner")
+                    if not wallet:
+                        continue
+                    
+                    # Aggregate by wallet
+                    if wallet in whale_transactions:
+                        whale_transactions[wallet] += amount_usd
+                    else:
+                        whale_transactions[wallet] = amount_usd
+                        
+                except Exception as e:
+                    logger.warning(f"Error processing trade: {e}")
+                    continue
+            
+            # Sort whales by amount (highest first)
+            sorted_whales = sorted(whale_transactions.items(), key=lambda x: x[1], reverse=True)
+            
+            # Build response
+            addresses = []
+            total_inflow = 0
+            
+            for wallet, amount in sorted_whales:
+                addresses.append({
+                    "wallet": f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet,
+                    "amount_usd": int(amount)
+                })
+                total_inflow += amount
+            
+            return {
+                "count": len(addresses),
+                "total_inflow_usd": int(total_inflow),
+                "addresses": addresses[:10]  # Limit to top 10 whales
             }
             
-            # Method 1: GOplus holders
-            holders = goplus_data.get("holders", [])
-            if holders and isinstance(holders, list):
-                whales = []
-                for holder in holders:
-                    if isinstance(holder, dict):
-                        try:
-                            percent_raw = holder.get("percent", "0")
-                            percent = float(percent_raw)
-                            
-                            # Whale threshold: >2% = whale
-                            if percent > 2.0:
-                                whales.append(percent)
-                        except (ValueError, TypeError):
-                            continue
-                
-                if whales:
-                    whale_info["whale_count"] = len(whales)
-                    whale_info["whale_control_percent"] = round(sum(whales), 2)
-                    whale_info["top_whale_percent"] = round(max(whales), 2)
-                    
-                    # Simple risk assessment
-                    if whale_info["whale_control_percent"] > 60:
-                        whale_info["whale_risk_level"] = "high"
-                    elif whale_info["whale_control_percent"] > 30:
-                        whale_info["whale_risk_level"] = "medium"  
-                    else:
-                        whale_info["whale_risk_level"] = "low"
-                    
-                    logger.info(f"Whales detected: {whale_info['whale_count']} whales control {whale_info['whale_control_percent']}%")
-            
-            return whale_info
-            
         except Exception as e:
-            logger.warning(f"Whale detection failed: {e}")
+            logger.warning(f"Whale activity analysis failed: {e}")
             return {
-                "whale_count": 0,
-                "whale_control_percent": 0.0,
-                "top_whale_percent": 0.0,
-                "whale_risk_level": "unknown",
-                "dev_whale_percent": 0.0
+                "count": 0,
+                "total_inflow_usd": 0,
+                "addresses": []
             }
 
     def _detect_sniper_patterns(self, goplus_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -809,6 +835,10 @@ class TokenSnapshotService:
             # Extract token name and symbol from service responses
             token_name, token_symbol = self._extract_token_name_symbol(snapshot_response)
             
+            # Analyze whale activity from Birdeye data
+            birdeye_data = snapshot_response.get("service_responses", {}).get("birdeye", {})
+            whale_activity_1h = self._analyze_whale_activity_1h(birdeye_data)
+            
             # FULL metadata with all the important data
             metadata = {
                 "doc_type": "token_snapshot",
@@ -823,7 +853,10 @@ class TokenSnapshotService:
                 "services_successful": str(snapshot_response.get("metadata", {}).get("services_successful", 0)),
                 "security_status": snapshot_response.get("security_analysis", {}).get("security_status", "unknown"),
                 "critical_issues_count": str(len(snapshot_response.get("security_analysis", {}).get("critical_issues", []))),
-                "warnings_count": str(len(snapshot_response.get("security_analysis", {}).get("warnings", [])))
+                "warnings_count": str(len(snapshot_response.get("security_analysis", {}).get("warnings", []))),
+                "whale_activity_1h": json.dumps(whale_activity_1h),
+                "whale_count_1h": str(whale_activity_1h["count"]),
+                "whale_inflow_1h": str(whale_activity_1h["total_inflow_usd"])
             }
             
             # Add market data to metadata

@@ -56,7 +56,7 @@ class PumpAnalysisProfile:
             # Sort by pump score (highest first)
             candidates.sort(key=lambda x: x.get("pump_score", 0), reverse=True)
             
-            # Add ranks
+            # Add ranks and generate AI messages for top candidates
             for i, candidate in enumerate(candidates[:5]):
                 candidate["rank"] = i + 1
 
@@ -67,6 +67,8 @@ class PumpAnalysisProfile:
                     logger.info(f"Generated AI message for {candidate['name']}: {ai_message[:50]}...")
                 except Exception as e:
                     logger.warning(f"AI message generation failed for {candidate['name']}: {e}")
+                    candidate["ai"] = self._generate_fallback_message(candidate)
+            
             # Return top 5
             top_candidates = candidates[:5]
             
@@ -150,14 +152,20 @@ class PumpAnalysisProfile:
             market_cap = self._parse_float(snapshot.get("market_cap", "0"))
             volume_1h = self._parse_float(snapshot.get("volume_1h", "0"))
             volume_5m = self._parse_float(snapshot.get("volume_5m", "0"))
-            whale_control = self._parse_float(snapshot.get("whale_control_percent", "0"))
+            
+            # Extract whale activity data
+            whale_activity_raw = snapshot.get("whale_activity_1h", "{}")
+            try:
+                whale_activity = json.loads(whale_activity_raw)
+            except:
+                whale_activity = {"count": 0, "total_inflow_usd": 0, "addresses": []}
             
             # Calculate age from timestamp
             timestamp_str = snapshot.get("timestamp", "")
             age_minutes = self._calculate_age_minutes(timestamp_str)
             
-            # Apply filters
-            if not self._passes_filters(liquidity, market_cap, volume_5m, whale_control, age_minutes, filters):
+            # Apply filters (using whale count instead of percentage)
+            if not self._passes_filters(liquidity, market_cap, volume_5m, whale_activity["count"], age_minutes, filters):
                 return None
             
             # Calculate pump score
@@ -173,12 +181,12 @@ class PumpAnalysisProfile:
                 "mint": f"{token_address[:4]}...{token_address[-4:]}",
                 "mint_full": token_address,
                 "liq": int(liquidity),
-                "vol5": int(volume_5m),  # Using 1h as proxy for 5min
+                "vol5": int(volume_5m),
                 "vol60": int(volume_1h),
-                "whales1h": int(whale_control * 100),  # Convert to basis points
+                "whales1h": whale_activity,  # Full whale activity data
                 "social": 0,  # Placeholder
                 "mcap": int(market_cap),
-                "ai": "",  # Leave blank for now
+                "ai": "",  # Will be filled with AI analysis
                 "pump_score": round(pump_score, 2),
                 "age_minutes": age_minutes,
                 "timestamp": timestamp_str
@@ -189,7 +197,7 @@ class PumpAnalysisProfile:
             return None
     
     def _passes_filters(self, liquidity: float, market_cap: float, 
-                       volume_5m: float, whale_control: float, age_minutes: float, 
+                       volume_5m: float, whale_count: int, age_minutes: float, 
                        filters: Dict[str, Any]) -> bool:
         """Check if snapshot passes all filters"""
         try:
@@ -210,26 +218,25 @@ class PumpAnalysisProfile:
             
             # Volume filter
             if volume_5m < filters.get("volMin", 0) or volume_5m > filters.get("volMax", float('inf')):
-                logger.debug(f"Market cap filter failed: {market_cap} not in [{filters.get('volMin')}, {filters.get('volMax')}]")
+                logger.debug(f"Volume filter failed: {volume_5m} not in [{filters.get('volMin')}, {filters.get('volMax')}]")
                 return False
             
             # Age filter (filters are already in minutes, no conversion needed)
-            time_min_minutes = filters.get("timeMin", 0)  # Already in minutes
-            time_max_minutes = filters.get("timeMax", float('inf'))  # Already in minutes
+            time_min_minutes = filters.get("timeMin", 0)
+            time_max_minutes = filters.get("timeMax", float('inf'))
             if age_minutes < time_min_minutes or age_minutes > time_max_minutes:
                 logger.debug(f"Age filter failed: {age_minutes} min not in [{time_min_minutes}, {time_max_minutes}] min")
                 return False
             
-            # Whale filter (convert percentage to basis points)
-            whale_bp = whale_control * 100
-            if whale_bp < filters.get("whales1hMin", 0):
-                logger.debug(f"Whale filter failed: {whale_bp} < {filters.get('whales1hMin')}")
+            # Whale filter (now using whale count instead of percentage)
+            if whale_count < filters.get("whales1hMin", 0):
+                logger.debug(f"Whale filter failed: {whale_count} < {filters.get('whales1hMin')}")
                 return False
             
-            # Social filter
-            social_score = 0  # Not available in snapshots yet
-            if social_score < filters.get("socialMin", 0):
-                return False
+            # Social filter - commented out as requested
+            # social_score = 0  # Not available in snapshots yet
+            # if social_score < filters.get("socialMin", 0):
+            #     return False
             
             logger.debug(f"✅ All filters passed!")
             return True
@@ -288,33 +295,36 @@ class PumpAnalysisProfile:
             age_minutes = candidate.get('age_minutes', 0)
             liq_ratio = (candidate['vol5'] / candidate['liq']) if candidate['liq'] > 0 else 0
             vol_growth = (candidate['vol5'] / candidate['vol60']) if candidate['vol60'] > 0 else 0
+            whale_data = candidate.get('whales1h', {})
+            whale_count = whale_data.get('count', 0)
+            whale_inflow = whale_data.get('total_inflow_usd', 0)
             
             prompt = f"""
-    ГЛУБОКИЙ АНАЛИЗ ПАМПА ТОКЕНА:
+ГЛУБОКИЙ АНАЛИЗ ПАМПА ТОКЕНА:
 
-    БАЗОВЫЕ МЕТРИКИ:
-    - Токен: {candidate['name']}
-    - Возраст пула: {age_minutes:.1f} минут
-    - Ликвидность: ${candidate['liq']:,}
-    - Объем 5м: ${candidate['vol5']:,} 
-    - Объем 60м: ${candidate['vol60']:,}
-    - Рыночная кап: ${candidate['mcap']:,}
-    - Концентрация китов: {candidate['whales1h']} базисных пунктов
-    - Итоговая оценка пампа: {candidate['pump_score']:.2f}
+БАЗОВЫЕ МЕТРИКИ:
+- Токен: {candidate['name']}
+- Возраст пула: {age_minutes:.1f} минут
+- Ликвидность: ${candidate['liq']:,}
+- Объем 5м: ${candidate['vol5']:,} 
+- Объем 60м: ${candidate['vol60']:,}
+- Рыночная кап: ${candidate['mcap']:,}
+- Активность китов: {whale_count} китов / ${whale_inflow:,}
+- Итоговая оценка пампа: {candidate['pump_score']:.2f}
 
-    РАСЧЕТНЫЕ ИНДИКАТОРЫ:
-    - Коэффициент объем/ликвидность: {liq_ratio:.3f} ({liq_ratio*100:.1f}%)
-    - Рост объема (5м/60м): {vol_growth:.2f}x
-    - Размер позиции китов: {candidate['whales1h']/100:.1f}% от общего объема
+РАСЧЕТНЫЕ ИНДИКАТОРЫ:
+- Коэффициент объем/ликвидность: {liq_ratio:.3f} ({liq_ratio*100:.1f}%)
+- Рост объема (5м/60м): {vol_growth:.2f}x
+- Приток китов за час: {whale_count} китов на ${whale_inflow:,}
 
-    ЗАДАЧА: Создай ЭКСПЕРТНОЕ сообщение на русском языке (2-3 предложения) для опытных трейдеров.
+ЗАДАЧА: Создай ЭКСПЕРТНОЕ сообщение на русском языке (2-3 предложения) для опытных трейдеров.
 
-    ПРИМЕРЫ:
-    "Окно 23м, объем/лик 8.5%: активная накачка. Киты 34% - риск дампа выше 60%. Вход 0.5% стека."
-    "Поздняя стадия 180м, momentum падает 2.1x→1.3x. Лик $890K хорошая, но upside ограничен."
-    "Ранний памп 18м: лик/объем 12% перегрев, но киты только 8%. Возможен x2-3 при прорыве."
+ПРИМЕРЫ:
+"Окно 23м, объем/лик 8.5%: активная накачка. Киты 34% - риск дампа выше 60%. Вход 0.5% стека."
+"Поздняя стадия 180м, momentum падает 2.1x→1.3x. Лик $890K хорошая, но upside ограничен."
+"Ранний памп 18м: лик/объем 12% перегрев, но киты только 8%. Возможен x2-3 при прорыве."
 
-    Ответь ТОЛЬКО русским техническим анализом, БЕЗ объяснений структуры.
+Ответь ТОЛЬКО русским техническим анализом, БЕЗ объяснений структуры.
             """
             
             # Call Groq directly without JSON format
@@ -326,7 +336,6 @@ class PumpAnalysisProfile:
                 ],
                 max_tokens=200,
                 temperature=0.3
-                # NO response_format - we want plain text
             )
             
             if response and response.choices:
@@ -340,32 +349,34 @@ class PumpAnalysisProfile:
                 return message
             
             # Fallback message
-            # return self._generate_fallback_message(candidate)
+            return self._generate_fallback_message(candidate)
             
         except Exception as e:
             logger.warning(f"AI message generation failed: {e}")
-            # return self._generate_fallback_message(candidate)
+            return self._generate_fallback_message(candidate)
 
     def _generate_fallback_message(self, candidate: Dict[str, Any]) -> str:
         """Generate fallback Russian message when AI fails"""
         try:
             liq = candidate['liq']
             vol5 = candidate['vol5'] 
-            whales = candidate['whales1h']
+            whale_data = candidate.get('whales1h', {})
+            whale_count = whale_data.get('count', 0)
+            whale_inflow = whale_data.get('total_inflow_usd', 0)
             score = candidate.get('pump_score', 0)
             
             if score > 80:
-                if liq > 100000:
-                    return f"Сильный памп: ликвидность ${liq/1000:.0f}K, объем ${vol5/1000:.0f}K. Следим."
+                if whale_count > 0:
+                    return f"Сильный памп: {whale_count} китов +${whale_inflow/1000:.0f}K. Лик ${liq/1000:.0f}K. Следим."
                 else:
-                    return f"Памп на низкой ликвидности ${liq/1000:.0f}K. Риск слипажа."
+                    return f"Памп без китов: лик ${liq/1000:.0f}K, объем ${vol5/1000:.0f}K. Осторожно."
             elif score > 60:
-                if whales > 2000:
-                    return f"Умеренный рост, киты {whales/100:.0f}%. Вход при подтверждении."
+                if whale_count > 0:
+                    return f"Умеренный рост: {whale_count} китов +${whale_inflow/1000:.0f}K. Вход при подтверждении."
                 else:
-                    return f"Средний потенциал: объем ${vol5/1000:.0f}K, низкая концентрация."
+                    return f"Средний потенциал: объем ${vol5/1000:.0f}K, китов нет."
             else:
-                return f"Слабые сигналы: ликвидность ${liq/1000:.0f}K, ждем импульса."
+                return f"Слабые сигналы: лик ${liq/1000:.0f}K, {whale_count} китов. Ждем импульса."
                 
         except Exception:
             return "Анализ завершен, данные обрабатываются."
