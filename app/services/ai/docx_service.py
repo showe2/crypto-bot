@@ -15,24 +15,33 @@ except ImportError:
 
 
 class DocxReportService:
-    """Simple DOCX report generator for token analysis"""
-    
-    async def generate_analysis_docx_from_data(self, analysis_data: Dict[str, Any]) -> Optional[bytes]:
-        """Generate DOCX report from analysis data directly"""
+    """DOCX report generator for token analysis"""
 
+    async def generate_run_docx(self, run_data: Dict[str, Any], profile_type: str) -> Optional[bytes]:
+        """Generate DOCX report from run data based on profile type"""
+        
         if not DOCX_AVAILABLE:
             raise RuntimeError("python-docx not installed")
         
         try:
-            token_address = analysis_data.get("token_address", "unknown")
-            logger.info(f"📄 DOCX Generation Debug - Token: {token_address}")
-            logger.info(f"Analysis ID: {analysis_data.get('analysis_id', 'unknown')}")
+            run_id = run_data.get("run_id", "unknown")
+            logger.info(f"📄 Generating {profile_type} DOCX for run: {run_id}")
             
-            # Create FRESH document - this is the key
+            # Create fresh document
             doc = Document()
             
-            # Build report
-            self._build_report(doc, analysis_data)
+            # Add run info section (common to all types)
+            self._add_run_info_section(doc, run_data, profile_type)
+            
+            # Route to specific generator based on profile type
+            if profile_type == "pump":
+                self._build_pump_report(doc, run_data)
+            elif profile_type == "discovery":
+                self._build_discovery_report(doc, run_data)
+            elif profile_type in ["whale", "twitter", "listing"]:
+                self._build_generic_profile_report(doc, run_data, profile_type)
+            else:
+                raise ValueError(f"Unsupported profile type: {profile_type}")
             
             # Convert to bytes
             temp_path = None
@@ -43,7 +52,7 @@ class DocxReportService:
                 
                 with open(temp_path, 'rb') as f:
                     docx_bytes = f.read()
-                    logger.info(f"✅ DOCX generated ({len(docx_bytes)} bytes)")
+                    logger.info(f"✅ {profile_type} DOCX generated ({len(docx_bytes)} bytes)")
                     return docx_bytes
                     
             finally:
@@ -51,8 +60,665 @@ class DocxReportService:
                     os.unlink(temp_path)
                     
         except Exception as e:
-            logger.error(f"❌ DOCX generation failed: {str(e)}")
+            logger.error(f"❌ {profile_type} DOCX generation failed: {str(e)}")
             raise
+
+    def _add_run_info_section(self, doc: Document, run_data: Dict[str, Any], profile_type: str):
+        """Add common run information section to all DOCX types"""
+        try:
+            # Title
+            heading = doc.add_heading(f'{profile_type.title()} Analysis Report', 0)
+            heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Run information table
+            doc.add_heading('Run Information', level=1)
+            
+            info_table = doc.add_table(rows=1, cols=2)
+            info_table.style = 'Table Grid'
+            
+            # Header
+            header_row = info_table.rows[0]
+            header_row.cells[0].text = "Property"
+            header_row.cells[1].text = "Value"
+            
+            # Run details
+            run_info = [
+                ("Run ID", run_data.get("run_id", "Unknown")),
+                ("Analysis Type", profile_type.title()),
+                ("Timestamp", self._format_timestamp(run_data.get("timestamp"))),
+                ("Processing Time", f"{run_data.get('processing_time', 0):.2f} seconds"),
+                ("Status", run_data.get("status", "Unknown").title()),
+                ("Generated", datetime.now().strftime("%Y-%m-%d %H:%M:%S UTC"))
+            ]
+            
+            # Add filters for pump type
+            if profile_type == "pump" and run_data.get("filters"):
+                filters = run_data["filters"]
+                run_info.extend([
+                    ("Liquidity Range", f"${filters.get('liqMin', 0):,} - ${filters.get('liqMax', 0):,}"),
+                    ("Market Cap Range", f"${filters.get('mcapMin', 0):,} - ${filters.get('mcapMax', 0):,}"),
+                    ("Volume Range", f"${filters.get('volMin', 0):,} - ${filters.get('volMax', 0):,}"),
+                    ("Time Range", f"{filters.get('timeMin', 0)} - {filters.get('timeMax', 0)} minutes")
+                ])
+            
+            # Add discovery token info
+            if profile_type == "discovery" and run_data.get("results"):
+                results = run_data["results"]
+                if len(results) > 0:
+                    result = results[0]
+                    run_info.extend([
+                        ("Token Address", result.get("token_address", "Unknown")),
+                        ("Token Symbol", result.get("token_symbol", "Unknown")),
+                        ("Token Name", result.get("token_name", "Unknown"))
+                    ])
+            
+            # Add rows to table
+            for prop, value in run_info:
+                row = info_table.add_row()
+                row.cells[0].text = str(prop)
+                row.cells[1].text = str(value)
+            
+            logger.info(f"Added run info section with {len(run_info)} properties")
+            
+        except Exception as e:
+            logger.warning(f"Failed to add run info section: {e}")
+            doc.add_paragraph("Run information section unavailable")
+
+    def _format_timestamp(self, timestamp) -> str:
+        """Format timestamp for display"""
+        try:
+            if not timestamp:
+                return "Unknown"
+            
+            # Handle both unix timestamp and datetime string
+            if isinstance(timestamp, (int, float)):
+                dt = datetime.fromtimestamp(timestamp)
+            else:
+                dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
+                if dt.tzinfo:
+                    dt = dt.replace(tzinfo=None)
+            
+            return dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+            
+        except Exception:
+            return str(timestamp) if timestamp else "Unknown"
+        
+    def _build_pump_report(self, doc: Document, run_data: Dict[str, Any]):
+        """Build pump analysis report with candidates table"""
+        try:
+            # Extract pump results
+            results = run_data.get("results", [])
+            candidates_found = run_data.get("candidates_found", len(results))
+            snapshots_analyzed = run_data.get("snapshots_analyzed", 0)
+            
+            # Extract filters
+            filters = run_data.get("filters", {})
+            
+            # Summary section
+            doc.add_heading('Pump Analysis Summary', level=1)
+            
+            summary_p = doc.add_paragraph()
+            summary_p.add_run('Snapshots Analyzed: ').bold = True
+            summary_p.add_run(f'{snapshots_analyzed:,}\n')
+            summary_p.add_run('Candidates Found: ').bold = True
+            summary_p.add_run(f'{candidates_found}\n')
+            summary_p.add_run('Top Candidates Shown: ').bold = True
+            summary_p.add_run(f'{min(len(results), 5)}\n')
+            
+            # Add filter summary
+            if filters:
+                doc.add_heading('Filter Criteria Applied', level=2)
+                filter_p = doc.add_paragraph()
+                filter_p.add_run('Liquidity Range: ').bold = True
+                filter_p.add_run(f"${filters.get('liqMin', 0):,.0f} - ${filters.get('liqMax', 0):,.0f}\n")
+                filter_p.add_run('Market Cap Range: ').bold = True
+                filter_p.add_run(f"${filters.get('mcapMin', 0):,.0f} - ${filters.get('mcapMax', 0):,.0f}\n")
+                filter_p.add_run('Time Range: ').bold = True
+                filter_p.add_run(f"{filters.get('timeMin', 0)} - {filters.get('timeMax', 0)} minutes\n")
+            
+            if not results:
+                doc.add_paragraph("No pump candidates found matching the specified criteria.")
+                return
+            
+            # Candidates table
+            doc.add_heading('Top Pump Candidates', level=1)
+            
+            # Create table with headers - Updated for your data structure
+            table = doc.add_table(rows=1, cols=10)
+            table.style = 'Table Grid'
+            
+            # Headers
+            headers = ["Rank", "Token Name", "Contract", "Liquidity", "Vol 5m", "Vol 60m", 
+                    "Market Cap", "Whales 1h", "Pump Score", "AI Analysis"]
+            
+            header_row = table.rows[0]
+            for i, header in enumerate(headers):
+                header_row.cells[i].text = header
+                header_row.cells[i].paragraphs[0].runs[0].bold = True
+            
+            # Add candidate rows (top 5)
+            for candidate in results[:5]:
+                row = table.add_row()
+                
+                # Extract candidate data safely
+                rank = candidate.get("rank", "N/A")
+                name = candidate.get("name", "Unknown")
+                contract = candidate.get("mint", "Unknown")
+                liq = candidate.get("liq", 0)
+                vol5 = candidate.get("vol5", 0)
+                vol60 = candidate.get("vol60", 0)
+                mcap = candidate.get("mcap", 0)
+                pump_score = candidate.get("pump_score", 0)
+                
+                # Whale activity - handle your specific format
+                whales_data = candidate.get("whales1h", {})
+                if isinstance(whales_data, dict):
+                    whale_count = whales_data.get("count", 0)
+                    whale_inflow = whales_data.get("total_inflow_usd", 0)
+                    whales_text = f"{whale_count} (+${whale_inflow:,.0f})" if whale_inflow > 0 else f"{whale_count}"
+                else:
+                    whales_text = str(whales_data)
+                
+                # AI analysis - decode Unicode if needed
+                ai_analysis = candidate.get("ai", "No analysis")
+                if isinstance(ai_analysis, str) and "\\u" in ai_analysis:
+                    try:
+                        ai_analysis = ai_analysis.encode().decode('unicode_escape')
+                    except:
+                        pass
+                
+                # Populate row
+                row.cells[0].text = str(rank)
+                row.cells[1].text = str(name)
+                row.cells[2].text = str(contract)
+                row.cells[3].text = f"${liq:,}" if isinstance(liq, (int, float)) else str(liq)
+                row.cells[4].text = f"${vol5:,}" if isinstance(vol5, (int, float)) else str(vol5)
+                row.cells[5].text = f"${vol60:,}" if isinstance(vol60, (int, float)) else str(vol60)
+                row.cells[6].text = f"${mcap:,}" if isinstance(mcap, (int, float)) else str(mcap)
+                row.cells[7].text = whales_text
+                row.cells[8].text = f"{pump_score:.2f}" if isinstance(pump_score, (int, float)) else str(pump_score)
+                row.cells[9].text = ai_analysis[:150] + "..." if len(ai_analysis) > 150 else ai_analysis
+            
+            # Add methodology section
+            doc.add_heading('Analysis Methodology', level=1)
+            
+            method_text = """This pump analysis uses real-time snapshot data to identify tokens with high pump potential. 
+
+    Key Metrics:
+    - Pump Score: Calculated as (Volume × Volume/Liquidity Ratio) / Age in Minutes
+    - Whale Activity: Number of large holders and their recent inflow activity
+    - Liquidity Health: Token's available liquidity for trading
+    - Volume Momentum: Recent 5-minute vs 60-minute volume comparison
+
+    Filtering Criteria:
+    - Market cap, liquidity, and volume ranges as specified
+    - Token age and whale activity thresholds
+    - Minimum pump score requirements
+
+    Risk Warning: This analysis is for informational purposes only. Cryptocurrency trading involves significant risk of loss."""
+            
+            doc.add_paragraph(method_text)
+            
+            logger.info(f"Built pump report with {len(results[:5])} candidates")
+            
+        except Exception as e:
+            logger.error(f"Error building pump report: {e}")
+            doc.add_paragraph(f"Error generating pump report: {str(e)}")
+
+    def _build_generic_profile_report(self, doc: Document, run_data: Dict[str, Any], profile_type: str):
+        """Build generic profile report for whale, twitter, listing types"""
+        try:
+            doc.add_heading(f'{profile_type.title()} Analysis Results', level=1)
+            
+            results = run_data.get("results", [])
+            
+            if not results:
+                doc.add_paragraph(f"No {profile_type} analysis results found.")
+                return
+            
+            # Simple results table
+            table = doc.add_table(rows=1, cols=4)
+            table.style = 'Table Grid'
+            
+            # Headers
+            headers = ["Token", "Address", "Status", "Summary"]
+            header_row = table.rows[0]
+            for i, header in enumerate(headers):
+                header_row.cells[i].text = header
+                header_row.cells[i].paragraphs[0].runs[0].bold = True
+            
+            # Add result rows
+            for result in results[:10]:  # Show top 10
+                row = table.add_row()
+                row.cells[0].text = result.get("token_symbol", "Unknown")
+                row.cells[1].text = result.get("token_address", "Unknown")[:16] + "..."
+                row.cells[2].text = "Success" if result.get("success") else "Failed"
+                row.cells[3].text = f"{profile_type.title()} analysis completed"
+            
+            logger.info(f"Built {profile_type} report with {len(results[:10])} results")
+            
+        except Exception as e:
+            logger.error(f"Error building {profile_type} report: {e}")
+            doc.add_paragraph(f"Error generating {profile_type} report: {str(e)}")
+
+    def _build_discovery_report(self, doc: Document, run_data: Dict[str, Any]):
+        """Build discovery analysis report using existing comprehensive format"""
+        try:
+            # Extract discovery analysis data from run results
+            results = run_data.get("results", [])
+            
+            if not results:
+                doc.add_paragraph("No discovery analysis results found.")
+                return
+            
+            # Get the analysis result from first result
+            first_result = results[0]
+            analysis_data = first_result.get("analysis_result")
+            
+            if not analysis_data:
+                doc.add_paragraph("Discovery analysis data not available.")
+                return
+            
+            # Extract token info
+            token_symbol = first_result.get("token_symbol", "Unknown")
+            token_name = first_result.get("token_name", "Unknown Token") 
+            token_address = first_result.get("token_address", "N/A")
+            
+            logger.info(f"Building discovery report for {token_symbol} ({token_name})")
+            
+            # Token Info Section
+            doc.add_heading('Token Information', level=1)
+            
+            token_p = doc.add_paragraph()
+            token_p.add_run('Token Name: ').bold = True
+            token_p.add_run(f'{token_name}\n')
+            token_p.add_run('Symbol: ').bold = True
+            token_p.add_run(f'{token_symbol}\n')
+            token_p.add_run('Contract Address: ').bold = True
+            token_p.add_run(f'{token_address}\n')
+            
+            # Use existing methods but extract data from analysis_data
+            self._add_discovery_ai_verdict_section(doc, analysis_data)
+            self._add_discovery_scoring_table(doc, analysis_data)
+            self._add_discovery_pros_cons_section(doc, analysis_data)
+            self._add_discovery_ai_reasoning_section(doc, analysis_data)
+            self._add_discovery_market_data_section(doc, analysis_data)
+            self._add_discovery_security_section(doc, analysis_data)
+            
+            logger.info(f"Discovery report built successfully for {token_symbol}")
+            
+        except Exception as e:
+            logger.error(f"Error building discovery report: {e}")
+            doc.add_paragraph(f"Error generating discovery report: {str(e)}")
+
+    def _add_discovery_ai_verdict_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add AI verdict section for discovery report"""
+        try:
+            doc.add_heading('AI Investment Verdict', level=1)
+            
+            overall_analysis = analysis_data.get("overall_analysis", {})
+            ai_analysis = analysis_data.get("ai_analysis", {})
+            
+            # Get verdict and score
+            verdict_decision = "UNKNOWN"
+            if ai_analysis and ai_analysis.get("recommendation"):
+                ai_rec = ai_analysis["recommendation"]
+                verdict_mapping = {"BUY": "GO", "CONSIDER": "WATCH", "HOLD": "WATCH", "CAUTION": "WATCH", "AVOID": "NO"}
+                verdict_decision = verdict_mapping.get(ai_rec, "WATCH")
+            else:
+                score = overall_analysis.get("score", 0)
+                if score >= 80:
+                    verdict_decision = "GO"
+                elif score >= 60:
+                    verdict_decision = "WATCH" 
+                else:
+                    verdict_decision = "NO"
+            
+            # Display verdict
+            p = doc.add_paragraph()
+            p.add_run('INVESTMENT VERDICT: ').bold = True
+            
+            verdict_run = p.add_run(verdict_decision)
+            verdict_run.bold = True
+            
+            # Color coding
+            if verdict_decision == "GO":
+                verdict_run.font.color.rgb = RGBColor(34, 197, 94)  # Green
+            elif verdict_decision == "WATCH":
+                verdict_run.font.color.rgb = RGBColor(245, 158, 11)  # Yellow
+            else:  # NO
+                verdict_run.font.color.rgb = RGBColor(239, 68, 68)  # Red
+            
+            # Add AI score
+            ai_score = ai_analysis.get("ai_score", 0) if ai_analysis else 0
+            overall_score = overall_analysis.get("score", 0)
+            
+            p.add_run(f'\nAI Score: ').bold = True
+            p.add_run(f'{ai_score}/100')
+            
+            p.add_run(f'\nOverall Score: ').bold = True
+            p.add_run(f'{overall_score}/100')
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery AI verdict: {e}")
+            doc.add_paragraph("AI verdict section unavailable")
+
+    def _add_discovery_scoring_table(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add scoring table for discovery report"""
+        try:
+            doc.add_heading('Risk Metrics Analysis', level=1)
+            
+            ai_analysis = analysis_data.get("ai_analysis", {})
+            service_responses = analysis_data.get("service_responses", {})
+            
+            # Create table
+            table = doc.add_table(rows=1, cols=3)
+            table.style = 'Table Grid'
+            
+            # Headers
+            header_row = table.rows[0]
+            header_row.cells[0].text = "Risk Metric"
+            header_row.cells[1].text = "Value" 
+            header_row.cells[2].text = "AI Assessment"
+            
+            # Extract key metrics
+            metrics_data = []
+            
+            # Market data from Birdeye
+            birdeye_price = service_responses.get("birdeye", {}).get("price", {})
+            if birdeye_price:
+                market_cap = birdeye_price.get("market_cap")
+                if market_cap:
+                    metrics_data.append(("Market Cap", f"${float(market_cap):,.0f}", "Analyzed"))
+                
+                liquidity = birdeye_price.get("liquidity")  
+                if liquidity:
+                    metrics_data.append(("Liquidity", f"${float(liquidity):,.0f}", "Analyzed"))
+                    
+                volume = birdeye_price.get("volume_24h")
+                if volume:
+                    metrics_data.append(("Volume 24h", f"${float(volume):,.0f}", "Analyzed"))
+            
+            # AI risk assessments
+            market_metrics = ai_analysis.get("market_metrics", {}) if ai_analysis else {}
+            for metric, risk_level in market_metrics.items():
+                if metric != "timing_analysis" and risk_level != "unknown":
+                    display_name = metric.replace("_", " ").title()
+                    metrics_data.append((display_name, "Assessed", risk_level.upper()))
+            
+            # Add rows
+            for metric, value, assessment in metrics_data[:8]:  # Show top 8 metrics
+                row = table.add_row()
+                row.cells[0].text = str(metric)
+                row.cells[1].text = str(value)
+                row.cells[2].text = str(assessment)
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery scoring table: {e}")
+            doc.add_paragraph("Scoring table unavailable")
+
+    def _add_discovery_pros_cons_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add pros/cons section for discovery report"""
+        try:
+            doc.add_heading('Investment Analysis', level=1)
+            
+            ai_analysis = analysis_data.get("ai_analysis", {})
+            
+            # Get pros and cons from AI analysis
+            pros = ai_analysis.get("key_insights", [])[:3] if ai_analysis else []
+            cons = ai_analysis.get("risk_factors", [])[:3] if ai_analysis else []
+            
+            # Fallback if no AI data
+            if not pros:
+                pros = ["Analysis completed", "Security checks performed", "Market data available"]
+            if not cons:
+                cons = ["Limited historical data", "Market volatility risk", "Requires monitoring"]
+            
+            # Create table
+            table = doc.add_table(rows=1, cols=2)
+            table.style = 'Table Grid'
+            
+            # Headers
+            header_row = table.rows[0]
+            header_row.cells[0].text = "TOP 3 REASONS TO BUY"
+            header_row.cells[1].text = "TOP 3 REASONS TO AVOID"
+            
+            # Style headers
+            header_row.cells[0].paragraphs[0].runs[0].bold = True
+            header_row.cells[0].paragraphs[0].runs[0].font.color.rgb = RGBColor(34, 197, 94)
+            header_row.cells[1].paragraphs[0].runs[0].bold = True
+            header_row.cells[1].paragraphs[0].runs[0].font.color.rgb = RGBColor(239, 68, 68)
+            
+            # Add content rows
+            max_items = max(len(pros), len(cons))
+            for i in range(max_items):
+                row = table.add_row()
+                
+                if i < len(pros):
+                    row.cells[0].text = f"• {pros[i]}"
+                else:
+                    row.cells[0].text = ""
+                    
+                if i < len(cons):
+                    row.cells[1].text = f"• {cons[i]}"
+                else:
+                    row.cells[1].text = ""
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery pros/cons: {e}")
+            doc.add_paragraph("Investment analysis unavailable")
+
+    def _add_discovery_ai_reasoning_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add AI reasoning section for discovery report"""
+        try:
+            doc.add_heading('AI Investment Analysis', level=1)
+            
+            ai_analysis = analysis_data.get("ai_analysis", {})
+            
+            if ai_analysis:
+                reasoning = ai_analysis.get("llama_reasoning", "")
+                confidence = ai_analysis.get("confidence", 0)
+                
+                if reasoning:
+                    reasoning_p = doc.add_paragraph()
+                    reasoning_p.add_run('AI Analysis: ').bold = True
+                    reasoning_p.add_run(reasoning)
+                    
+                    conf_p = doc.add_paragraph()
+                    conf_p.add_run('Analysis Confidence: ').bold = True
+                    conf_p.add_run(f'{confidence}%')
+                else:
+                    doc.add_paragraph("AI reasoning not available")
+            else:
+                doc.add_paragraph("AI analysis not performed for this token")
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery AI reasoning: {e}")
+            doc.add_paragraph("AI reasoning unavailable")
+
+    def _add_discovery_market_data_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add market data section for discovery report - FIXED VERSION"""
+        try:
+            doc.add_heading('Market Data', level=1)
+            
+            # Use the comprehensive market data extraction (like analysis_storage does)
+            market_data = self._extract_comprehensive_market_data(analysis_data)
+            
+            if not any(market_data.values()):
+                doc.add_paragraph("Market data not available from any source")
+                return
+            
+            # Create market data table
+            table = doc.add_table(rows=1, cols=3)  # Add source column
+            table.style = 'Table Grid'
+            
+            # Headers
+            header_row = table.rows[0]
+            header_row.cells[0].text = "Metric"
+            header_row.cells[1].text = "Value"
+            header_row.cells[2].text = "Source"
+            
+            # Build market data with sources
+            market_data_rows = [
+                ("Price", f"${market_data['price_usd']:.8f}" if market_data['price_usd'] else "N/A", market_data.get('price_source', 'N/A')),
+                ("Market Cap", f"${market_data['market_cap']:,.0f}" if market_data['market_cap'] else "N/A", market_data.get('market_cap_source', 'N/A')),
+                ("24h Volume", f"${market_data['volume_24h']:,.0f}" if market_data['volume_24h'] else "N/A", market_data.get('volume_source', 'N/A')),
+                ("Liquidity", f"${market_data['liquidity']:,.0f}" if market_data['liquidity'] else "N/A", market_data.get('liquidity_source', 'N/A')),
+                ("24h Change", f"{market_data['price_change_24h']:+.2f}%" if market_data['price_change_24h'] is not None else "N/A", market_data.get('price_change_source', 'N/A'))
+            ]
+            
+            for metric, value, source in market_data_rows:
+                row = table.add_row()
+                row.cells[0].text = metric
+                row.cells[1].text = str(value)
+                row.cells[2].text = str(source)
+            
+            logger.info(f"DOCX market data table created with comprehensive extraction")
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery market data: {e}")
+            doc.add_paragraph("Market data section unavailable")
+
+    def _extract_comprehensive_market_data(self, analysis_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract market data with fallback sources (copy of analysis_storage logic)"""
+        market_data = {
+            "price_usd": None,
+            "price_change_24h": None,
+            "volume_24h": None,
+            "market_cap": None,
+            "liquidity": None
+        }
+        
+        try:
+            service_responses = analysis_data.get("service_responses", {})
+            
+            # Primary source: Birdeye
+            birdeye_data = service_responses.get("birdeye", {})
+            if birdeye_data and birdeye_data.get("price"):
+                birdeye_price = birdeye_data["price"]
+                
+                if birdeye_price.get("value") is not None:
+                    market_data["price_usd"] = float(birdeye_price["value"])
+                    market_data["price_source"] = "Birdeye"
+                
+                if birdeye_price.get("price_change_24h") is not None:
+                    market_data["price_change_24h"] = float(birdeye_price["price_change_24h"])
+                    market_data["price_change_source"] = "Birdeye"
+                
+                if birdeye_price.get("volume_24h") is not None:
+                    market_data["volume_24h"] = float(birdeye_price["volume_24h"])
+                    market_data["volume_source"] = "Birdeye"
+                
+                if birdeye_price.get("market_cap") is not None:
+                    market_data["market_cap"] = float(birdeye_price["market_cap"])
+                    market_data["market_cap_source"] = "Birdeye"
+                
+                if birdeye_price.get("liquidity") is not None:
+                    market_data["liquidity"] = float(birdeye_price["liquidity"])
+                    market_data["liquidity_source"] = "Birdeye"
+            
+            # Fallback: DexScreener
+            if not market_data["volume_24h"] or not market_data["market_cap"]:
+                dexscreener_data = service_responses.get("dexscreener", {})
+                if dexscreener_data and dexscreener_data.get("pairs", {}).get("pairs"):
+                    pairs = dexscreener_data["pairs"]["pairs"]
+                    if pairs and len(pairs) > 0:
+                        pair = pairs[0]
+                        
+                        if not market_data["market_cap"] and pair.get("marketCap"):
+                            market_data["market_cap"] = float(pair["marketCap"])
+                            market_data["market_cap_source"] = "DexScreener"
+                        
+                        if not market_data["volume_24h"]:
+                            vol_data = pair.get("volume", {})
+                            if vol_data and vol_data.get("h24"):
+                                market_data["volume_24h"] = float(vol_data["h24"])
+                                market_data["volume_source"] = "DexScreener"
+                        
+                        if not market_data["liquidity"]:
+                            liq_data = pair.get("liquidity", {})
+                            if liq_data and liq_data.get("usd"):
+                                market_data["liquidity"] = float(liq_data["usd"])
+                                market_data["liquidity_source"] = "DexScreener"
+            
+            # Fallback: SolSniffer for market cap
+            if not market_data["market_cap"]:
+                solsniffer_data = service_responses.get("solsniffer", {})
+                if solsniffer_data:
+                    for field_name in ['marketCap', 'market_cap']:
+                        mc_value = solsniffer_data.get(field_name)
+                        if mc_value is not None:
+                            market_data["market_cap"] = float(mc_value)
+                            market_data["market_cap_source"] = "SolSniffer"
+                            break
+            
+            return market_data
+            
+        except Exception as e:
+            logger.warning(f"Error extracting comprehensive market data: {e}")
+            return market_data
+
+    def _add_discovery_security_section(self, doc: Document, analysis_data: Dict[str, Any]):
+        """Add security section for discovery report"""
+        try:
+            doc.add_heading('Security Analysis', level=1)
+            
+            security_analysis = analysis_data.get("security_analysis", {})
+            
+            if not security_analysis:
+                doc.add_paragraph("Security analysis not available")
+                return
+            
+            # Security status
+            overall_safe = security_analysis.get("overall_safe", False)
+            critical_issues = security_analysis.get("critical_issues", [])
+            warnings = security_analysis.get("warnings", [])
+            
+            status_p = doc.add_paragraph()
+            status_p.add_run('Security Status: ').bold = True
+            
+            status_run = status_p.add_run("PASSED" if overall_safe else "FAILED")
+            status_run.bold = True
+            status_run.font.color.rgb = RGBColor(34, 197, 94) if overall_safe else RGBColor(239, 68, 68)
+            
+            # Security details table
+            sec_table = doc.add_table(rows=1, cols=2)
+            sec_table.style = 'Table Grid'
+            
+            # Headers
+            sec_header = sec_table.rows[0]
+            sec_header.cells[0].text = "Security Check"
+            sec_header.cells[1].text = "Result"
+            
+            security_info = [
+                ("Overall Status", "PASSED" if overall_safe else "FAILED"),
+                ("Critical Issues", len(critical_issues)),
+                ("Warnings", len(warnings)),
+                ("Security Score", f"{security_analysis.get('security_score', 'N/A')}/100" if security_analysis.get('security_score') else "N/A")
+            ]
+            
+            for check, result in security_info:
+                row = sec_table.add_row()
+                row.cells[0].text = str(check)
+                row.cells[1].text = str(result)
+            
+            # List critical issues if any
+            if critical_issues:
+                doc.add_paragraph("\nCritical Issues:", style='Heading 2')
+                for issue in critical_issues[:5]:  # Show top 5
+                    issue_p = doc.add_paragraph(f"• {issue}")
+                    issue_p.runs[0].font.color.rgb = RGBColor(239, 68, 68)
+            
+            # List warnings if any
+            if warnings:
+                doc.add_paragraph("\nWarnings:", style='Heading 2')
+                for warning in warnings[:5]:  # Show top 5
+                    warning_p = doc.add_paragraph(f"• {warning}")
+                    warning_p.runs[0].font.color.rgb = RGBColor(245, 158, 11)
+            
+        except Exception as e:
+            logger.warning(f"Failed to add discovery security section: {e}")
+            doc.add_paragraph("Security analysis section unavailable")
     
     def _build_report(self, doc: Document, analysis_data: Dict[str, Any]):
         """Build the enhanced DOCX report structure with AI analysis"""

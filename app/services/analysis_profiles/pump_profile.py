@@ -22,6 +22,9 @@ class PumpAnalysisProfile:
         try:
             logger.info("📊 Querying snapshots for pump analysis...")
             
+            # Generate run_id here (consistent across method)
+            run_id = f"run_{int(time.time())}"  # 🆕 GENERATE ONCE HERE
+            
             # Get recent snapshots from ChromaDB
             snapshots = await self._get_recent_snapshots(limit=200)
             
@@ -29,7 +32,8 @@ class PumpAnalysisProfile:
                 return {
                     "candidates": [],
                     "total_found": 0,
-                    "message": "No snapshots found for analysis"
+                    "message": "No snapshots found for analysis",
+                    "run_id": None  # No run_id if no data
                 }
             
             logger.info(f"Found {len(snapshots)} snapshots to analyze")
@@ -42,13 +46,6 @@ class PumpAnalysisProfile:
                     if candidate:
                         candidates.append(candidate)
                         logger.info(f"✅ Candidate found: {candidate['name']} - Score: {candidate['pump_score']}")
-                    else:
-                        # Debug why it failed
-                        token_addr = snapshot.get("token_address", "unknown")[:8]
-                        liq = self._parse_float(snapshot.get("liquidity", "0"))
-                        mcap = self._parse_float(snapshot.get("market_cap", "0"))
-                        vol = self._parse_float(snapshot.get("volume_24h", "0"))
-                        logger.debug(f"❌ {token_addr} filtered out: liq={liq}, mcap={mcap}, vol={vol}")
                 except Exception as e:
                     logger.warning(f"Error analyzing snapshot: {e}")
                     continue
@@ -59,8 +56,6 @@ class PumpAnalysisProfile:
             # Add ranks and generate AI messages for top candidates
             for i, candidate in enumerate(candidates[:5]):
                 candidate["rank"] = i + 1
-
-                # Generate AI analysis for ai field
                 try:
                     ai_message = await self._generate_pump_ai_message(candidate)
                     candidate["ai"] = ai_message
@@ -75,7 +70,7 @@ class PumpAnalysisProfile:
             # Store run data only if we have candidates
             if len(candidates) > 0:
                 run_data = {
-                    "run_id": f"run_{int(time.time())}",
+                    "run_id": run_id,
                     "profile_type": "pump_filter",
                     "timestamp": int(time.time()),
                     "filters": filters,
@@ -88,12 +83,13 @@ class PumpAnalysisProfile:
                 
                 # Store run asynchronously
                 asyncio.create_task(analysis_storage.store_analysis_run(run_data))
+                logger.info(f"📊 Storing pump run: {run_id} with {len(candidates)} candidates")
             
             return {
                 "candidates": top_candidates,
                 "total_found": len(candidates),
                 "snapshots_analyzed": len(snapshots),
-                "run_id": f"filter_{int(time.time())}" if len(candidates) > 0 else None
+                "run_id": run_id if len(candidates) > 0 else None
             }
             
         except Exception as e:
@@ -102,7 +98,8 @@ class PumpAnalysisProfile:
                 "candidates": [],
                 "total_found": 0,
                 "error": str(e),
-                "snapshots_analyzed": 0
+                "snapshots_analyzed": 0,
+                "run_id": None
             }
     
     async def _get_recent_snapshots(self, limit: int = 200) -> List[Dict[str, Any]]:

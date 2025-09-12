@@ -23,6 +23,9 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
         logger.info(f"🔍 Starting Discovery analysis for {token_address}")
         
         try:
+            # Generate run_id at the start
+            run_id = f"run_{int(time.time())}"
+            
             # Use existing deep analysis (unchanged)
             from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
             
@@ -31,13 +34,16 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
                 "discovery_report"
             )
             
-            # Store as discovery run (existing)
-            await self._store_discovery_run(token_address, deep_result)
+            # Store as discovery run (pass the run_id)
+            await self._store_discovery_run(token_address, deep_result, run_id)
             
             # Transform to simple schema with Russian timing
             simple_response = self._transform_to_simple_schema(deep_result)
             
-            logger.info(f"✅ Discovery analysis completed for {token_address}")
+            # Add run_id to the response
+            simple_response["run_id"] = run_id
+            
+            logger.info(f"✅ Discovery analysis completed for {token_address} with run_id: {run_id}")
             return simple_response
             
         except Exception as e:
@@ -178,7 +184,7 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
                 "_full_analysis": deep_result
             }
     
-    async def _store_discovery_run(self, token_address: str, analysis_result: Dict[str, Any]) -> None:
+    async def _store_discovery_run(self, token_address: str, analysis_result: Dict[str, Any], run_id: str) -> None:
         """Store discovery analysis as a run"""
         try:
             processing_time = time.time() - self.start_time
@@ -197,9 +203,9 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
                         token_name = service_data["token"]["name"]
                     break
             
-            # Build run data
+            # Build run data with the provided run_id
             run_data = {
-                "run_id": f"run_{int(time.time())}",
+                "run_id": run_id,
                 "profile_type": "discovery",
                 "timestamp": int(time.time()),
                 "token_address": token_address,
@@ -224,7 +230,7 @@ class TokenDiscoveryProfile(BaseAnalysisProfile):
             
             # Store run asynchronously
             asyncio.create_task(analysis_storage.store_analysis_run(run_data))
-            logger.info(f"📊 Discovery run stored: {run_data['run_id']}")
+            logger.info(f"📊 Discovery run stored: {run_id}")
             
         except Exception as e:
             logger.warning(f"Failed to store discovery run: {str(e)}")

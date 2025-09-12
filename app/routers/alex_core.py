@@ -1,5 +1,5 @@
-from typing import Dict, List, Any, Optional
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request, Path, Query
+from typing import Dict, Any, Optional
+from fastapi import APIRouter, HTTPException, Depends, Request, Path, Query
 from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from pathlib import Path as PathlibPath
@@ -16,10 +16,7 @@ from app.core.dependencies import rate_limit_per_ip
 from app.utils.health import health_check_all_services
 
 # Import your existing token analyzer
-from app.services.token_analyzer import token_analyzer
 from app.services.analysis_storage import analysis_storage
-from app.services.ai.ai_token_analyzer import analyze_token_deep_comprehensive
-from app.services.ai.ai_service import generate_analysis_docx_from_cache
 
 # Settings and dependencies
 settings = get_settings()
@@ -261,10 +258,7 @@ async def filter_pump_candidates(
     filters: FilterRequest,
     _: None = Depends(rate_limit_per_ip)
 ):
-    """
-    Filter pump candidates from existing snapshots using provided criteria
-    Returns top 1-5 candidates ranked by pump score
-    """
+    """Filter pump candidates from existing snapshots"""
     start_time = time.time()
     
     try:
@@ -274,25 +268,37 @@ async def filter_pump_candidates(
         from app.services.analysis_profiles.pump_profile import PumpAnalysisProfile
         pump_analyzer = PumpAnalysisProfile()
         
-        # Run snapshot-based analysis
+        # Run snapshot-based analysis (it handles run_id generation and storage)
         result = await pump_analyzer.analyze_snapshots_for_pumps(filters.dict())
         
-        # Extract ONLY the candidates array
+        # Extract candidates and run_id from pump analyzer
         candidates = result.get("candidates", [])
+        run_id = result.get("run_id")
         
-        # Log timing info but don't add to response
         processing_time = time.time() - start_time
         logger.info(f"✅ Pump filter completed in {processing_time:.2f}s: {len(candidates)} candidates found")
         
-        # Return ONLY the candidates array
-        return candidates
+        if run_id:
+            logger.info(f"📊 Pump analysis saved with run_id: {run_id}")
+        
+        # Return the exact run_id that was saved in the database
+        return {
+            "candidates": candidates,
+            "total_found": result.get("total_found", len(candidates)),
+            "snapshots_analyzed": result.get("snapshots_analyzed", 0),
+            "run_id": run_id
+        }
         
     except Exception as e:
         processing_time = time.time() - start_time
         logger.error(f"❌ Pump filter failed: {str(e)}")
         
-        # Return empty array on error
-        return []
+        return {
+            "candidates": [],
+            "total_found": 0,
+            "snapshots_analyzed": 0,
+            "run_id": None
+        }
     
 
 @router.get("/api/token/report", summary="Generate Comprehensive Token Report")
@@ -333,11 +339,15 @@ async def generate_token_report(
         from app.services.analysis_profiles.discovery_profile import TokenDiscoveryProfile
         discovery_profile = TokenDiscoveryProfile()
         
-        # Run discovery analysis (internally uses deep analysis + stores as run)
+        # Run discovery analysis
         result = await discovery_profile.analyze(token_address)
         
-        # Return the same format as deep analysis (unchanged)
-        return result
+        # Log the run_id if present
+        if result.get("run_id"):
+            logger.info(f"📊 Discovery analysis completed with run_id: {result['run_id']}")
+        
+        # Return the result
+        return result 
         
     except HTTPException:
         raise
@@ -345,7 +355,7 @@ async def generate_token_report(
         processing_time = time.time() - start_time
         logger.error(f"❌ Token report failed for {query}: {str(e)}")
         
-        # Return error in same format as deep analysis
+        # Return error (no run_id on failure)
         return {
             "status": "error",
             "analysis_type": "discovery",
@@ -354,14 +364,7 @@ async def generate_token_report(
             "processing_time": round(processing_time, 2),
             "message": f"Token report failed: {str(e)}",
             "error": str(e),
-            "endpoint": "/api/token/report",
-            "metadata": {
-                "processing_time_seconds": processing_time,
-                "services_attempted": 0,
-                "services_successful": 0,
-                "security_check_passed": False,
-                "analysis_stopped_at_security": False
-            }
+            "run_id": None
         }
     
 
@@ -406,58 +409,105 @@ async def get_specific_run_api(
             "run": None
         }
 
-
-@router.get("/document/{cache_key:path}")
-async def download_analysis_document(
-    cache_key: str,
-    background_tasks: BackgroundTasks,
-    source: Optional[str] = Query(None)
+@router.post("/api/docx/{run_id}")
+async def generate_run_docx(
+    run_id: str = Path(..., description="Analysis run ID"),
+    type: str = Query(..., description="Run type: pump, discovery, etc."),
+    _: None = Depends(rate_limit_per_ip)
 ):
-    """Download DOCX report - runs fresh analysis if cache miss"""
+    """Generate DOCX report from analysis run data"""
     
     try:
-        logger.info(f"📄 DOCX download request for cache key: {cache_key}")
+        logger.info(f"📄 DOCX generation request: run_id={run_id}, type={type}")
         
-        # Try cache first
-        docx_content = await generate_analysis_docx_from_cache(cache_key)
+        # Validate type parameter and map to actual profile types
+        valid_types = ["pump", "discovery", "whale", "twitter", "listing"]
+        if type not in valid_types:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid type. Must be one of: {', '.join(valid_types)}"
+            )
+        
+        # Map frontend type to actual stored profile type
+        profile_type_mapping = {
+            "pump": ["pump", "pump_filter"],
+            "discovery": ["discovery"],
+            "whale": ["whale"],
+            "twitter": ["twitter"],
+            "listing": ["listing"]
+        }
+        
+        # Try to get run data with different profile type variations
+        run_data = None
+        for profile_variant in profile_type_mapping[type]:
+            run_data = await analysis_storage.get_analysis_run(run_id, profile_variant)
+            if run_data:
+                logger.info(f"✅ Found run with profile type: {profile_variant}")
+                break
+        
+        if not run_data:
+            # Try broader search using ChromaDB directly
+            logger.info(f"❌ Run not found with standard profile types, trying broader search...")
+            try:
+                search_results = await analysis_storage.search_analyses(
+                    query=f"run_id {run_id}",
+                    limit=5,
+                    filters={"doc_type": "analysis_run"}
+                )
+                
+                for result in search_results:
+                    metadata = result.get("metadata", {})
+                    if metadata.get("run_id") == run_id:
+                        # Convert metadata to run_data format
+                        try:
+                            results_data = json.loads(metadata.get("results_json", "[]"))
+                            filters_data = json.loads(metadata.get("filters_applied", "{}"))
+                            
+                            run_data = {
+                                "run_id": metadata.get("run_id"),
+                                "profile_type": metadata.get("profile_type"),
+                                "timestamp": metadata.get("timestamp_unix"),
+                                "tokens_analyzed": metadata.get("tokens_analyzed", 0),
+                                "successful_analyses": metadata.get("successful_analyses", 0),
+                                "processing_time": metadata.get("processing_time", 0),
+                                "status": metadata.get("run_status", "completed"),
+                                "results": results_data,
+                                "filters": filters_data,
+                                "results_count": metadata.get("results_count", 0),
+                                "snapshots_analyzed": metadata.get("snapshots_analyzed", 0),
+                                "candidates_found": len(results_data)
+                            }
+                            logger.info(f"✅ Found run via search: {metadata.get('profile_type')}")
+                            break
+                        except Exception as e:
+                            logger.warning(f"Error parsing run data: {e}")
+                            continue
+            except Exception as e:
+                logger.warning(f"Broader search failed: {e}")
+        
+        if not run_data:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"Run {run_id} not found for type {type}"
+            )
+        
+        logger.info(f"✅ Found run data: {run_data.get('profile_type', 'unknown')} analysis")
+        
+        # Generate DOCX using the service
+        from app.services.ai.docx_service import docx_service
+        docx_content = await docx_service.generate_run_docx(run_data, type)
         
         if not docx_content:
-            logger.info("❌ Cache miss, running fresh analysis...")
-            
-            # Extract token address and type
-            token_address = _extract_token_info_from_cache_key(cache_key)
-
-            analysis_type = "deep"
-            source_event = "api_deep"
-
-            if source is not None and "quick" in source:
-                analysis_type = "quick"
-                source_event = source
-
-            if not token_address:
-                raise HTTPException(status_code=404, detail="Invalid cache key")
-            
-            logger.info(f"🔄 Running fresh {analysis_type} analysis for {token_address}")
-            
-            # Run fresh analysis
-            if analysis_type == "deep":
-                analysis_result = await analyze_token_deep_comprehensive(token_address, source_event)
-            else:
-                analysis_result = await token_analyzer.analyze_token_comprehensive(token_address, source_event)
-            
-            if not analysis_result or analysis_result.get("status") == "error":
-                raise HTTPException(status_code=500, detail="Fresh analysis failed")
-            
-            # Generate DOCX directly from fresh data
-            docx_content = await _generate_docx_from_fresh_data(analysis_result)
-            
-            if not docx_content:
-                raise HTTPException(status_code=500, detail="DOCX generation failed")
+            raise HTTPException(
+                status_code=500, 
+                detail="Failed to generate DOCX content"
+            )
         
-        # Get filename
-        token_address = _extract_token_info_from_cache_key(cache_key)
-        token_part = token_address[:8] if token_address else "unknown"
-        filename = f"token_analysis_{token_part}_{datetime.now().strftime('%Y%m%d_%H%M')}.docx"
+        # Create filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M')
+        filename = f"{type}_analysis_{run_id[:8]}_{timestamp}.docx"
+        
+        logger.info(f"✅ DOCX generated successfully ({len(docx_content)} bytes)")
         
         return StreamingResponse(
             io.BytesIO(docx_content),
@@ -468,59 +518,11 @@ async def download_analysis_document(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Document download failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate document: {str(e)}")
-    
-def _extract_token_info_from_cache_key(cache_key: str) -> str:
-    """Extract token address and analysis type from cache key"""
-    try:
-        logger.debug(f"Extracting token info from cache key: {cache_key}")
-        
-        # Split cache key
-        parts = cache_key.split("_")
-        
-        if len(parts) < 2:
-            logger.warning(f"Invalid cache key format: {cache_key}")
-            return None
-        
-        # Extract token address (should be the last part)
-        token_address = parts[-1]
-        
-        logger.debug(f"Extracted: token={token_address}")
-        
-        # Validate token address format (basic Solana address validation)
-        if not token_address or len(token_address) < 32 or len(token_address) > 44:
-            logger.warning(f"Invalid token address format: {token_address}")
-            return None
-        
-        return token_address
-        
-    except Exception as e:
-        logger.error(f"Error extracting token info from cache key: {e}")
-        return None
-    
-async def _generate_docx_from_fresh_data(analysis_result: Dict[str, Any]) -> Optional[bytes]:
-    """Generate DOCX directly from fresh analysis data"""
-    
-    try:
-        logger.info("📄 Generating DOCX from fresh analysis data")
-        
-        # Use the existing DOCX service
-        from app.services.ai.docx_service import docx_service
-        
-        # Generate DOCX directly from analysis data
-        docx_bytes = await docx_service.generate_analysis_docx_from_data(analysis_result)
-        
-        if docx_bytes:
-            logger.info(f"✅ DOCX generated successfully ({len(docx_bytes)} bytes)")
-            return docx_bytes
-        else:
-            logger.error("❌ DOCX service returned no content")
-            return None
-            
-    except Exception as e:
-        logger.error(f"❌ Error generating DOCX from fresh data: {str(e)}")
-        return None
+        logger.error(f"❌ DOCX generation failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"DOCX generation failed: {str(e)}"
+        )
 
 # ==============================================
 # API ENDPOINTS FOR FRONTEND

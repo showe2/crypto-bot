@@ -1089,29 +1089,3 @@ async def run_timing_analysis(analysis_data: Dict[str, Any]) -> Optional[Dict[st
     except Exception as e:
         logger.error(f"Timing analysis failed: {e}")
         return None
-
-async def generate_analysis_docx_from_cache(cache_key: str) -> Optional[bytes]:
-    """Generate DOCX report from cached analysis data"""
-    try:
-        logger.info(f"📄 Generating DOCX from cache key: {cache_key}")
-        
-        from app.utils.cache import cache_manager
-        
-        # Try to get cached data
-        try:
-            cached_data = await cache_manager.get(key=cache_key)
-            if cached_data:
-                logger.info(f"✅ Found data in cache manager")
-            else:
-                logger.warning(f"❌ No data found in cache manager")
-                return None
-        except Exception as e:
-            logger.error(f"Cache manager failed: {str(e)}")
-            return None
-        
-        # Generate DOCX using the service
-        return await docx_service.generate_analysis_docx_from_data(cached_data)
-        
-    except Exception as e:
-        logger.error(f"❌ DOCX generation failed: {str(e)}")
-        return None
