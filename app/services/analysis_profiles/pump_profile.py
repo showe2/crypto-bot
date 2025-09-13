@@ -172,6 +172,36 @@ class PumpAnalysisProfile:
             token_name = snapshot.get("token_name", "Unknown")
             token_symbol = snapshot.get("token_symbol", "N/A")
             
+            # Extract security data from snapshot
+            security_issues = []
+            security_details = {}
+            
+            # Check for security warnings in snapshot metadata
+            critical_issues = snapshot.get("critical_issues_list", "[]")
+            warnings_list = snapshot.get("warnings_list", "[]")
+            
+            try:
+                if isinstance(critical_issues, str):
+                    critical_issues = json.loads(critical_issues)
+                if isinstance(warnings_list, str):
+                    warnings_list = json.loads(warnings_list)
+                
+                # Add critical issues as security issues
+                if critical_issues:
+                    security_issues.extend(critical_issues)
+                    security_details["critical_issues"] = critical_issues
+                
+                # Add warnings as security issues
+                if warnings_list:
+                    security_issues.extend(warnings_list)
+                    security_details["warnings"] = warnings_list
+                    
+            except (json.JSONDecodeError, TypeError):
+                pass
+            
+            # Determine security verdict
+            sec_verdict = "CAUTION" if security_issues else "OK"
+            
             return {
                 "rank": 0,  # Will be set after sorting
                 "name": f"{token_name} ({token_symbol})" if token_symbol != "N/A" else token_name,
@@ -186,7 +216,13 @@ class PumpAnalysisProfile:
                 "ai": "",  # Will be filled with AI analysis
                 "pump_score": round(pump_score, 2),
                 "age_minutes": age_minutes,
-                "timestamp": timestamp_str
+                "timestamp": timestamp_str,
+                "security": {
+                    "ok": True,  # Always true since security check is completed
+                    "issues": security_issues,
+                    "details": security_details
+                },
+                "secVerdict": sec_verdict
             }
             
         except Exception as e:
