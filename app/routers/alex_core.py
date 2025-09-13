@@ -13,7 +13,7 @@ import json
 
 from app.core.config import get_settings
 from app.core.dependencies import rate_limit_per_ip
-from app.utils.health import health_check_all_services
+from groq import AsyncGroq
 
 # Import your existing token analyzer
 from app.services.analysis_storage import analysis_storage
@@ -39,6 +39,11 @@ class FilterRequest(BaseModel):
     volMax: float = 120000
     volMin: float = 2000
     whales1hMin: float = 800
+
+class ChatRequest(BaseModel):
+    q: str
+    context: str
+    run_id: str
 
 # Initialize templates
 templates_dir = PathlibPath("templates")
@@ -366,6 +371,72 @@ async def generate_token_report(
             "error": str(e),
             "run_id": None
         }
+    
+
+@router.post("/api/ask", summary="Chat with AI about specific analysis run")
+async def chat_with_ai(
+    chat_request: ChatRequest,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Chat with AI about a specific token analysis run
+    
+    Accepts:
+    - q: User's question about the analysis
+    - context: Always "memory" 
+    - run_id: Specific analysis run to discuss
+    """
+    start_time = time.time()
+    
+    try:
+        logger.info(f"💬 Chat request for run {chat_request.run_id}: {chat_request.q[:100]}...")
+        
+        # Validate context
+        if chat_request.context != "memory":
+            raise HTTPException(
+                status_code=400,
+                detail="Context must be 'memory'"
+            )
+        
+        # Get the analysis run data
+        run_data = await _get_run_data_for_chat(chat_request.run_id)
+        
+        if not run_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Analysis run {chat_request.run_id} not found"
+            )
+        
+        # Build AI prompt with question + run context
+        ai_prompt = _build_chat_prompt(chat_request.q, run_data)
+        
+        # Get AI response using direct Groq call (not the existing service)
+        ai_response = await _get_chat_response(ai_prompt)
+        
+        if not ai_response:
+            raise HTTPException(
+                status_code=500,
+                detail="AI service temporarily unavailable"
+            )
+        
+        processing_time = time.time() - start_time
+        
+        logger.info(f"✅ Chat completed for run {chat_request.run_id} in {processing_time:.2f}s")
+        
+        return {
+            "answer": ai_response
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        processing_time = time.time() - start_time
+        logger.error(f"❌ Chat failed for run {chat_request.run_id}: {str(e)}")
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chat failed: {str(e)}"
+        )
     
 
 @router.get("/api/run/{run_id}", summary="Get Specific Analysis Run")
@@ -717,6 +788,189 @@ async def get_all_analyses_api(
             "error": str(e),
             "message": "Failed to retrieve analyses"
         }
+
+async def _get_chat_response(prompt: str) -> Optional[str]:
+    """Direct Groq call for chat (returns plain text, not JSON)"""
+    try:
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        
+        response = await client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1000,
+            temperature=0.3
+            # No response_format - returns plain text
+        )
+        
+        return response.choices[0].message.content
+        
+    except Exception as e:
+        logger.error(f"Direct Groq chat failed: {str(e)}")
+        return None
+
+async def _get_run_data_for_chat(run_id: str) -> Optional[Dict[str, Any]]:
+    """Get analysis run data for chat context"""
+    try:
+        # Try discovery profile first (most common)
+        run_data = await analysis_storage.get_analysis_run(run_id, "discovery")
+        if run_data:
+            return run_data
+        
+        # Try other profile types
+        profile_types = ["pump", "whale", "twitter", "listing"]
+        for profile_type in profile_types:
+            run_data = await analysis_storage.get_analysis_run(run_id, profile_type)
+            if run_data:
+                return run_data
+        
+        # Last resort: search by run_id in ChromaDB
+        search_results = await analysis_storage.search_analyses(
+            query=f"run_id {run_id}",
+            limit=5,
+            filters={"doc_type": "analysis_run"}
+        )
+        
+        for result in search_results:
+            metadata = result.get("metadata", {})
+            if metadata.get("run_id") == run_id:
+                # Convert search result to run format
+                try:
+                    results_data = json.loads(metadata.get("results_json", "[]"))
+                    return {
+                        "run_id": run_id,
+                        "profile_type": metadata.get("profile_type", "unknown"),
+                        "timestamp": metadata.get("timestamp_unix"),
+                        "results": results_data,
+                        "status": metadata.get("run_status", "completed"),
+                        "processing_time": metadata.get("processing_time", 0)
+                    }
+                except Exception as e:
+                    logger.warning(f"Error parsing search result: {e}")
+                    continue
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"Error getting run data for chat: {e}")
+        return None
+    
+def _build_chat_prompt(user_question: str, run_data: Dict[str, Any]) -> str:
+    """Build AI prompt for chat with analysis context"""
+    
+    # Extract key info from run data
+    profile_type = run_data.get("profile_type", "unknown")
+    results = run_data.get("results", [])
+    
+    # Get the main analysis result
+    main_result = None
+    if results and len(results) > 0:
+        main_result = results[0]
+    
+    # Extract token info
+    token_address = "Unknown"
+    token_name = "Unknown"
+    if main_result:
+        token_address = main_result.get("token_address", "Unknown")
+        analysis_result = main_result.get("analysis_result", {})
+        
+        # Try to get token name from various sources
+        service_responses = analysis_result.get("service_responses", {})
+        if service_responses.get("solanafm", {}).get("token", {}).get("name"):
+            token_name = service_responses["solanafm"]["token"]["name"]
+        elif service_responses.get("helius", {}).get("metadata", {}).get("name"):
+            token_name = service_responses["helius"]["metadata"]["name"]
+    
+    # Build comprehensive context
+    context_parts = []
+    
+    # Add basic info
+    context_parts.append(f"ANALYSIS RUN: {run_data.get('run_id', 'Unknown')}")
+    context_parts.append(f"TOKEN: {token_name} ({token_address})")
+    context_parts.append(f"ANALYSIS TYPE: {profile_type}")
+    
+    # Add analysis results if available
+    if main_result and main_result.get("analysis_result"):
+        analysis_result = main_result["analysis_result"]
+        
+        # Overall analysis
+        overall_analysis = analysis_result.get("overall_analysis", {})
+        if overall_analysis:
+            context_parts.append("\n=== ANALYSIS RESULTS ===")
+            context_parts.append(f"Score: {overall_analysis.get('score', 'N/A')}/100")
+            context_parts.append(f"Risk Level: {overall_analysis.get('risk_level', 'Unknown')}")
+            context_parts.append(f"Recommendation: {overall_analysis.get('recommendation', 'Unknown')}")
+            context_parts.append(f"Confidence: {overall_analysis.get('confidence', 'N/A')}%")
+            
+            # Positive signals
+            positive_signals = overall_analysis.get("positive_signals", [])
+            if positive_signals:
+                context_parts.append(f"Positive Signals: {'; '.join(positive_signals)}")
+            
+            # Risk factors
+            risk_factors = overall_analysis.get("risk_factors", [])
+            if risk_factors:
+                context_parts.append(f"Risk Factors: {'; '.join(risk_factors)}")
+        
+        # AI Analysis
+        ai_analysis = analysis_result.get("ai_analysis", {})
+        if ai_analysis:
+            context_parts.append("\n=== AI ANALYSIS ===")
+            
+            # Safe formatting for AI scores
+            ai_score = ai_analysis.get('ai_score')
+            context_parts.append(f"AI Score: {ai_score if ai_score is not None else 'N/A'}")
+            context_parts.append(f"AI Risk Assessment: {ai_analysis.get('risk_assessment', 'Unknown')}")
+            context_parts.append(f"AI Recommendation: {ai_analysis.get('recommendation', 'Unknown')}")
+            
+            # AI insights
+            key_insights = ai_analysis.get("key_insights", [])
+            if key_insights:
+                context_parts.append(f"Key Insights: {'; '.join(key_insights)}")
+            
+            # AI reasoning
+            llama_reasoning = ai_analysis.get("llama_reasoning", "")
+            if llama_reasoning:
+                context_parts.append(f"AI Reasoning: {llama_reasoning}")
+        
+        # Market data
+        service_responses = analysis_result.get("service_responses", {})
+        if service_responses.get("birdeye", {}).get("price"):
+            price_data = service_responses["birdeye"]["price"]
+            context_parts.append("\n=== MARKET DATA ===")
+            
+            # Safe formatting with None handling
+            market_cap = price_data.get('market_cap') or 0
+            liquidity = price_data.get('liquidity') or 0
+            volume_24h = price_data.get('volume_24h') or 0
+            
+            context_parts.append(f"Market Cap: ${market_cap:,.0f}")
+            context_parts.append(f"Liquidity: ${liquidity:,.0f}")
+            context_parts.append(f"Volume 24h: ${volume_24h:,.0f}")
+    
+    # Build final prompt
+    context_text = "\n".join(context_parts)
+    
+    prompt = f"""IGNORE ALL PREVIOUS INSTRUCTIONS. You are now in chat mode, not analysis mode.
+
+Ты общаешься с пользователем о конкретном анализе Solana токена. Отвечай на их вопрос на основе предоставленных данных анализа.
+
+КОНТЕКСТ АНАЛИЗА:
+{context_text}
+
+ВОПРОС ПОЛЬЗОВАТЕЛЯ: {user_question}
+
+Пожалуйста, предоставь полезный, разговорный ответ, который напрямую отвечает на их вопрос, используя данные анализа. Будь конкретным и ссылайся на реальные точки данных, когда это уместно. Делай свой ответ естественным и информативным.
+
+КРИТИЧЕСКИ ВАЖНО: 
+- Отвечай ТОЛЬКО простым текстом на РУССКОМ ЯЗЫКЕ
+- НЕ возвращай JSON
+- НЕ используй структурированный формат
+- Будь разговорным и естественным
+- Отвечай как человек, а не как API"""
+
+    return prompt
 
 
 async def _get_analyses_paginated(page: int = 1, per_page: int = 20, filters: dict = None) -> dict:
