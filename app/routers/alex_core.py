@@ -17,6 +17,7 @@ from groq import AsyncGroq
 
 # Import your existing token analyzer
 from app.services.analysis_storage import analysis_storage
+from app.services.bot_service import bot_service
 
 # Settings and dependencies
 settings = get_settings()
@@ -44,6 +45,17 @@ class ChatRequest(BaseModel):
     q: str
     context: str
     run_id: str
+
+class BotBuyRequest(BaseModel):
+    mint: str
+    amountSol: float
+    slippage: float = 0.5
+    priority: str = "normal"
+    security: bool = False
+
+class BotSellRequest(BaseModel):
+    mint: str
+    percent: int
 
 # Initialize templates
 templates_dir = PathlibPath("templates")
@@ -593,6 +605,91 @@ async def generate_run_docx(
         raise HTTPException(
             status_code=500, 
             detail=f"DOCX generation failed: {str(e)}"
+        )
+
+
+# ==============================================
+# API ENDPOINTS FOR TRADING BOT
+# ==============================================
+
+@router.post("/api/bot/buy", summary="Execute Bot Buy Order")
+async def bot_buy_order(
+    buy_request: BotBuyRequest,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Execute buy order through bot service with optional security check
+    
+    Accepts:
+    - mint: Token mint address
+    - amountSol: Amount in SOL to buy
+    - slippage: Slippage tolerance (default 0.5%)
+    - priority: Transaction priority (default "normal")
+    - security: Skip security check if true (default false)
+    """
+    try:
+        logger.info(f"🤖 Bot buy request: {buy_request.mint} - {buy_request.amountSol} SOL")
+        
+        # Convert to dict and pass to bot service
+        request_data = buy_request.dict()
+        result = await bot_service.handle_buy(request_data)
+        
+        if result.get("success"):
+            logger.info(f"✅ Bot buy order processed: {result.get('orderId')}")
+            return result
+        else:
+            logger.warning(f"❌ Bot buy order failed: {result.get('message')}")
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("message", "Buy order failed")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Bot buy endpoint error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
+        )
+    
+
+@router.post("/api/bot/sell", summary="Execute Bot Sell Order")
+async def bot_sell_order(
+    sell_request: BotSellRequest,
+    _: None = Depends(rate_limit_per_ip)
+):
+    """
+    Execute sell order through bot service
+    
+    Accepts:
+    - mint: Token mint address
+    - percent: Percentage to sell (1-100)
+    """
+    try:
+        logger.info(f"🤖 Bot sell request: {sell_request.mint} - {sell_request.percent}%")
+        
+        # Convert to dict and pass to bot service
+        request_data = sell_request.dict()
+        result = await bot_service.handle_sell(request_data)
+        
+        if result.get("success"):
+            logger.info(f"✅ Bot sell order processed: {result.get('orderId')}")
+            return result
+        else:
+            logger.warning(f"❌ Bot sell order failed: {result.get('message')}")
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("message", "Sell order failed")
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Bot sell endpoint error: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {str(e)}"
         )
 
 # ==============================================

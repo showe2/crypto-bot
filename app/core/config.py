@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     PORT: int = Field(default=8000, description="Application port")
     HOST: str = Field(default="0.0.0.0", description="Application host")
     BASE_URL: str = Field(description="Base URL for all endpoints (REQUIRED)")
+    BOT_URL: str = Field(description="Bot service URL for trading operations")
 
     # ==============================================
     # ALEX SYSTEM
@@ -164,6 +165,14 @@ class Settings(BaseSettings):
             raise ValueError('BASE_URL must start with http:// or https://')
         # Remove trailing slash for consistency
         return v.rstrip('/')
+    
+    @validator('BOT_URL')
+    def validate_bot_url(cls, v):
+        if not v:
+            raise ValueError('BOT_URL is required and cannot be empty')
+        if not (v.startswith('http://') or v.startswith('https://')):
+            raise ValueError('BOT_URL must start with http:// or https://')
+        return v.rstrip('/')
 
     @validator('CHROMA_DB_PATH', 'KNOWLEDGE_BASE_PATH', 'LOGS_DIR')
     def validate_paths(cls, v):
@@ -242,6 +251,7 @@ class Settings(BaseSettings):
         missing = []
         critical_keys = [
             ('BASE_URL', 'Base URL'),
+            ('BOT_URL', 'Bot Service URL'),
             ('HELIUS_API_KEY', 'Helius API'),
             ('GROQ_API_KEY', 'Groq AI API')
         ]
@@ -267,10 +277,14 @@ class Settings(BaseSettings):
                 'masked_value': f"{value[:8]}***" if value else None
             }
         
-        # Add BASE_URL status
         keys_status['BASE_URL'] = {
             'configured': bool(self.BASE_URL),
             'value': self.BASE_URL  # Not sensitive, show full URL
+        }
+
+        keys_status['BOT_URL'] = {
+            'configured': bool(self.BOT_URL),
+            'value': self.BOT_URL  # Not sensitive, show full URL
         }
         
         return keys_status
