@@ -48,7 +48,7 @@ class ChatRequest(BaseModel):
 
 class BotBuyRequest(BaseModel):
     mint: str
-    amountSol: float
+    amount: float
     slippage: float = 0.5
     priority: str = "normal"
     security: bool = False
@@ -622,13 +622,15 @@ async def bot_buy_order(
     
     Accepts:
     - mint: Token mint address
-    - amountSol: Amount in SOL to buy
-    - slippage: Slippage tolerance (default 0.5%)
-    - priority: Transaction priority (default "normal")
+    - amount: Amount in SOL to buy
+    - slippage: Slippage tolerance in basis points (default 150)
+    - stop_loss: Stop loss percentage (default -20.0)
+    - take_profit: Take profit percentage (default 50.0)
+    - priority_fee: Priority fee in SOL (default 0.00001)
     - security: Skip security check if true (default false)
     """
     try:
-        logger.info(f"🤖 Bot buy request: {buy_request.mint} - {buy_request.amountSol} SOL")
+        logger.info(f"🤖 Bot buy request: {buy_request.mint} - {buy_request.amount} SOL")
         
         # Convert to dict and pass to bot service
         request_data = buy_request.dict()
