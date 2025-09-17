@@ -1,7 +1,7 @@
 import asyncio
 import time
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from loguru import logger
 from pydantic import BaseModel
 
@@ -58,7 +58,7 @@ class BotService:
             buy_request = BuyRequest(**request_data)
             token_address = buy_request.mint
             
-            logger.info(f"🤖 Enhanced buy request for {token_address} - {buy_request.amount} SOL")
+            logger.info(f"🤖 Bot buy request for {token_address} - {buy_request.amount} SOL")
             
             # Run security check if required
             if not buy_request.security:
@@ -181,6 +181,51 @@ class BotService:
                 "mint": request_data.get("mint", "unknown")
             }
     
+    async def update_wallet(self, private_key: str):
+        """
+        Update wallet secret
+        
+        Args:
+            private_key: new private key
+            
+        Returns:
+            Success response or error details
+        """
+        try:
+            logger.info(f"🤖 Bot wallet secret update request")
+
+            # Prepare bot request
+            bot_request = {"privateKey": private_key}
+
+            update_task = asyncio.create_task(
+                self._call_bot_update_api(bot_request)
+            )
+
+            response_raw = await update_task
+            response = response_raw.json()
+
+            if not response.get("success"):
+                logger.error(f"❌ Failed to update wallet secret: {response.get('error', 'Unknown Error')}")
+                return {
+                    "success": False,
+                    "message": response.get("error", "Unknown Error"),
+
+                }
+
+            logger.info(f"✅ Wallet secret updated for Bot")
+            return {
+                "success": True,
+                "message": "Wallet secret updated for Bot successfully",
+
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to update wallet secret for Bot: {str(e)}")
+            return {
+                "success": False,
+                "error": "Request processing failed",
+            }
+
     async def _run_security_check(self, token_address: str) -> bool:
         """
         Run security check using existing token analyzer logic
@@ -369,6 +414,30 @@ class BotService:
                         
             except Exception as e:
                 logger.error(f"❌ Bot sell API call error for order {order_id}: {str(e)}")
+
+    async def _call_bot_update_api(self, bot_request: Dict[str, Any]) -> None:
+        """
+        Make async call to bot API for wallet secret update
+        
+        Args:
+            bot_request: Request data for bot
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.bot_url}/api/wallet",
+                    json=bot_request,
+                    headers={"Content-Type": "application/json"}
+                )
+
+                if response.status_code == 200:
+                    logger.info(f"✅ Bot update API call successful")
+                    return response
+                else:
+                    logger.warning(f"⚠️ Bot update API call failed: {response.status_code}")
+                    
+        except Exception as e:
+            logger.error(f"❌ Bot update API call error: {str(e)}")
 
 
 # Global bot service instance

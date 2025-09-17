@@ -243,11 +243,20 @@ async def update_api_key(
                 detail=f"Invalid key name. Allowed keys: {', '.join(valid_keys)}"
             )
         
-        print("before", os.environ[key_name])
+        if key_name == "WALLET_SECRET_KEY":
+            result = await bot_service.update_wallet(key_value)
+            
+            if result.get("success"):
+                logger.info(f"✅ Bot wallet update processed")
+            else:
+                logger.warning(f"❌ Bot wallet update failed: {result.get('message')}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=result.get("message", "Buy wallet update failed")
+                )
+
         # Update environment variable
         os.environ[key_name] = key_value
-
-        print("after", os.environ[key_name])
         
         # Update settings instance
         from app.core.config import get_settings
