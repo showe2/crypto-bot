@@ -283,6 +283,60 @@ class BotService:
                 "success": False,
                 "error": "Request processing failed",
             }
+        
+    async def get_history(self) -> List[Dict[str, Any]]:
+        """Get trading history from bot service and transform to frontend format"""
+        try:
+            logger.info("📊 Fetching bot trading history")
+            
+            # Get history from bot API
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{self.bot_url}/api/history")
+                
+                if response.status_code != 200:
+                    logger.warning(f"Bot history API returned {response.status_code}")
+                    return []
+                
+                bot_data = response.json()
+                
+                if not bot_data.get("success") or not bot_data.get("data"):
+                    logger.warning("Bot history API returned no data")
+                    return []
+            
+            # Transform to frontend format
+            transformed_history = []
+            for trade in bot_data["data"]:
+                try:
+                    onchain = trade.get("on_chain_data") or {}  # Handle None
+                    whales1h = onchain.get("whales1h") or {}     # Handle None
+                    
+                    transformed_trade = {
+                        "ts": self._parse_timestamp(trade.get("created_at")),
+                        "name": onchain.get("name") or onchain.get("symbol") or "Unknown Token",
+                        "mint": trade.get("token_mint", ""),
+                        "liq": int(onchain.get("liquidityUSD") or 0),
+                        "mcap": int(onchain.get("marketCapUSD") or 0),
+                        "vol5": int(onchain.get("volume5min") or 0),
+                        "vol60": int(onchain.get("volume1h") or 0),
+                        "whales1h": int(whales1h.get("whaleVolume") or 0),
+                        "verdict": onchain.get("aiReasoning") or "Нет данных"
+                    }
+                    
+                    transformed_history.append(transformed_trade)
+                    
+                except Exception as e:
+                    logger.warning(f"Failed to transform trade: {e}")
+                    continue
+            
+            logger.info(f"✅ Transformed {len(transformed_history)} trading records")
+            return transformed_history
+            
+        except httpx.TimeoutException:
+            logger.error("Bot history API timeout")
+            return []
+        except Exception as e:
+            logger.error(f"❌ Bot history fetch failed: {str(e)}")
+            return []
 
     async def _run_security_check(self, token_address: str) -> bool:
         """
@@ -488,7 +542,7 @@ class BotService:
                             if liquidity.get("base") is not None:
                                 onchain_data["tokenReserve"] = float(liquidity["base"])
                             
-                            # Fallback price/volume if Birdeye failed
+                            # Fallback price/volume/mcap if Birdeye failed
                             if onchain_data["currentPriceUSD"] == 0 and pair.get("priceUsd"):
                                 onchain_data["currentPriceUSD"] = float(pair["priceUsd"])
                             
@@ -499,6 +553,9 @@ class BotService:
                                 
                                 if volume_data and volume_data.get("h1") is not None:
                                     onchain_data["volume1h"] = float(volume_data["h1"])
+
+                            if onchain_data["marketCapUSD"] is None:
+                                onchain_data["marketCapUSD"] = float(pair["marketCap"])
                             
                             # Transaction counts
                             if pair.get("txns"):
@@ -584,6 +641,18 @@ class BotService:
         ]
         
         return random.choice(mock_reasons)
+    
+    def _parse_timestamp(self, timestamp_str: str) -> int:
+        """Parse ISO timestamp to milliseconds"""
+        try:
+            if not timestamp_str:
+                return int(time.time() * 1000)
+            
+            from datetime import datetime
+            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+            return int(dt.timestamp() * 1000)
+        except:
+            return int(time.time() * 1000)
 
     def _analyze_whales_1h(self, trades_data: Dict) -> Dict[str, Any]:
         """Analyze whale activity in last 1 hour"""

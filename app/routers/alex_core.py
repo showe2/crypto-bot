@@ -702,6 +702,21 @@ async def bot_sell_order(
             status_code=500,
             detail=f"Internal server error: {str(e)}"
         )
+    
+@router.get("/api/bot/history", summary="Get Bot Trading History")
+async def get_bot_history(_: None = Depends(rate_limit_per_ip)):
+    """Get trading history from bot service"""
+    try:
+        logger.info("📊 Bot history request")
+        
+        history = await bot_service.get_history()
+        
+        logger.info(f"✅ Bot history returned {len(history)} records")
+        return history
+        
+    except Exception as e:
+        logger.error(f"❌ Bot history endpoint error: {str(e)}")
+        return []
 
 # ==============================================
 # API ENDPOINTS FOR FRONTEND
