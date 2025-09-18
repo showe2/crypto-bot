@@ -1,7 +1,7 @@
 import asyncio
 import time
 import httpx
-from typing import Dict, Any
+from typing import Dict, Any, Optional, List
 from loguru import logger
 from pydantic import BaseModel
 
@@ -20,17 +20,65 @@ class BuyRequest(BaseModel):
     security: bool = False
 
 class OnChainData(BaseModel):
+    # Basic price data
     currentPriceUSD: float
+    priceChange24h: Optional[float] = None
+    
+    # Liquidity metrics
     liquidityUSD: float
-    solReserve: float
-    tokenReserve: float
+    
+    # Market cap
+    marketCapUSD: Optional[float] = None
+    
+    # Volume metrics  
+    volume24h: float
+    volume1h: Optional[float] = None
+    volume5min: Optional[float] = None
+    
+    # Trading activity
+    txCount24h: Optional[int] = None
+    txCount1h: Optional[int] = None
+    txCount5min: Optional[int] = None
+    
+    # Pool/DEX data
     poolExists: bool
     poolAddress: str
     dexType: str
-    volume24h: float
+    poolAge: Optional[int] = None  # seconds since pool creation
+    
+    # Reserves
+    solReserve: float
+    tokenReserve: float
+    
+    # Whale analysis
+    whales1h: Dict[str, Any] = {
+        "whaleCount": 0,
+        "whaleVolume": 0.0,
+        "whaleVolumePercent": 0.0,
+        "largestWhaleAmount": 0.0,
+        "avgWhaleSize": 0.0,
+        "whaleRisk": "unknown"  # "low", "medium", "high", "unknown"
+    }
+    
+    # Security metrics
     lpLocked: bool
+    lpLockedPercent: Optional[float] = None
     topHolderPercent: float
+    holderCount: Optional[int] = None
     tokenTax: float
+    
+    # Token metadata
+    name: Optional[str] = None
+    symbol: Optional[str] = None
+    decimals: Optional[int] = None
+    supply: Optional[float] = None
+    
+    # AI Analysis
+    aiReasoning: Optional[str] = None
+    
+    # Data quality indicators
+    lastUpdated: float = 0.0  # Unix timestamp
+    apiErrors: List[str] = []
 
 class SellRequest(BaseModel):
     mint: str
@@ -80,7 +128,7 @@ class BotService:
             
             # Collect onchain data
             logger.info(f"📊 Collecting onchain data for {token_address}")
-            onchain_data = await self._collect_onchain_data(token_address)
+            onchain_data = await self._collect_onchain_data(token_address, ai_reasoning="Ручная покупка", is_manual=True)
             
             # Generate order ID
             order_id = f"order_{int(time.time())}_{token_address[:8]}"
@@ -99,7 +147,7 @@ class BotService:
             
             # Fire and forget bot call
             asyncio.create_task(
-                self._call_bot_api(bot_request, order_id)
+                self._call_bot_buy_api(bot_request, order_id)
             )
             
             # Return immediate success response
@@ -151,10 +199,19 @@ class BotService:
             # Generate order ID
             order_id = f"sell_{int(time.time())}_{token_address[:8]}"
             
+            # Collect onchain data for sell
+            logger.info(f"📊 Collecting onchain data for sell: {token_address}")
+            try:
+                onchain_data = await self._collect_onchain_data(token_address, ai_reasoning="Ручная продажа", is_manual=True)
+            except Exception as e:
+                logger.warning(f"Failed to collect onchain data for sell: {e}")
+                onchain_data = None
+            
             # Prepare bot request
             bot_request = {
                 "mint": sell_request.mint,
-                "percent": sell_request.percent
+                "percent": sell_request.percent,
+                "onChain": onchain_data
             }
             
             # Fire and forget bot call
@@ -169,7 +226,8 @@ class BotService:
                 "message": "Sell order placed successfully",
                 "orderId": order_id,
                 "mint": token_address,
-                "percent": sell_request.percent
+                "percent": sell_request.percent,
+                "onChain": onchain_data
             }
             
         except Exception as e:
@@ -268,49 +326,139 @@ class BotService:
             logger.error(f"Security check error for {token_address}: {str(e)}")
             return False
         
-    async def _collect_onchain_data(self, token_address: str) -> Dict[str, Any]:
-        """Collect onchain data from existing services"""
+    async def _collect_onchain_data(self, token_address: str, ai_reasoning: str = None, is_manual: bool = True) -> Dict[str, Any]:
+        """
+        Collect comprehensive onchain data
+        
+        Args:
+            token_address: Token mint address
+            ai_reasoning: Custom AI reasoning (if None, generates based on is_manual)
+            is_manual: Whether this is a manual trade (affects AI reasoning)
+        """
         try:
             from app.services.service_manager import api_manager
             
-            # Initialize default data
+            # Determine AI reasoning
+            if ai_reasoning is None:
+                if is_manual:
+                    ai_reasoning = "Ручная покупка/продажа"
+                else:
+                    # Mock AI reasoning for automated trades
+                    ai_reasoning = self._generate_mock_ai_reasoning()
+            
+            # Initialize comprehensive default data
             onchain_data = {
+                # Basic price data
                 "currentPriceUSD": 0.0,
+                "priceChange24h": None,
+                
+                # Liquidity metrics
                 "liquidityUSD": 0.0,
-                "solReserve": 0.0,
-                "tokenReserve": 0.0,
+                
+                # Market cap
+                "marketCapUSD": None,
+                
+                # Volume metrics
+                "volume24h": 0.0,
+                "volume1h": 0.0,
+                "volume5min": 0.0,
+                
+                # Trading activity
+                "txCount24h": None,
+                "txCount1h": None,
+                "txCount5min": None,
+                
+                # Pool/DEX data
                 "poolExists": False,
                 "poolAddress": "",
                 "dexType": "unknown",
-                "volume24h": 0.0,
+                "poolAge": None,
+                
+                # Reserves
+                "solReserve": 0.0,
+                "tokenReserve": 0.0,
+                
+                # Whale analysis
+                "whales1h": {
+                    "whaleCount": 0,
+                    "whaleVolume": 0.0,
+                    "whaleVolumePercent": 0.0,
+                    "largestWhaleAmount": 0.0,
+                    "avgWhaleSize": 0.0,
+                    "whaleRisk": "unknown"
+                },
+                
+                # Security metrics
                 "lpLocked": False,
+                "lpLockedPercent": None,
                 "topHolderPercent": 0.0,
-                "tokenTax": 0.0
+                "holderCount": None,
+                "tokenTax": 0.0,
+                
+                # Token metadata
+                "name": None,
+                "symbol": None,
+                "decimals": None,
+                "supply": None,
+                
+                # AI Analysis
+                "aiReasoning": ai_reasoning,
+                
+                # Data quality
+                "lastUpdated": time.time(),
+                "apiErrors": []
             }
             
-            # Get Birdeye data (price + liquidity)
+            # 1. BIRDEYE DATA (comprehensive price/volume/liquidity)
             if api_manager.clients.get("birdeye"):
                 try:
-                    birdeye_data = await api_manager.clients["birdeye"].get_token_price(
+                    # Price data
+                    price_data = await api_manager.clients["birdeye"].get_token_price(
                         token_address, include_liquidity=True
                     )
-                    if birdeye_data:
+                    if price_data:
                         # Safe float conversion with None checks
-                        price_value = birdeye_data.get("value")
-                        if price_value is not None:
-                            onchain_data["currentPriceUSD"] = float(price_value)
+                        if price_data.get("value") is not None:
+                            onchain_data["currentPriceUSD"] = float(price_data["value"])
                         
-                        liquidity_value = birdeye_data.get("liquidity")
-                        if liquidity_value is not None:
-                            onchain_data["liquidityUSD"] = float(liquidity_value)
+                        if price_data.get("liquidity") is not None:
+                            onchain_data["liquidityUSD"] = float(price_data["liquidity"])
                         
-                        volume_value = birdeye_data.get("volume_24h")
-                        if volume_value is not None:
-                            onchain_data["volume24h"] = float(volume_value)
+                        if price_data.get("volume_24h") is not None:
+                            onchain_data["volume24h"] = float(price_data["volume_24h"])
+                        
+                        # Additional Birdeye metrics if available
+                        if price_data.get("price_change_24h") is not None:
+                            onchain_data["priceChange24h"] = float(price_data["price_change_24h"])
+                        
+                        if price_data.get("market_cap") is not None:
+                            onchain_data["marketCapUSD"] = float(price_data["market_cap"])
+
+                        if price_data.get("name"):
+                            onchain_data["name"] = price_data["name"]
+
+                        if price_data.get("symbol"):
+                            onchain_data["symbol"] = price_data["symbol"]
+                    
+                    # Wait between Birdeye calls
+                    await asyncio.sleep(1.0)
+                    
+                    # Trades data for whale analysis
+                    trades_data = await api_manager.clients["birdeye"].get_token_trades(
+                        token_address, sort_type="desc", limit=100
+                    )
+                    if trades_data:
+                        onchain_data["whales1h"] = self._analyze_whales_1h(trades_data)
+                        
+                        # Calculate volume metrics from trades
+                        volume_metrics = self._calculate_volume_metrics(trades_data)
+                        onchain_data.update(volume_metrics)
+                        
                 except Exception as e:
+                    onchain_data["apiErrors"].append(f"Birdeye: {str(e)}")
                     logger.warning(f"Birdeye data collection failed: {e}")
             
-            # Get DexScreener data (reserves, pool info)
+            # 2. DEXSCREENER DATA (pool info, reserves, additional metrics)
             if api_manager.clients.get("dexscreener"):
                 try:
                     dex_data = await api_manager.clients["dexscreener"].get_token_pairs(
@@ -324,20 +472,58 @@ class BotService:
                             onchain_data["poolAddress"] = pair.get("pairAddress", "")
                             onchain_data["dexType"] = pair.get("dexId", "unknown")
                             
+                            # Pool age
+                            if pair.get("pairCreatedAt"):
+                                try:
+                                    created_at = int(pair["pairCreatedAt"]) / 1000  # Convert to seconds
+                                    onchain_data["poolAge"] = int(time.time() - created_at)
+                                except:
+                                    pass
+                            
                             # Get reserves from liquidity
                             liquidity = pair.get("liquidity", {})
-                            onchain_data["solReserve"] = float(liquidity.get("quote", 0))
-                            onchain_data["tokenReserve"] = float(liquidity.get("base", 0))
+                            if liquidity.get("quote") is not None:
+                                onchain_data["solReserve"] = float(liquidity["quote"])
+                            
+                            if liquidity.get("base") is not None:
+                                onchain_data["tokenReserve"] = float(liquidity["base"])
                             
                             # Fallback price/volume if Birdeye failed
-                            if onchain_data["currentPriceUSD"] == 0:
-                                onchain_data["currentPriceUSD"] = float(pair.get("priceUsd", 0))
+                            if onchain_data["currentPriceUSD"] == 0 and pair.get("priceUsd"):
+                                onchain_data["currentPriceUSD"] = float(pair["priceUsd"])
+                            
                             if onchain_data["volume24h"] == 0:
-                                onchain_data["volume24h"] = float(pair.get("volume", {}).get("h24", 0))
+                                volume_data = pair.get("volume", {})
+                                if volume_data and volume_data.get("h24") is not None:
+                                    onchain_data["volume24h"] = float(volume_data["h24"])
+                                
+                                if volume_data and volume_data.get("h1") is not None:
+                                    onchain_data["volume1h"] = float(volume_data["h1"])
+                            
+                            # Transaction counts
+                            if pair.get("txns"):
+                                txns = pair["txns"]
+                                if txns.get("h24") and txns["h24"].get("buys") is not None and txns["h24"].get("sells") is not None:
+                                    onchain_data["txCount24h"] = int(txns["h24"]["buys"]) + int(txns["h24"]["sells"])
+                                
+                                if txns.get("h1") and txns["h1"].get("buys") is not None and txns["h1"].get("sells") is not None:
+                                    onchain_data["txCount1h"] = int(txns["h1"]["buys"]) + int(txns["h1"]["sells"])
+                                
+                                if txns.get("m5") and txns["m5"].get("buys") is not None and txns["m5"].get("sells") is not None:
+                                    onchain_data["txCount5min"] = int(txns["m5"]["buys"]) + int(txns["m5"]["sells"])
+
+                            # Extract token info from DexScreener
+                            if not onchain_data.get("name") and pair.get("baseToken", {}).get("name"):
+                                onchain_data["name"] = pair["baseToken"]["name"]
+
+                            if not onchain_data.get("symbol") and pair.get("baseToken", {}).get("symbol"):
+                                onchain_data["symbol"] = pair["baseToken"]["symbol"]
+                            
                 except Exception as e:
+                    onchain_data["apiErrors"].append(f"DexScreener: {str(e)}")
                     logger.warning(f"DexScreener data collection failed: {e}")
             
-            # Get security data (LP locked, top holder, tax)
+            # 3. GOPLUS SECURITY DATA
             if api_manager.clients.get("goplus"):
                 try:
                     security_data = await api_manager.clients["goplus"].analyze_token_security(token_address)
@@ -346,28 +532,167 @@ class BotService:
                         lp_locked = security_data.get("lp_locked")
                         onchain_data["lpLocked"] = lp_locked == "1" if lp_locked else False
                         
+                        # LP locked percentage
+                        lp_locked_percent = security_data.get("lp_locked_percent")
+                        if lp_locked_percent is not None:
+                            onchain_data["lpLockedPercent"] = float(lp_locked_percent)
+                        
                         # Top holder percent
                         holders = security_data.get("holders", [])
                         if holders and len(holders) > 0:
                             top_holder = holders[0]
-                            onchain_data["topHolderPercent"] = float(top_holder.get("percent", 0))
+                            holder_percent = top_holder.get("percent")
+                            if holder_percent is not None:
+                                onchain_data["topHolderPercent"] = float(holder_percent)
+                        
+                        # Holder count
+                        holder_count = security_data.get("holder_count")
+                        if holder_count is not None:
+                            onchain_data["holderCount"] = int(holder_count.replace(",", "") if isinstance(holder_count, str) else holder_count)
                         
                         # Token tax
-                        buy_tax = security_data.get("buy_tax", "0")
-                        sell_tax = security_data.get("sell_tax", "0")
-                        max_tax = max(float(buy_tax), float(sell_tax))
-                        onchain_data["tokenTax"] = max_tax
+                        buy_tax = security_data.get("buy_tax", "0") or "0"
+                        sell_tax = security_data.get("sell_tax", "0") or "0"
+                        try:
+                            max_tax = max(float(buy_tax), float(sell_tax))
+                            onchain_data["tokenTax"] = max_tax
+                        except (ValueError, TypeError):
+                            onchain_data["tokenTax"] = 0.0
+                        
                 except Exception as e:
+                    onchain_data["apiErrors"].append(f"GOplus: {str(e)}")
                     logger.warning(f"Security data collection failed: {e}")
             
-            logger.info(f"Collected onchain data for {token_address}: pool={onchain_data['poolExists']}, price=${onchain_data['currentPriceUSD']}")
+            logger.info(f"Collected enhanced onchain data for {token_address}: pool={onchain_data['poolExists']}, price=${onchain_data['currentPriceUSD']}")
             return onchain_data
+        
+        except Exception as e:
+            logger.error(f"Enhanced onchain data collection failed: {e}")
+            onchain_data["apiErrors"].append(f"General: {str(e)}")
+            return onchain_data  # Return defaults with error
+
+    def _generate_mock_ai_reasoning(self) -> str:
+        """Generate mock AI reasoning for automated trades"""
+        import random
+        
+        mock_reasons = [
+            "Высокий объем торгов (+156% за 1ч), ликвидность стабильна $45K, киты активны но не агрессивны.",
+            "Социальная активность растёт, технические индикаторы показывают восходящий тренд.",
+            "Объём покупок превышает продажи 3:1, ликвидность заблокирована на 95%.",
+            "Whale активность минимальна, устойчивый рост цены без резких скачков.",
+            "Превышены пороги по объёму 5мин ($8.5K) и активности трейдеров."
+        ]
+        
+        return random.choice(mock_reasons)
+
+    def _analyze_whales_1h(self, trades_data: Dict) -> Dict[str, Any]:
+        """Analyze whale activity in last 1 hour"""
+        try:
+            if not trades_data or not trades_data.get("items"):
+                return {
+                    "whaleCount": 0,
+                    "whaleVolume": 0.0,
+                    "whaleVolumePercent": 0.0,
+                    "largestWhaleAmount": 0.0,
+                    "avgWhaleSize": 0.0,
+                    "whaleRisk": "unknown"
+                }
+            
+            trades = trades_data["items"]
+            current_time = time.time()
+            one_hour_ago = current_time - 3600
+            
+            whales = []
+            total_volume = 0.0
+            
+            for trade in trades:
+                try:
+                    trade_time = trade.get("block_timestamp", current_time)
+                    if trade_time < one_hour_ago:
+                        continue
+                    
+                    # Get trade size in USD
+                    trade_size_usd = float(trade.get("from", {}).get("ui_amount", 0)) * float(trade.get("from", {}).get("price", 0))
+                    total_volume += trade_size_usd
+                    
+                    # Whale threshold: $800+ (matching pump analysis)
+                    if trade_size_usd >= 800:
+                        whales.append(trade_size_usd)
+                        
+                except (ValueError, TypeError, KeyError):
+                    continue
+            
+            whale_count = len(whales)
+            whale_volume = sum(whales)
+            whale_volume_percent = (whale_volume / total_volume * 100) if total_volume > 0 else 0
+            largest_whale = max(whales) if whales else 0
+            avg_whale_size = (whale_volume / whale_count) if whale_count > 0 else 0
+            
+            # Risk assessment
+            if whale_volume_percent > 60:
+                whale_risk = "high"
+            elif whale_volume_percent > 30:
+                whale_risk = "medium"
+            else:
+                whale_risk = "low"
+            
+            return {
+                "whaleCount": whale_count,
+                "whaleVolume": round(whale_volume, 2),
+                "whaleVolumePercent": round(whale_volume_percent, 1),
+                "largestWhaleAmount": round(largest_whale, 2),
+                "avgWhaleSize": round(avg_whale_size, 2),
+                "whaleRisk": whale_risk
+            }
             
         except Exception as e:
-            logger.error(f"Onchain data collection failed: {e}")
-            return onchain_data  # Return defaults
+            logger.warning(f"Whale analysis failed: {e}")
+            return {
+                "whaleCount": 0,
+                "whaleVolume": 0.0,
+                "whaleVolumePercent": 0.0,
+                "largestWhaleAmount": 0.0,
+                "avgWhaleSize": 0.0,
+                "whaleRisk": "unknown"
+            }
+
+    def _calculate_volume_metrics(self, trades_data: Dict) -> Dict[str, Any]:
+        """Calculate volume metrics from trades data"""
+        try:
+            if not trades_data or not trades_data.get("items"):
+                return {"volume1h": None, "volume5min": None}
+            
+            trades = trades_data["items"]
+            current_time = time.time()
+            
+            volume_1h = 0.0
+            volume_5min = 0.0
+            
+            for trade in trades:
+                try:
+                    trade_time = trade.get("block_timestamp", current_time)
+                    time_diff = current_time - trade_time
+                    
+                    trade_size_usd = float(trade.get("from", {}).get("ui_amount", 0)) * float(trade.get("from", {}).get("price", 0))
+                    
+                    if time_diff <= 300:  # 5 minutes
+                        volume_5min += trade_size_usd
+                    if time_diff <= 3600:  # 1 hour
+                        volume_1h += trade_size_usd
+                        
+                except (ValueError, TypeError, KeyError):
+                    continue
+            
+            return {
+                "volume1h": round(volume_1h, 2) if volume_1h > 0 else None,
+                "volume5min": round(volume_5min, 2) if volume_5min > 0 else None,
+            }
+            
+        except Exception as e:
+            logger.warning(f"Volume metrics calculation failed: {e}")
+            return {"volume1h": None, "volume5min": None}
     
-    async def _call_bot_api(self, bot_request: Dict[str, Any], order_id: str) -> None:
+    async def _call_bot_buy_api(self, bot_request: Dict[str, Any], order_id: str) -> None:
         """
         Make async call to bot API for buy orders (fire and forget)
         
