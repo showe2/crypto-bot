@@ -229,6 +229,8 @@ async def update_api_key(
     try:
         key_name = key_data.key.upper()
         key_value = key_data.value.strip()
+
+        print(os.getenv(key_name))
         
         # Validate key name (only allow known API keys for security)
         valid_keys = [
@@ -243,33 +245,35 @@ async def update_api_key(
                 detail=f"Invalid key name. Allowed keys: {', '.join(valid_keys)}"
             )
         
-        if key_name == "WALLET_SECRET_KEY":
-            result = await bot_service.update_wallet(key_value)
-            
-            if result.get("success"):
-                logger.info(f"✅ Bot wallet update processed")
-            else:
-                logger.warning(f"❌ Bot wallet update failed: {result.get('message')}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=result.get("message", "Buy wallet update failed")
-                )
-
         # Update environment variable
         os.environ[key_name] = key_value
         
-        # Update settings instance
-        from app.core.config import get_settings
-        settings = get_settings()
-        setattr(settings, key_name, key_value)
+        # Clear the lru_cache and get fresh settings instance
+        get_settings.cache_clear()
+        fresh_settings = get_settings()
         
-        logger.info(f"✅ API key updated: {key_name}")
+        # Verify the update worked
+        actual_value = getattr(fresh_settings, key_name, None)
+        if actual_value != key_value:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update settings - expected {key_value[:8]}***, got {str(actual_value)[:8]}***"
+            )
+        
+        # Update global settings reference if needed
+        global settings
+        settings = fresh_settings
+        
+        logger.info(f"✅ API key updated and settings refreshed: {key_name}")
+
+        print(os.getenv(key_name))
         
         return {
             "status": "success",
             "message": f"API key {key_name} updated successfully",
             "key": key_name,
-            "value_preview": f"{key_value[:8]}***" if key_value else None
+            "value_preview": f"{key_value[:8]}***" if key_value else None,
+            "settings_refreshed": True
         }
         
     except HTTPException:

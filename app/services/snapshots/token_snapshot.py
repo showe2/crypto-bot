@@ -150,23 +150,29 @@ class TokenSnapshotService:
             return snapshot_response
         
     async def _generate_combined_metrics(self, security_responses: Dict[str, Any], market_responses: Dict[str, Any], token_address: str) -> Dict[str, Any]:
-        """Generate metrics from both security and market data"""
+        """Generate complete metrics - clean structure with backward compatibility"""
         try:
-            # Market data from fresh API calls
-            market_data = self._extract_market_data(market_responses)
+            # Extract OnChainData structure from all services
+            onchain_data = self._extract_market_data({**security_responses, **market_responses})
             
-            # Token info from security services
+            # Add whale analysis to OnChainData whales1h field
+            whale_activity_1h = self._analyze_whale_activity_1h(market_responses.get("birdeye", {}))
+            onchain_data["whales1h"] = {
+                "whaleCount": whale_activity_1h.get("count", 0),
+                "whaleVolume": float(whale_activity_1h.get("total_inflow_usd", 0)),
+                "whaleVolumePercent": 0.0,
+                "largestWhaleAmount": 0.0,
+                "avgWhaleSize": float(whale_activity_1h.get("total_inflow_usd", 0)) / max(whale_activity_1h.get("count", 1), 1),
+                "whaleRisk": "high" if whale_activity_1h.get("count", 0) > 5 else "medium" if whale_activity_1h.get("count", 0) > 2 else "low"
+            }
+            
+            # Use existing analysis methods
+            volatility = self._calculate_simple_volatility(market_responses.get("birdeye", {}))
+            sniper_detection = self._detect_sniper_patterns(security_responses.get("goplus", {}))
             token_info = self._extract_token_info_from_security(security_responses)
             
-            # Enhanced metrics from security data
-            volatility = self._calculate_simple_volatility(market_responses.get("birdeye", {}))
-            sniper_info = self._detect_sniper_patterns(security_responses.get("goplus", {}))
-            
-            # Real-time whale activity from Birdeye trades (last 1 hour)
-            whale_activity_1h = self._analyze_whale_activity_1h(market_responses.get("birdeye", {}))
-            
             return {
-                "market_data": market_data,
+                "market_data": onchain_data,  # Complete OnChainData with security fields inside
                 "token_info": token_info,
                 "volatility": {
                     "recent_volatility_percent": volatility,
@@ -174,13 +180,19 @@ class TokenSnapshotService:
                     "volatility_risk": "high" if volatility and volatility > 30 else "medium" if volatility and volatility > 15 else "low",
                     "trades_analyzed": len(market_responses.get("birdeye", {}).get("trades", {}).get("items", []))
                 },
-                "whale_activity_1h": whale_activity_1h,  # Real-time whale trades from Birdeye
-                "sniper_detection": sniper_info
+                "whale_activity_1h": whale_activity_1h,
+                "sniper_detection": sniper_detection
             }
             
         except Exception as e:
             logger.warning(f"Error generating combined metrics: {e}")
-            return {"market_data": {}, "token_info": {}, "volatility": {}, "whale_analysis": {}, "whale_activity_1h": {"count": 0, "total_inflow_usd": 0, "addresses": []}, "sniper_detection": {}}
+            return {
+                "market_data": {},
+                "token_info": {},
+                "volatility": {},
+                "whale_activity_1h": {"count": 0, "total_inflow_usd": 0, "addresses": []},
+                "sniper_detection": {}
+            }
     
     async def run_scheduled_snapshots(self) -> Dict[str, Any]:
         """Run scheduled snapshots for multiple tokens"""
@@ -677,93 +689,208 @@ class TokenSnapshotService:
 
     def _extract_market_data(self, service_responses: Dict[str, Any]) -> Dict[str, Any]:
         """Extract market data from service responses"""
-        market_data = {
-            "price_usd": None,
-            "price_change_24h": None,
-            "volume_24h": None,
-            "volume_6h": None,
-            "volume_1h": None,
-            "volume_5m": None,
-            "market_cap": None,
-            "liquidity": None,
-            "volume_liquidity_ratio": None,
-            "data_completeness_percent": 0.0
+        onchain_data = {
+            # Basic price data
+            "currentPriceUSD": 0.0,
+            "priceChange24h": None,
+            
+            # Liquidity metrics
+            "liquidityUSD": 0.0,
+            "liquiditySOL": None,
+            "liquidityToken": None,
+            
+            # Market cap
+            "marketCapUSD": None,
+            
+            # Volume metrics
+            "volume24h": 0.0,
+            "volume1h": None,
+            "volume5min": None,
+            
+            # Trading activity
+            "txCount24h": None,
+            "txCount1h": None,
+            "txCount5min": None,
+            
+            # Pool/DEX data
+            "poolExists": False,
+            "poolAddress": "",
+            "dexType": "unknown",
+            "poolAge": None,
+            
+            # Reserves
+            "solReserve": 0.0,
+            "tokenReserve": 0.0,
+            
+            # Security metrics
+            "lpLocked": False,
+            "lpLockedPercent": None,
+            "topHolderPercent": 0.0,
+            "holderCount": None,
+            "tokenTax": 0.0,
+            
+            # Token metadata
+            "name": None,
+            "symbol": None,
+            "decimals": None,
+            "supply": None,
+            
+            # Data quality
+            "lastUpdated": time.time(),
+            "apiErrors": []
         }
         
         try:
-            # 1. BIRDEYE - Price and liquidity
+            # 1. BIRDEYE DATA
             birdeye_data = service_responses.get("birdeye", {})
             if birdeye_data and birdeye_data.get("price"):
                 price_data = birdeye_data["price"]
                 
-                market_data.update({
-                    "price_usd": price_data.get("value"),
-                    "price_change_24h": price_data.get("price_change_24h"),
-                    "liquidity": price_data.get("liquidity")
-                })
+                if price_data.get("value") is not None:
+                    onchain_data["currentPriceUSD"] = float(price_data["value"])
+                
+                if price_data.get("liquidity") is not None:
+                    onchain_data["liquidityUSD"] = float(price_data["liquidity"])
+                
+                if price_data.get("volume_24h") is not None:
+                    onchain_data["volume24h"] = float(price_data["volume_24h"])
+                
+                if price_data.get("price_change_24h") is not None:
+                    onchain_data["priceChange24h"] = float(price_data["price_change_24h"])
+                
+                if price_data.get("market_cap") is not None:
+                    onchain_data["marketCapUSD"] = float(price_data["market_cap"])
             
-            # 2. DEXSCREENER - Volume and market cap
+            # 2. DEXSCREENER DATA
             dexscreener_data = service_responses.get("dexscreener", {})
             if dexscreener_data and dexscreener_data.get("pairs", {}).get("pairs"):
                 pairs = dexscreener_data["pairs"]["pairs"]
-                if pairs and len(pairs) > 0:
-                    pair = pairs[0]  # Use first pair
+                if len(pairs) > 0:
+                    pair = pairs[0]
                     
-                    market_data.update({
-                        "volume_24h": pair.get("volume", {}).get("h24"),
-                        "volume_6h": pair.get("volume", {}).get("h6"),
-                        "volume_1h": pair.get("volume", {}).get("h1"),
-                        "volume_5m": pair.get("volume", {}).get("m5"),
-                        "market_cap": pair.get("marketCap"),
-                        "price_usd": pair.get("priceUsd") or market_data["price_usd"],
-                        "price_change_24h": pair.get("priceChange", {}).get("h24") or market_data["price_change_24h"]
-                    })
+                    onchain_data["poolExists"] = True
+                    onchain_data["poolAddress"] = pair.get("pairAddress", "")
+                    onchain_data["dexType"] = pair.get("dexId", "unknown")
+                    
+                    # Pool age
+                    if pair.get("pairCreatedAt"):
+                        try:
+                            created_at = int(pair["pairCreatedAt"]) / 1000
+                            onchain_data["poolAge"] = int(time.time() - created_at)
+                        except:
+                            pass
+                    
+                    # Reserves
+                    liquidity = pair.get("liquidity", {})
+                    if liquidity.get("quote") is not None:
+                        onchain_data["solReserve"] = float(liquidity["quote"])
+                    if liquidity.get("base") is not None:
+                        onchain_data["tokenReserve"] = float(liquidity["base"])
+                    
+                    # Volume data
+                    volume_data = pair.get("volume", {})
+                    if volume_data:
+                        if volume_data.get("h24") is not None and onchain_data["volume24h"] == 0:
+                            onchain_data["volume24h"] = float(volume_data["h24"])
+                        if volume_data.get("h1") is not None:
+                            onchain_data["volume1h"] = float(volume_data["h1"])
+                        if volume_data.get("m5") is not None:
+                            onchain_data["volume5min"] = float(volume_data["m5"])
+                    
+                    # Transaction counts
+                    if pair.get("txns"):
+                        txns = pair["txns"]
+                        if txns.get("h24") and txns["h24"].get("buys") is not None:
+                            onchain_data["txCount24h"] = int(txns["h24"]["buys"]) + int(txns["h24"]["sells"])
+                        if txns.get("h1") and txns["h1"].get("buys") is not None:
+                            onchain_data["txCount1h"] = int(txns["h1"]["buys"]) + int(txns["h1"]["sells"])
+                        if txns.get("m5") and txns["m5"].get("buys") is not None:
+                            onchain_data["txCount5min"] = int(txns["m5"]["buys"]) + int(txns["m5"]["sells"])
+                    
+                    # Fallback price/volume/mcap
+                    if onchain_data["currentPriceUSD"] == 0 and pair.get("priceUsd"):
+                        onchain_data["currentPriceUSD"] = float(pair["priceUsd"])
+                    if onchain_data["marketCapUSD"] == 0 and pair.get("marketCap"):
+                        onchain_data["marketCapUSD"] = float(pair["marketCap"])
+
+            # 3. GOPLUS SECURITY DATA
+            goplus_data = service_responses.get("goplus", {})
+            if goplus_data:
+                # LP locked
+                lp_locked = goplus_data.get("lp_locked")
+                onchain_data["lpLocked"] = lp_locked == "1" if lp_locked else False
+                
+                # LP locked percentage
+                if goplus_data.get("lp_locked_percent") is not None:
+                    onchain_data["lpLockedPercent"] = float(goplus_data["lp_locked_percent"])
+                
+                # Top holder
+                holders = goplus_data.get("holders", [])
+                if holders and len(holders) > 0:
+                    top_holder = holders[0]
+                    if top_holder.get("percent") is not None:
+                        onchain_data["topHolderPercent"] = float(top_holder["percent"])
+                
+                # Holder count
+                if goplus_data.get("holder_count"):
+                    try:
+                        holder_count = goplus_data["holder_count"]
+                        if isinstance(holder_count, str):
+                            holder_count = holder_count.replace(",", "")
+                        onchain_data["holderCount"] = int(holder_count)
+                    except:
+                        pass
+                
+                # Token tax
+                buy_tax = goplus_data.get("buy_tax", "0") or "0"
+                sell_tax = goplus_data.get("sell_tax", "0") or "0"
+                try:
+                    max_tax = max(float(buy_tax), float(sell_tax))
+                    onchain_data["tokenTax"] = max_tax
+                except:
+                    onchain_data["tokenTax"] = 0.0
             
-            # 3. SOLSNIFFER - Market cap
-            solsniffer_data = service_responses.get("solsniffer", {})
-            if solsniffer_data and not market_data["market_cap"]:
-                market_data["market_cap"] = solsniffer_data.get("marketCap")
+            # 4. TOKEN METADATA (multiple sources)
+            # Try DexScreener first
+            if dexscreener_data and dexscreener_data.get("pairs", {}).get("pairs"):
+                pair = dexscreener_data["pairs"]["pairs"][0]
+                base_token = pair.get("baseToken", {})
+                if base_token.get("name"):
+                    onchain_data["name"] = base_token["name"]
+                if base_token.get("symbol"):
+                    onchain_data["symbol"] = base_token["symbol"]
             
-            # 4. HELIUS - Supply data for market cap calculation
+            # Try SolSniffer if no name/symbol yet
+            if not onchain_data["name"] or not onchain_data["symbol"]:
+                solsniffer_data = service_responses.get("solsniffer", {})
+                if solsniffer_data:
+                    if not onchain_data["name"] and solsniffer_data.get("tokenName"):
+                        onchain_data["name"] = solsniffer_data["tokenName"]
+                    if not onchain_data["symbol"] and solsniffer_data.get("tokenSymbol"):
+                        onchain_data["symbol"] = solsniffer_data["tokenSymbol"]
+            
+            # 5. HELIUS SUPPLY DATA
             helius_data = service_responses.get("helius", {})
             if helius_data and helius_data.get("supply"):
                 supply_data = helius_data["supply"]
-                total_supply = supply_data.get("value")
-                
-                # Calculate market cap if we have price and supply
-                if market_data["price_usd"] and total_supply and not market_data["market_cap"]:
-                    market_data["market_cap"] = float(market_data["price_usd"]) * float(total_supply)
+                supply_value = supply_data.get("value", {})
+                if supply_value.get("amount") and supply_value.get("decimals") is not None:
+                    raw_supply = int(supply_value["amount"])
+                    decimals = int(supply_value["decimals"])
+                    onchain_data["supply"] = raw_supply / (10 ** decimals)
+                    onchain_data["decimals"] = decimals
+                    
+                    # Calculate fully diluted market cap
+                    if onchain_data["currentPriceUSD"] > 0:
+                        onchain_data["fullyDilutedMarketCap"] = onchain_data["supply"] * onchain_data["currentPriceUSD"]
             
-            # 5. SOLANAFM - Additional token info (fallback)
-            solanafm_data = service_responses.get("solanafm", {})
-            if solanafm_data and solanafm_data.get("token"):
-                token_data = solanafm_data["token"]
-                
-                if not market_data["volume_24h"]:
-                    market_data["volume_24h"] = token_data.get("volume_24h")
-                if not market_data["market_cap"]:
-                    market_data["market_cap"] = token_data.get("market_cap")
-            
-            # Calculate volume/liquidity ratio
-            if market_data["volume_24h"] and market_data["liquidity"]:
-                market_data["volume_liquidity_ratio"] = (market_data["volume_24h"] / market_data["liquidity"]) * 100
-            
-            # Calculate data completeness
-            important_fields = [
-                market_data["price_usd"], 
-                market_data["volume_24h"], 
-                market_data["market_cap"], 
-                market_data["liquidity"]
-            ]
-            market_data["data_completeness_percent"] = (sum(1 for f in important_fields if f is not None) / len(important_fields)) * 100
-            
-            logger.info(f"Market data extracted: price={market_data['price_usd']}, volume={market_data['volume_24h']}, mcap={market_data['market_cap']}")
-            
-            return market_data
+            logger.info(f"OnChain data extracted: price=${onchain_data['currentPriceUSD']}, liquidity=${onchain_data['liquidityUSD']}, pool={onchain_data['poolExists']}")
+            return onchain_data
             
         except Exception as e:
-            logger.warning(f"Error extracting market data: {e}")
-            return market_data
+            logger.error(f"Error extracting onchain data: {e}")
+            onchain_data["apiErrors"].append(f"Extraction error: {str(e)}")
+            return onchain_data
     
     def _extract_token_info_from_security(self, security_responses: Dict[str, Any]) -> Dict[str, Any]:
         """Extract token info from security service responses"""
