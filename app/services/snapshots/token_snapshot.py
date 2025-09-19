@@ -33,7 +33,7 @@ class TokenSnapshotService:
         security_service_responses: Optional[Dict[str, Any]] = None,
         update_existing: bool = True
     ) -> Dict[str, Any]:
-        """Capture a single token snapshot - security responses + market metrics"""
+        """Capture a single token snapshot with enhanced data"""
         start_time = time.time()
         
         # Use consistent analysis_id based on token address only (NO TIMESTAMP)
@@ -100,24 +100,39 @@ class TokenSnapshotService:
             logger.info(f"Fetching fresh market data for snapshot")
             await self._run_market_analysis_services(token_address, snapshot_response)
             
-            # DEBUG LOGGING
-            logger.info(f"Market services collected: {list(snapshot_response.get('service_responses', {}).keys())}")
-            if "birdeye" in snapshot_response.get("service_responses", {}):
-                birdeye_data = snapshot_response["service_responses"]["birdeye"]
-                logger.info(f"Birdeye data keys: {list(birdeye_data.keys())}")
-                if "price" in birdeye_data:
-                    price_data = birdeye_data["price"]
-                    logger.info(f"Price data: {price_data.get('value', 'NO VALUE')}")
+            # Extract base OnChainData
+            onchain_data = self._extract_market_data(snapshot_response["service_responses"])
             
-            # Generate metrics from BOTH security and market data
-            snapshot_response["metrics"] = await self._generate_combined_metrics(
-                security_responses=service_responses,
-                market_responses=snapshot_response["service_responses"],
-                token_address=token_address
-            )
+            # ADD whales/volatility/snipers analysis
+            volatility_data = self._calculate_simple_volatility(snapshot_response["service_responses"].get("birdeye", {}))
+            whale_activity_1h = self._analyze_whale_activity_1h(snapshot_response["service_responses"].get("birdeye", {}))
+            sniper_data = self._detect_sniper_patterns(snapshot_response["service_responses"].get("goplus", {}))
             
-            # DEBUG LOGGING
-            logger.info(f"Generated metrics market_data: {snapshot_response['metrics'].get('market_data', {})}")
+            # Enhance OnChainData with analysis results
+            onchain_data.update({
+                # Volatility analysis
+                "volatility_percent": volatility_data,
+                "volatility_risk": "high" if volatility_data and volatility_data > 30 else "medium" if volatility_data and volatility_data > 15 else "low",
+                
+                # Whale activity (exact format you requested)
+                "whale_activity_1h": {
+                    "count": whale_activity_1h.get("count", 0),
+                    "total_inflow_usd": whale_activity_1h.get("total_inflow_usd", 0),
+                    "addresses": whale_activity_1h.get("addresses", [])
+                },
+                
+                # Sniper detection
+                "sniper_detection": {
+                    "pattern_detected": sniper_data.get("pattern_detected", False),
+                    "similar_holders": sniper_data.get("similar_holders", 0),
+                    "sniper_risk": sniper_data.get("sniper_risk", "unknown")
+                }
+            })
+            
+            # Store enhanced OnChainData
+            snapshot_response["metrics"] = {
+                "market_data": onchain_data  # Complete OnChainData with all analysis
+            }
             
             # Update metadata
             snapshot_response["metadata"]["data_sources_available"] = len(service_responses)
@@ -126,15 +141,6 @@ class TokenSnapshotService:
             processing_time = time.time() - start_time
             snapshot_response["metadata"]["processing_time_seconds"] = round(processing_time, 3)
             
-            # Cache
-            try:
-                await self.cache.set(key=analysis_id, value=snapshot_response, ttl=self.cache_ttl)
-                snapshot_response["docx_cache_key"] = analysis_id
-                snapshot_response["docx_expires_at"] = (datetime.utcnow() + timedelta(seconds=self.cache_ttl)).isoformat()
-            except Exception as e:
-                logger.warning(f"Failed to cache snapshot: {str(e)}")
-                snapshot_response["warnings"].append(f"Caching failed: {str(e)}")
-            
             # Store in ChromaDB
             asyncio.create_task(self._store_snapshot_async(snapshot_response))
             
@@ -142,6 +148,7 @@ class TokenSnapshotService:
             return snapshot_response
             
         except Exception as e:
+            # Calculate processing time here too
             processing_time = time.time() - start_time
             logger.error(f"❌ Snapshot failed for {token_address}: {str(e)}")
             
@@ -498,7 +505,7 @@ class TokenSnapshotService:
             return None
 
     def _analyze_whale_activity_1h(self, birdeye_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Analyze whale activity in last 60 minutes from Birdeye trades"""
+        """Analyze whale activity in last 60 minutes from Birdeye trades - using bot service logic"""
         try:
             trades_data = birdeye_data.get("trades", {})
             trades = trades_data.get("items", []) if isinstance(trades_data, dict) else trades_data
@@ -510,60 +517,56 @@ class TokenSnapshotService:
                     "addresses": []
                 }
             
-            # Current time minus 1 hour
-            one_hour_ago = time.time() - 3600
+            current_time = time.time()
+            one_hour_ago = current_time - 3600
             
-            whale_transactions = {}  # {wallet_address: total_amount}
+            whales = []
+            total_volume = 0.0
+            whale_addresses = []
             
             for trade in trades:
                 try:
                     # Get trade timestamp
-                    trade_time = trade.get("block_unix_time", 0)
+                    trade_time = trade.get("block_timestamp", current_time)
                     if trade_time < one_hour_ago:
-                        continue  # Skip trades older than 1 hour
+                        continue
                     
                     # Only analyze BUY transactions
                     if trade.get("tx_type") != "buy" and trade.get("side") != "buy":
                         continue
                     
-                    # Get trade amount in USD
-                    amount_usd = float(trade.get("volume_usd", 0))
-                    if amount_usd < 5000:  # Whale threshold: $5K minimum
-                        continue
+                    # Get trade size in USD (same logic as bot service)
+                    trade_size_usd = float(trade.get("from", {}).get("ui_amount", 0)) * float(trade.get("from", {}).get("price", 0))
+                    total_volume += trade_size_usd
                     
-                    # Get wallet address (owner who made the buy)
-                    wallet = trade.get("owner")
-                    if not wallet:
-                        continue
-                    
-                    # Aggregate by wallet
-                    if wallet in whale_transactions:
-                        whale_transactions[wallet] += amount_usd
-                    else:
-                        whale_transactions[wallet] = amount_usd
+                    # Whale threshold: $800+ (matching bot service)
+                    if trade_size_usd >= 800:
+                        whales.append(trade_size_usd)
                         
-                except Exception as e:
+                        # Get wallet address
+                        wallet = trade.get("owner")
+                        if wallet and wallet not in [w["wallet"] for w in whale_addresses]:
+                            whale_addresses.append({
+                                "wallet": f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet,
+                                "amount_usd": int(trade_size_usd)
+                            })
+                            
+                except (ValueError, TypeError, KeyError) as e:
                     logger.warning(f"Error processing trade: {e}")
                     continue
             
-            # Sort whales by amount (highest first)
-            sorted_whales = sorted(whale_transactions.items(), key=lambda x: x[1], reverse=True)
+            # Calculate totals
+            whale_count = len(whales)
+            whale_volume = sum(whales)
             
-            # Build response
-            addresses = []
-            total_inflow = 0
-            
-            for wallet, amount in sorted_whales:
-                addresses.append({
-                    "wallet": f"{wallet[:6]}...{wallet[-4:]}" if len(wallet) > 10 else wallet,
-                    "amount_usd": int(amount)
-                })
-                total_inflow += amount
+            # Sort addresses by amount (highest first) and limit to top 10
+            whale_addresses.sort(key=lambda x: x["amount_usd"], reverse=True)
+            whale_addresses = whale_addresses[:10]
             
             return {
-                "count": len(addresses),
-                "total_inflow_usd": int(total_inflow),
-                "addresses": addresses[:10]  # Limit to top 10 whales
+                "count": whale_count,
+                "total_inflow_usd": int(whale_volume),
+                "addresses": whale_addresses
             }
             
         except Exception as e:
@@ -696,8 +699,6 @@ class TokenSnapshotService:
             
             # Liquidity metrics
             "liquidityUSD": 0.0,
-            "liquiditySOL": None,
-            "liquidityToken": None,
             
             # Market cap
             "marketCapUSD": None,
@@ -739,7 +740,7 @@ class TokenSnapshotService:
             "lastUpdated": time.time(),
             "apiErrors": []
         }
-        
+
         try:
             # 1. BIRDEYE DATA
             birdeye_data = service_responses.get("birdeye", {})
@@ -808,9 +809,9 @@ class TokenSnapshotService:
                             onchain_data["txCount5min"] = int(txns["m5"]["buys"]) + int(txns["m5"]["sells"])
                     
                     # Fallback price/volume/mcap
-                    if onchain_data["currentPriceUSD"] == 0 and pair.get("priceUsd"):
+                    if onchain_data["currentPriceUSD"] is None and pair.get("priceUsd"):
                         onchain_data["currentPriceUSD"] = float(pair["priceUsd"])
-                    if onchain_data["marketCapUSD"] == 0 and pair.get("marketCap"):
+                    if onchain_data["marketCapUSD"] is None and pair.get("marketCap"):
                         onchain_data["marketCapUSD"] = float(pair["marketCap"])
 
             # 3. GOPLUS SECURITY DATA
@@ -943,12 +944,11 @@ class TokenSnapshotService:
             return None
         
     async def _store_snapshot_async(self, snapshot_response: Dict[str, Any]) -> None:
-        """Store snapshot in ChromaDB asynchronously - UPDATE existing document"""
+        """Store snapshot in ChromaDB with OnChainData as JSON content"""
         try:
             analysis_id = snapshot_response["analysis_id"]
             token_address = snapshot_response["token_address"]
             
-            # Get ChromaDB client directly
             from app.utils.chroma_client import get_chroma_client
             chroma_client = await get_chroma_client()
             
@@ -957,75 +957,28 @@ class TokenSnapshotService:
                 return
                 
             doc_id = f"snapshot_{token_address[:8]}"
-            content = f"snapshot {token_address} gen {snapshot_response.get('snapshot_generation', 1)}"
-
-            # Extract token name and symbol from service responses
-            token_name, token_symbol = self._extract_token_name_symbol(snapshot_response)
             
-            # Analyze whale activity from Birdeye data
-            birdeye_data = snapshot_response.get("service_responses", {}).get("birdeye", {})
-            whale_activity_1h = self._analyze_whale_activity_1h(birdeye_data)
+            # Store the OnChainData as JSON content
+            onchain_data = snapshot_response.get("metrics", {}).get("market_data", {})
+            content = json.dumps(onchain_data, default=str)
             
-            # FULL metadata with all the important data
+            # Basic metadata for searching
             metadata = {
                 "doc_type": "token_snapshot",
                 "analysis_id": analysis_id,
                 "token_address": token_address,
-                "token_name": token_name,
-                "token_symbol": token_symbol,
-                "snapshot_generation": str(snapshot_response.get("snapshot_generation", 1)),
-                "is_first_snapshot": str(snapshot_response.get("metadata", {}).get("is_first_snapshot", False)),
-                "analysis_type": "snapshot",
                 "timestamp": snapshot_response.get("timestamp", ""),
-                "services_successful": str(snapshot_response.get("metadata", {}).get("services_successful", 0)),
-                "security_status": snapshot_response.get("security_analysis", {}).get("security_status", "unknown"),
-                "critical_issues_count": str(len(snapshot_response.get("security_analysis", {}).get("critical_issues", []))),
-                "warnings_count": str(len(snapshot_response.get("security_analysis", {}).get("warnings", []))),
-                "whale_activity_1h": json.dumps(whale_activity_1h),
-                "whale_count_1h": str(whale_activity_1h["count"]),
-                "whale_inflow_1h": str(whale_activity_1h["total_inflow_usd"])
+                "snapshot_generation": str(snapshot_response.get("snapshot_generation", 1))
             }
             
-            # Add market data to metadata
-            metrics = snapshot_response.get("metrics", {})
-            if metrics:
-                market_data = metrics.get("market_data", {})
-                token_info = metrics.get("token_info", {})
-                volatility = metrics.get("volatility", {})
-                whale_analysis = metrics.get("whale_analysis", {})
-                sniper_detection = metrics.get("sniper_detection", {})
-                
-                metadata.update({
-                    "price_usd": str(market_data.get("price_usd", "unknown")),
-                    "price_change_24h": str(market_data.get("price_change_24h", "unknown")),
-                    "volume_24h": str(market_data.get("volume_24h", "unknown")),
-                    "volume_6h": str(market_data.get("volume_6h", "unknown")),
-                    "volume_1h": str(market_data.get("volume_1h", "unknown")), 
-                    "volume_5m": str(market_data.get("volume_5m", "unknown")),
-                    "market_cap": str(market_data.get("market_cap", "unknown")),
-                    "liquidity": str(market_data.get("liquidity", "unknown")),
-                    "holders_count": str(token_info.get("holders_count", "unknown")),
-                    "dev_holdings_percent": str(token_info.get("dev_holdings_percent", "unknown")),
-                    "whale_count": str(whale_analysis.get("whale_count", "unknown")),
-                    "whale_control_percent": str(whale_analysis.get("whale_control_percent", "unknown")),
-                    "sniper_risk": str(sniper_detection.get("sniper_risk", "unknown")),
-                    "volatility_risk": str(volatility.get("volatility_risk", "unknown"))
-                })
-            
-            # Check if exists and UPDATE or CREATE
+            # Update or create
             existing = chroma_client._collection.get(ids=[doc_id])
             if existing and existing.get('ids'):
-                # UPDATE existing
-                chroma_client._collection.update(
-                    ids=[doc_id],
-                    documents=[content], 
-                    metadatas=[metadata]
-                )
-                logger.info(f"✅ UPDATED snapshot with full data: {doc_id}")
+                chroma_client._collection.update(ids=[doc_id], documents=[content], metadatas=[metadata])
+                logger.info(f"✅ UPDATED snapshot: {doc_id}")
             else:
-                # CREATE new
                 await chroma_client.add_document(content=content, metadata=metadata, doc_id=doc_id)
-                logger.info(f"✅ CREATED snapshot with full data: {doc_id}")
+                logger.info(f"✅ CREATED snapshot: {doc_id}")
                 
         except Exception as e:
             logger.error(f"Failed to store snapshot: {str(e)}")

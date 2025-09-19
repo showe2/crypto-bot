@@ -103,7 +103,7 @@ class PumpAnalysisProfile:
             }
     
     async def _get_recent_snapshots(self, limit: int = 200) -> List[Dict[str, Any]]:
-        """Get recent snapshots from ChromaDB"""
+        """Get recent snapshots with full market data from ChromaDB"""
         try:
             # Search for token snapshots
             results = await analysis_storage.search_analyses(
@@ -115,20 +115,49 @@ class PumpAnalysisProfile:
             if not results:
                 return []
             
-            # Convert to snapshot format
+            # Convert to snapshot format with market data
             snapshots = []
             for result in results:
-                metadata = result.get("metadata", {})
-                if metadata.get("token_address"):
-                    snapshots.append(metadata)
+                try:
+                    metadata = result.get("metadata", {})
+                    content = result.get("content", "{}")
+                    
+                    # Parse the OnChainData from content
+                    market_data = json.loads(content) if content != "{}" else {}
+                    
+                    # Combine metadata + market data
+                    snapshot = {
+                        **metadata,
+                        # Basic market data
+                        "liquidity": market_data.get("liquidityUSD", 0),
+                        "market_cap": market_data.get("marketCapUSD", 0),
+                        "volume_1h": market_data.get("volume1h", 0),
+                        "volume_5m": market_data.get("volume5min", 0),
+                        "token_name": market_data.get("name", "Unknown"),
+                        "token_symbol": market_data.get("symbol", "N/A"),
+                        
+                        # Enhanced analysis data
+                        "volatility_percent": market_data.get("volatility_percent", 0),
+                        "volatility_risk": market_data.get("volatility_risk", "unknown"),
+                        "whale_analysis": market_data.get("whale_analysis", {}),
+                        "sniper_detection": market_data.get("sniper_detection", {}),
+                        
+                        # Backward compatibility
+                        "whale_activity_1h": json.dumps(market_data.get("whales1h", {"count": 0, "total_inflow_usd": 0}))
+                    }
+                    
+                    snapshots.append(snapshot)
+                    
+                except Exception as e:
+                    logger.warning(f"Error processing snapshot: {e}")
+                    continue
             
-            logger.info(f"Retrieved {len(snapshots)} snapshots from ChromaDB")
+            logger.info(f"Retrieved {len(snapshots)} snapshots with market data")
             
             # Debug: show first snapshot data
             if snapshots:
                 first = snapshots[0]
-                logger.info(f"Sample snapshot fields: {list(first.keys())}")
-                logger.info(f"Sample data: liq={first.get('liquidity')}, mcap={first.get('market_cap')}, vol={first.get('volume_24h')}")
+                logger.info(f"Sample data: liq={first.get('liquidity')}, mcap={first.get('market_cap')}, vol={first.get('volume_5m')}")
             
             return snapshots
             

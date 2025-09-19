@@ -1,6 +1,7 @@
 import asyncio
 import time
 import httpx
+import json
 from typing import Dict, Any, Optional, List
 from loguru import logger
 from pydantic import BaseModel
@@ -394,11 +395,18 @@ class BotService:
             
             # 1. Try to get recent snapshot (15 min max age)
             recent_snapshot = await self._get_recent_snapshot(token_address, max_age_minutes=15)
-            
+
             if recent_snapshot:
                 logger.info(f"Using recent snapshot for {token_address}")
-                onchain_data = self._extract_onchain_data_from_snapshot(recent_snapshot)
-            else:
+                full_snapshot = await self._get_full_snapshot(token_address)
+                if full_snapshot:
+                    onchain_data = self._extract_onchain_data_from_snapshot(full_snapshot)
+                else:
+                    logger.warning(f"Recent snapshot metadata found but full data missing, creating new snapshot")
+                    # Fall through to create new snapshot
+                    recent_snapshot = None
+
+            if not recent_snapshot:
                 logger.info(f"Creating new snapshot for {token_address}")
                 from app.services.snapshots.token_snapshot import token_snapshot_service
                 
@@ -417,7 +425,6 @@ class BotService:
             
         except Exception as e:
             logger.error(f"OnChain data collection failed: {e}")
-            return self._get_fallback_onchain_data(ai_reasoning or "Ошибка", str(e))
         
     async def _get_recent_snapshot(self, token_address: str, max_age_minutes: int = 15) -> Optional[Dict[str, Any]]:
         """Get recent snapshot if fresh enough"""
@@ -431,10 +438,15 @@ class BotService:
             # Check age
             snapshot_time = latest_snapshot.get("timestamp", 0)
             if isinstance(snapshot_time, str):
-                from datetime import datetime
-                dt = datetime.fromisoformat(snapshot_time.replace('Z', '+00:00'))
-                snapshot_time = dt.timestamp()
-            
+                from datetime import datetime, timezone
+                try:
+                    # Parse ISO format as UTC
+                    dt = datetime.fromisoformat(snapshot_time).replace(tzinfo=timezone.utc)
+                    snapshot_time = dt.timestamp()
+                except ValueError as e:
+                    logger.warning(f"Failed to parse timestamp {snapshot_time}: {e}")
+                    return None
+
             age_minutes = (time.time() - snapshot_time) / 60
             
             if age_minutes <= max_age_minutes:
@@ -450,7 +462,7 @@ class BotService:
             return None
 
     async def _get_full_snapshot(self, token_address: str) -> Optional[Dict[str, Any]]:
-        """Get full snapshot data from storage"""
+        """Get full snapshot data from storage by token_address"""
         try:
             from app.services.analysis_storage import analysis_storage
             
@@ -461,9 +473,14 @@ class BotService:
             )
             
             if results and len(results) > 0:
-                # The full snapshot data should be in the document content or metadata
-                # This depends on how analysis_storage stores the data
-                return results[0]  # Return the full result
+                # Parse the full snapshot from the stored JSON content
+                content = results[0].get("content", "{}")
+                try:
+                    full_snapshot = json.loads(content) if content != "{}" else None
+                    return full_snapshot
+                except json.JSONDecodeError:
+                    logger.warning(f"Failed to parse snapshot JSON for {token_address}")
+                    return None
             
             return None
             
@@ -471,89 +488,20 @@ class BotService:
             logger.warning(f"Error getting full snapshot: {e}")
             return None
         
-    def _get_fallback_onchain_data(self, ai_reasoning: str, error: str) -> Dict[str, Any]:
-        """Fallback data when everything fails"""
-        return {
-            # Basic price data
-            "currentPriceUSD": 0.0,
-            "priceChange24h": None,
-            "priceChange1h": None,
-            
-            # Liquidity metrics
-            "liquidityUSD": 0.0,
-            "liquiditySOL": None,
-            "liquidityToken": None,
-            
-            # Market cap
-            "marketCapUSD": None,
-            "fullyDilutedMarketCap": None,
-            
-            # Volume metrics
-            "volume24h": 0.0,
-            "volume1h": None,
-            "volume5min": None,
-            "volumeChange24h": None,
-            
-            # Trading activity
-            "txCount24h": None,
-            "txCount1h": None,
-            "txCount5min": None,
-            "uniqueWallets24h": None,
-            
-            # Pool/DEX data
-            "poolExists": False,
-            "poolAddress": "",
-            "dexType": "unknown",
-            "poolAge": None,
-            
-            # Reserves
-            "solReserve": 0.0,
-            "tokenReserve": 0.0,
-            
-            # Whale analysis
-            "whales1h": {
-                "whaleCount": 0,
-                "whaleVolume": 0.0,
-                "whaleVolumePercent": 0.0,
-                "largestWhaleAmount": 0.0,
-                "avgWhaleSize": 0.0,
-                "whaleRisk": "unknown"
-            },
-            
-            # Security metrics
-            "lpLocked": False,
-            "lpLockedPercent": None,
-            "topHolderPercent": 0.0,
-            "holderCount": None,
-            "tokenTax": 0.0,
-            
-            # Token metadata
-            "name": None,
-            "symbol": None,
-            "decimals": None,
-            "supply": None,
-            
-            # AI Analysis
-            "aiReasoning": ai_reasoning,
-            
-            # Data quality indicators
-            "lastUpdated": time.time(),
-            "apiErrors": [f"Collection failed: {error}"]
-        }
-        
     def _extract_onchain_data_from_snapshot(self, snapshot: Dict[str, Any]) -> Dict[str, Any]:
         """Extract OnChainData from snapshot"""
         try:
-            metrics = snapshot.get("metrics", {})
-            onchain_data = metrics.get("market_data", {})
+            if not snapshot:
+                logger.warning("Snapshot is None")
+                return self._get_fallback_onchain_data("unknown", "Snapshot is None")
             
-            if onchain_data:
-                logger.info(f"Extracted OnChainData: price=${onchain_data.get('currentPriceUSD', 0)}")
-                return onchain_data
+            if "currentPriceUSD" in snapshot:
+                logger.info(f"Snapshot IS the market_data")
+                return snapshot
             else:
-                logger.warning("No market_data in snapshot")
+                logger.warning("No market_data found - missing currentPriceUSD")
                 return self._get_fallback_onchain_data("unknown", "No market_data in snapshot")
-            
+                
         except Exception as e:
             logger.error(f"Error extracting from snapshot: {e}")
             return self._get_fallback_onchain_data("unknown", str(e))
@@ -583,113 +531,6 @@ class BotService:
             return int(dt.timestamp() * 1000)
         except:
             return int(time.time() * 1000)
-
-    def _analyze_whales_1h(self, trades_data: Dict) -> Dict[str, Any]:
-        """Analyze whale activity in last 1 hour"""
-        try:
-            if not trades_data or not trades_data.get("items"):
-                return {
-                    "whaleCount": 0,
-                    "whaleVolume": 0.0,
-                    "whaleVolumePercent": 0.0,
-                    "largestWhaleAmount": 0.0,
-                    "avgWhaleSize": 0.0,
-                    "whaleRisk": "unknown"
-                }
-            
-            trades = trades_data["items"]
-            current_time = time.time()
-            one_hour_ago = current_time - 3600
-            
-            whales = []
-            total_volume = 0.0
-            
-            for trade in trades:
-                try:
-                    trade_time = trade.get("block_timestamp", current_time)
-                    if trade_time < one_hour_ago:
-                        continue
-                    
-                    # Get trade size in USD
-                    trade_size_usd = float(trade.get("from", {}).get("ui_amount", 0)) * float(trade.get("from", {}).get("price", 0))
-                    total_volume += trade_size_usd
-                    
-                    # Whale threshold: $800+ (matching pump analysis)
-                    if trade_size_usd >= 800:
-                        whales.append(trade_size_usd)
-                        
-                except (ValueError, TypeError, KeyError):
-                    continue
-            
-            whale_count = len(whales)
-            whale_volume = sum(whales)
-            whale_volume_percent = (whale_volume / total_volume * 100) if total_volume > 0 else 0
-            largest_whale = max(whales) if whales else 0
-            avg_whale_size = (whale_volume / whale_count) if whale_count > 0 else 0
-            
-            # Risk assessment
-            if whale_volume_percent > 60:
-                whale_risk = "high"
-            elif whale_volume_percent > 30:
-                whale_risk = "medium"
-            else:
-                whale_risk = "low"
-            
-            return {
-                "whaleCount": whale_count,
-                "whaleVolume": round(whale_volume, 2),
-                "whaleVolumePercent": round(whale_volume_percent, 1),
-                "largestWhaleAmount": round(largest_whale, 2),
-                "avgWhaleSize": round(avg_whale_size, 2),
-                "whaleRisk": whale_risk
-            }
-            
-        except Exception as e:
-            logger.warning(f"Whale analysis failed: {e}")
-            return {
-                "whaleCount": 0,
-                "whaleVolume": 0.0,
-                "whaleVolumePercent": 0.0,
-                "largestWhaleAmount": 0.0,
-                "avgWhaleSize": 0.0,
-                "whaleRisk": "unknown"
-            }
-
-    def _calculate_volume_metrics(self, trades_data: Dict) -> Dict[str, Any]:
-        """Calculate volume metrics from trades data"""
-        try:
-            if not trades_data or not trades_data.get("items"):
-                return {"volume1h": None, "volume5min": None}
-            
-            trades = trades_data["items"]
-            current_time = time.time()
-            
-            volume_1h = 0.0
-            volume_5min = 0.0
-            
-            for trade in trades:
-                try:
-                    trade_time = trade.get("block_timestamp", current_time)
-                    time_diff = current_time - trade_time
-                    
-                    trade_size_usd = float(trade.get("from", {}).get("ui_amount", 0)) * float(trade.get("from", {}).get("price", 0))
-                    
-                    if time_diff <= 300:  # 5 minutes
-                        volume_5min += trade_size_usd
-                    if time_diff <= 3600:  # 1 hour
-                        volume_1h += trade_size_usd
-                        
-                except (ValueError, TypeError, KeyError):
-                    continue
-            
-            return {
-                "volume1h": round(volume_1h, 2) if volume_1h > 0 else None,
-                "volume5min": round(volume_5min, 2) if volume_5min > 0 else None,
-            }
-            
-        except Exception as e:
-            logger.warning(f"Volume metrics calculation failed: {e}")
-            return {"volume1h": None, "volume5min": None}
     
     async def _call_bot_buy_api(self, bot_request: Dict[str, Any], order_id: str) -> None:
         """
