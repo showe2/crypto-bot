@@ -95,12 +95,6 @@ class BotService:
     async def handle_buy(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle buy request with optional security check and onchain data
-        
-        Args:
-            request_data: Buy request data
-            
-        Returns:
-            Success response or error details
         """
         try:
             # Validate request
@@ -146,24 +140,33 @@ class BotService:
                 "onChain": onchain_data
             }
             
-            # Fire and forget bot call
-            asyncio.create_task(
-                self._call_bot_buy_api(bot_request, order_id)
-            )
+            bot_response = await self._call_bot_buy_api(bot_request, order_id)
             
-            # Return immediate success response
-            logger.info(f"✅ Enhanced buy order placed: {order_id}")
+            # Check if bot API call was successful
+            if not bot_response or not bot_response.get("success"):
+                error_msg = bot_response.get("message", "Bot API call failed") if bot_response else "Bot service unavailable"
+                logger.error(f"❌ Bot API failed for {order_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "error": "Bot execution failed",
+                    "message": error_msg,
+                    "mint": token_address
+                }
+            
+            # Return success response with bot confirmation
+            logger.info(f"✅ Bot buy order completed: {order_id}")
             return {
                 "success": True,
-                "message": "Buy order placed successfully",
+                "message": "Buy order executed successfully",
                 "orderId": order_id,
                 "mint": token_address,
                 "amount": buy_request.amount,
-                "onChain": onchain_data  # Include onchain data in response
+                "bot_response": bot_response,
+                "onChain": onchain_data
             }
             
         except Exception as e:
-            logger.error(f"❌ Enhanced buy request failed: {str(e)}")
+            logger.error(f"❌ Bot buy request failed: {str(e)}")
             return {
                 "success": False,
                 "error": "Request processing failed",
@@ -174,12 +177,6 @@ class BotService:
     async def handle_sell(self, request_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Handle sell request
-        
-        Args:
-            request_data: Sell request data
-            
-        Returns:
-            Success response or error details
         """
         try:
             # Validate request
@@ -215,19 +212,28 @@ class BotService:
                 "onChain": onchain_data
             }
             
-            # Fire and forget bot call
-            asyncio.create_task(
-                self._call_bot_sell_api(bot_request, order_id)
-            )
+            bot_response = await self._call_bot_sell_api(bot_request, order_id)
             
-            # Return immediate success response
-            logger.info(f"✅ Sell order placed: {order_id}")
+            # Check if bot API call was successful
+            if not bot_response or not bot_response.get("success"):
+                error_msg = bot_response.get("message", "Bot API call failed") if bot_response else "Bot service unavailable"
+                logger.error(f"❌ Bot API failed for {order_id}: {error_msg}")
+                return {
+                    "success": False,
+                    "error": "Bot execution failed", 
+                    "message": error_msg,
+                    "mint": token_address
+                }
+            
+            # Return success response with bot confirmation
+            logger.info(f"✅ Sell order completed: {order_id}")
             return {
                 "success": True,
-                "message": "Sell order placed successfully",
+                "message": "Sell order executed successfully",
                 "orderId": order_id,
                 "mint": token_address,
                 "percent": sell_request.percent,
+                "bot_response": bot_response,
                 "onChain": onchain_data
             }
             
@@ -239,7 +245,7 @@ class BotService:
                 "message": str(e),
                 "mint": request_data.get("mint", "unknown")
             }
-    
+        
     async def update_wallet(self, private_key: str):
         """
         Update wallet secret
@@ -395,28 +401,35 @@ class BotService:
             
             # 1. Try to get recent snapshot (15 min max age)
             recent_snapshot = await self._get_recent_snapshot(token_address, max_age_minutes=15)
-
+            
             if recent_snapshot:
                 logger.info(f"Using recent snapshot for {token_address}")
                 full_snapshot = await self._get_full_snapshot(token_address)
                 if full_snapshot:
                     onchain_data = self._extract_onchain_data_from_snapshot(full_snapshot)
+                    if onchain_data and onchain_data.get("currentPriceUSD", 0) > 0:
+                        # Set AI reasoning and return
+                        onchain_data["aiReasoning"] = ai_reasoning
+                        return onchain_data
+                    else:
+                        logger.warning(f"Snapshot data invalid, creating new snapshot")
                 else:
                     logger.warning(f"Recent snapshot metadata found but full data missing, creating new snapshot")
-                    # Fall through to create new snapshot
-                    recent_snapshot = None
-
-            if not recent_snapshot:
+            else:
                 logger.info(f"Creating new snapshot for {token_address}")
-                from app.services.snapshots.token_snapshot import token_snapshot_service
-                
-                # Create new snapshot
-                new_snapshot = await token_snapshot_service.capture_token_snapshot(
-                    token_address=token_address,
-                    security_status="safe",
-                    update_existing=True
-                )
-                onchain_data = self._extract_onchain_data_from_snapshot(new_snapshot)
+            
+            # 2. Create new snapshot if no recent snapshot OR snapshot data is invalid
+            from app.services.snapshots.token_snapshot import token_snapshot_service
+            
+            # Create new snapshot
+            new_snapshot = await token_snapshot_service.capture_token_snapshot(
+                token_address=token_address,
+                security_status="safe",
+                update_existing=True
+            )
+            
+            # Extract onchain data from new snapshot
+            onchain_data = self._extract_onchain_data_from_snapshot(new_snapshot)
             
             # Set AI reasoning
             onchain_data["aiReasoning"] = ai_reasoning
@@ -425,6 +438,7 @@ class BotService:
             
         except Exception as e:
             logger.error(f"OnChain data collection failed: {e}")
+        return self._get_fallback_onchain_data(ai_reasoning or "Ошибка", str(e))
         
     async def _get_recent_snapshot(self, token_address: str, max_age_minutes: int = 15) -> Optional[Dict[str, Any]]:
         """Get recent snapshot if fresh enough"""
@@ -475,11 +489,22 @@ class BotService:
             if results and len(results) > 0:
                 # Parse the full snapshot from the stored JSON content
                 content = results[0].get("content", "{}")
-                try:
-                    full_snapshot = json.loads(content) if content != "{}" else None
-                    return full_snapshot
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse snapshot JSON for {token_address}")
+                
+                # Handle different content types
+                if isinstance(content, list) and len(content) > 0:
+                    content = content[0]  # Take first item if it's a list
+                
+                if isinstance(content, str):
+                    try:
+                        onchain_data = json.loads(content)
+                        return onchain_data
+                    except json.JSONDecodeError as e:
+                        logger.error(f"🔍 SNAPSHOT DEBUG: JSON decode failed: {e}")
+                        return None
+                elif isinstance(content, dict):
+                    return content
+                
+                else:
                     return None
             
             return None
@@ -495,11 +520,20 @@ class BotService:
                 logger.warning("Snapshot is None")
                 return self._get_fallback_onchain_data("unknown", "Snapshot is None")
             
+            # Case 1: Direct market data (from stored JSON)
             if "currentPriceUSD" in snapshot:
                 logger.info(f"Snapshot IS the market_data")
                 return snapshot
+            
+            # Case 2: New snapshot structure (from capture_token_snapshot)
+            elif "metrics" in snapshot and "market_data" in snapshot["metrics"]:
+                market_data = snapshot["metrics"]["market_data"]
+                logger.info(f"Found market_data in new snapshot structure")
+                return market_data
+            
             else:
-                logger.warning("No market_data found - missing currentPriceUSD")
+                logger.warning("No market_data found in any structure")
+                logger.info(f"Available keys: {list(snapshot.keys())}")
                 return self._get_fallback_onchain_data("unknown", "No market_data in snapshot")
                 
         except Exception as e:
@@ -532,13 +566,9 @@ class BotService:
         except:
             return int(time.time() * 1000)
     
-    async def _call_bot_buy_api(self, bot_request: Dict[str, Any], order_id: str) -> None:
+    async def _call_bot_buy_api(self, bot_request: Dict[str, Any], order_id: str) -> Optional[Dict[str, Any]]:
         """
-        Make async call to bot API for buy orders (fire and forget)
-        
-        Args:
-            bot_request: Request data for bot
-            order_id: Order identifier for logging
+        Make async call to bot API for buy orders
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -550,42 +580,41 @@ class BotService:
                 
                 if response.status_code == 200:
                     logger.info(f"✅ Bot buy API call successful for order {order_id}")
+                    return response.json()
                 else:
                     logger.warning(f"⚠️ Bot buy API call failed for order {order_id}: {response.status_code}")
+                    return {"success": False, "message": f"HTTP {response.status_code}"}
                     
         except Exception as e:
             logger.error(f"❌ Bot buy API call error for order {order_id}: {str(e)}")
-    
-    async def _call_bot_sell_api(self, bot_request: Dict[str, Any], order_id: str) -> None:
-            """
-            Make async call to bot API for sell orders (fire and forget)
-            
-            Args:
-                bot_request: Request data for bot
-                order_id: Order identifier for logging
-            """
-            try:
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.post(
-                        f"{self.bot_url}/api/sell",
-                        json=bot_request,
-                        headers={"Content-Type": "application/json"}
-                    )
-                    
-                    if response.status_code == 200:
-                        logger.info(f"✅ Bot sell API call successful for order {order_id}")
-                    else:
-                        logger.warning(f"⚠️ Bot sell API call failed for order {order_id}: {response.status_code}")
-                        
-            except Exception as e:
-                logger.error(f"❌ Bot sell API call error for order {order_id}: {str(e)}")
+            return {"success": False, "message": str(e)}
 
-    async def _call_bot_update_api(self, bot_request: Dict[str, Any]) -> None:
+    async def _call_bot_sell_api(self, bot_request: Dict[str, Any], order_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Make async call to bot API for sell orders
+        """
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{self.bot_url}/api/sell",
+                    json=bot_request,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    logger.info(f"✅ Bot sell API call successful for order {order_id}")
+                    return response.json()
+                else:
+                    logger.warning(f"⚠️ Bot sell API call failed for order {order_id}: {response.status_code}")
+                    return {"success": False, "message": f"HTTP {response.status_code}"}
+                    
+        except Exception as e:
+            logger.error(f"❌ Bot sell API call error for order {order_id}: {str(e)}")
+            return {"success": False, "message": str(e)}
+
+    async def _call_bot_update_api(self, bot_request: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Make async call to bot API for wallet secret update
-        
-        Args:
-            bot_request: Request data for bot
         """
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -597,12 +626,14 @@ class BotService:
 
                 if response.status_code == 200:
                     logger.info(f"✅ Bot update API call successful")
-                    return response
+                    return response.json()
                 else:
                     logger.warning(f"⚠️ Bot update API call failed: {response.status_code}")
+                    return {"success": False, "message": f"HTTP {response.status_code}"}
                     
         except Exception as e:
             logger.error(f"❌ Bot update API call error: {str(e)}")
+            return {"success": False, "message": str(e)}
 
 
 # Global bot service instance
