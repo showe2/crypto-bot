@@ -96,6 +96,25 @@ class SnapshotScheduler:
                     f"✅ Scheduled snapshot run completed: "
                     f"{result.get('successful', 0)} successful, {result.get('failed', 0)} failed"
                 )
+                
+                # Check all positions after all snapshots complete
+                try:
+                    from app.services.trade.autotrade_service import autotrade_service 
+                    active_positions = autotrade_service.get_active_positions()
+                    
+                    for position in active_positions:
+                        token_address = position["token_address"]
+                        
+                        # Get fresh snapshot data for this token
+                        recent_snapshot = await self._get_token_snapshot_data(token_address)
+                        if recent_snapshot:
+                            await autotrade_service.check_position_on_snapshot_update(token_address, recent_snapshot)
+                    
+                    logger.info(f"📊 Checked {len(active_positions)} positions after snapshots")
+                    
+                except Exception as e:
+                    logger.error(f"AutoTrade position checks failed: {e}")
+                
             elif result.get("status") == "no_tokens":
                 logger.warning(f"⚠️ Scheduled snapshot run failed: No tokens found")
             else:
@@ -103,6 +122,18 @@ class SnapshotScheduler:
                 
         except Exception as e:
             logger.error(f"❌ Snapshot run exception: {str(e)}")
+
+    async def _get_token_snapshot_data(self, token_address: str):
+        """Get fresh snapshot data for a token"""
+        try:
+            from app.services.trade.bot_service import bot_service
+            recent_snapshot = await bot_service._get_recent_snapshot(token_address, max_age_minutes=10)
+            if recent_snapshot:
+                return bot_service._extract_onchain_data_from_snapshot(recent_snapshot)
+            return None
+        except Exception as e:
+            logger.error(f"Failed to get snapshot for {token_address}: {e}")
+            return None
 
 
 # Global scheduler instance

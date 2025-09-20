@@ -155,6 +155,26 @@ class BotService:
             
             # Return success response with bot confirmation
             logger.info(f"✅ Bot buy order completed: {order_id}")
+            
+            try:
+                from app.services.trade.autotrade_service import autotrade_service
+                
+                position_data = {
+                    "entry_price": onchain_data.get("currentPriceUSD", 0),
+                    "amount_sol": buy_request.amount,
+                    "market_cap": onchain_data.get("marketCapUSD", 0),
+                    "liquidity": onchain_data.get("liquidityUSD", 0),
+                    "order_id": order_id,
+                    "token_name": onchain_data.get("name", "Unknown"),
+                    "source": "manual"
+                }
+                
+                autotrade_service.track_position(token_address, position_data)
+                logger.info(f"📊 Position auto-tracked for autosell monitoring")
+                
+            except Exception as e:
+                logger.warning(f"Failed to track position for autosell: {e}")
+            
             return {
                 "success": True,
                 "message": "Buy order executed successfully",
@@ -227,6 +247,28 @@ class BotService:
             
             # Return success response with bot confirmation
             logger.info(f"✅ Sell order completed: {order_id}")
+            
+            # NEW: Close position if it exists (lazy import to avoid circular import)
+            try:
+                from app.services.trade.autotrade_service import autotrade_service
+                
+                # Get current price for P&L calculation
+                current_price = onchain_data.get("currentPriceUSD", 0) if onchain_data else 0
+                
+                sell_data = {
+                    "sell_price": current_price,
+                    "order_id": order_id
+                }
+                
+                # Close the position
+                position_closed = autotrade_service.close_position(token_address, "manual_sell", sell_data)
+                
+                if position_closed:
+                    logger.info(f"📊 Position closed due to manual sell")
+                
+            except Exception as e:
+                logger.warning(f"Failed to close position after manual sell: {e}")
+            
             return {
                 "success": True,
                 "message": "Sell order executed successfully",
@@ -245,7 +287,7 @@ class BotService:
                 "message": str(e),
                 "mint": request_data.get("mint", "unknown")
             }
-        
+            
     async def update_wallet(self, private_key: str):
         """
         Update wallet secret

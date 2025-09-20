@@ -17,7 +17,7 @@ from groq import AsyncGroq
 
 # Import your existing token analyzer
 from app.services.analysis_storage import analysis_storage
-from app.services.bot_service import bot_service
+from app.services.trade.bot_service import bot_service
 
 # Settings and dependencies
 settings = get_settings()
